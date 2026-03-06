@@ -453,8 +453,8 @@ fn resolve_project(docs_root: &Path) -> Option<ResolvedProject> {
         // Walk CWD components from deepest to shallowest
         let mut path = cwd.as_path();
         loop {
-            if let Some(dirname) = path.file_name().and_then(|f| f.to_str()) {
-                if available.iter().any(|p| p == dirname) {
+            if let Some(dirname) = path.file_name().and_then(|f| f.to_str())
+                && available.iter().any(|p| p == dirname) {
                     // `path` is the directory whose name matched — that's the repo root
                     let repo_path = Some(path.to_path_buf());
                     return Some(ResolvedProject {
@@ -463,7 +463,6 @@ fn resolve_project(docs_root: &Path) -> Option<ResolvedProject> {
                         repo_path,
                     });
                 }
-            }
             match path.parent() {
                 Some(parent) if parent != path => path = parent,
                 _ => break,
@@ -479,11 +478,10 @@ fn detect_repo_path(project_name: &str) -> Option<PathBuf> {
     let cwd = env::current_dir().ok()?;
     let mut path = cwd.as_path();
     loop {
-        if let Some(dirname) = path.file_name().and_then(|f| f.to_str()) {
-            if dirname == project_name {
+        if let Some(dirname) = path.file_name().and_then(|f| f.to_str())
+            && dirname == project_name {
                 return Some(path.to_path_buf());
             }
-        }
         match path.parent() {
             Some(parent) if parent != path => path = parent,
             _ => break,
@@ -645,13 +643,11 @@ pub fn load_config() -> &'static DocConfig {
     static CONFIG: OnceLock<DocConfig> = OnceLock::new();
     CONFIG.get_or_init(|| {
         let path = config_path();
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(cfg) = toml::from_str::<DocConfig>(&content) {
+        if path.exists()
+            && let Ok(content) = std::fs::read_to_string(&path)
+                && let Ok(cfg) = toml::from_str::<DocConfig>(&content) {
                     return cfg;
                 }
-            }
-        }
         // Fallback: empty config → all methods return hardcoded defaults
         DocConfig { docs_root: None, core: None, team: None, public: None, diagram: None }
     })
@@ -1100,11 +1096,10 @@ fn tool_init_project(docs_root: &Path, args_value: Value) -> Result<Value> {
         // Helper: create a file in the repo if it doesn't exist (or overwrite)
         let mut create_repo_file = |filename: &str, content: String| -> Result<()> {
             // If file_filter is set, skip files not in the list
-            if let Some(ref filter) = file_filter {
-                if !filter.iter().any(|f| f == filename) {
+            if let Some(ref filter) = file_filter
+                && !filter.iter().any(|f| f == filename) {
                     return Ok(());
                 }
-            }
             let dest = project_dir.join(filename);
             if dest.exists() && !overwrite {
                 repo_skipped.push(filename.to_string());

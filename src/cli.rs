@@ -100,8 +100,8 @@ fn agents() -> Vec<AgentDef> {
 }
 
 fn expand_path(p: &str) -> PathBuf {
-    if p.starts_with("~/") {
-        home().join(&p[2..])
+    if let Some(stripped) = p.strip_prefix("~/") {
+        home().join(stripped)
     } else {
         PathBuf::from(p)
     }
@@ -127,11 +127,10 @@ fn saved_docs_root() -> Option<PathBuf> {
         }
     }
     let cfg = load_config();
-    if let Some(p) = cfg.docs_root() {
-        if p.is_dir() {
+    if let Some(p) = cfg.docs_root()
+        && p.is_dir() {
             return Some(p);
         }
-    }
     None
 }
 
@@ -158,8 +157,8 @@ fn prompt_docs_root(default: Option<&Path>) -> Result<PathBuf> {
 }
 
 fn shellexpand(s: &str) -> String {
-    if s.starts_with("~/") {
-        format!("{}/{}", home().display(), &s[2..])
+    if let Some(stripped) = s.strip_prefix("~/") {
+        format!("{}/{}", home().display(), stripped)
     } else {
         s.to_string()
     }

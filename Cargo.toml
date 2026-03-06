@@ -1,7 +1,7 @@
 [package]
 name = "alcove"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "A quiet place for your project docs. MCP server that gives AI agents scoped access to private documentation."
 license = "Apache-2.0"
 repository = "https://github.com/epicsagas/alcove"
