@@ -69,13 +69,13 @@ pub struct ToolDescription {
 // Dispatch
 // ---------------------------------------------------------------------------
 
-pub fn dispatch(req: RpcRequest) -> RpcResponse {
+pub fn dispatch(req: RpcRequest) -> Option<RpcResponse> {
     match req.method.as_str() {
-        "initialize" => handle_initialize(req.id),
-        "notifications/initialized" | "initialized" => RpcResponse::ok(None, json!(null)),
-        "tools/list" => handle_tools_list(req.id),
-        "tools/call" => handle_tool_call(req.id, req.params),
-        _ => RpcResponse::err(req.id, -32601, format!("Method not found: {}", req.method)),
+        "initialize" => Some(handle_initialize(req.id)),
+        "notifications/initialized" | "initialized" => None,
+        "tools/list" => Some(handle_tools_list(req.id)),
+        "tools/call" => Some(handle_tool_call(req.id, req.params)),
+        _ => Some(RpcResponse::err(req.id, -32601, format!("Method not found: {}", req.method))),
     }
 }
 
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn dispatch_initialize() {
-        let resp = dispatch(make_req("initialize", json!({})));
+        let resp = dispatch(make_req("initialize", json!({}))).unwrap();
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         assert_eq!(result["protocolVersion"], "2024-11-05");
@@ -394,12 +394,12 @@ mod tests {
     #[test]
     fn dispatch_initialized_notification() {
         let resp = dispatch(make_req("notifications/initialized", json!({})));
-        assert!(resp.error.is_none());
+        assert!(resp.is_none(), "notifications should not produce a response");
     }
 
     #[test]
     fn dispatch_tools_list() {
-        let resp = dispatch(make_req("tools/list", json!({})));
+        let resp = dispatch(make_req("tools/list", json!({}))).unwrap();
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn dispatch_tools_list_has_schemas() {
-        let resp = dispatch(make_req("tools/list", json!({})));
+        let resp = dispatch(make_req("tools/list", json!({}))).unwrap();
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
         for tool in &tools {
             assert!(tool["inputSchema"].is_object(), "tool {} missing schema", tool["name"]);
@@ -424,14 +424,14 @@ mod tests {
 
     #[test]
     fn dispatch_unknown_method() {
-        let resp = dispatch(make_req("nonexistent/method", json!({})));
+        let resp = dispatch(make_req("nonexistent/method", json!({}))).unwrap();
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, -32601);
     }
 
     #[test]
     fn dispatch_tool_call_invalid_params() {
-        let resp = dispatch(make_req("tools/call", json!("not an object")));
+        let resp = dispatch(make_req("tools/call", json!("not an object"))).unwrap();
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, -32602);
     }

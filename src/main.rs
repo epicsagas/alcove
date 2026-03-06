@@ -112,9 +112,10 @@ fn serve() -> Result<()> {
             }
         };
 
-        let resp = mcp::dispatch(req);
-        writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
-        stdout.flush()?;
+        if let Some(resp) = mcp::dispatch(req) {
+            writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
+            stdout.flush()?;
+        }
     }
 
     Ok(())
