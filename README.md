@@ -1,6 +1,15 @@
-# Alcove
+<p align="center">
+  <img src="alcove.png" alt="Alcove" width="100%" />
+</p>
 
-A quiet place for your project docs.
+<p align="center">A quiet place for your project docs.</p>
+
+<p align="center">
+  <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/v/alcove.svg" alt="crates.io" /></a>
+  <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/d/alcove.svg" alt="Downloads" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
+  <a href="https://buymeacoffee.com/epicsaga"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee" /></a>
+</p>
 
 Alcove is an MCP server that gives AI coding agents scoped, read-only access to your private project documentation — without leaking it into public repos.
 
@@ -52,17 +61,31 @@ make install
 
 ## How it works
 
-```
-Your projects              Your private docs            Alcove MCP server
-┌──────────────┐           ┌──────────────┐             ┌──────────────┐
-│ my-app/      │──CWD─────▶│ my-app/      │◀──read──────│              │
-│   src/       │  detected │   PRD.md     │             │  overview    │
-│   ...        │           │   ARCH.md    │             │  search      │
-├──────────────┤           ├──────────────┤             │  get_file    │
-│ my-api/      │──CWD─────▶│ my-api/      │◀──read──────│  audit       │
-│   src/       │  detected │   PRD.md     │             │  init        │
-│   ...        │           │   ...        │             │  list        │
-└──────────────┘           └──────────────┘             └──────────────┘
+```mermaid
+flowchart LR
+    subgraph Projects["Your projects"]
+        A1["my-app/\n  src/ ..."]
+        A2["my-api/\n  src/ ..."]
+    end
+
+    subgraph Docs["Your private docs"]
+        D1["my-app/\n  PRD.md\n  ARCH.md"]
+        D2["my-api/\n  PRD.md\n  ..."]
+    end
+
+    subgraph MCP["Alcove MCP server"]
+        T1(overview)
+        T2(search)
+        T3(get_file)
+        T4(audit)
+        T5(init)
+        T6(list)
+    end
+
+    A1 -- "CWD detected" --> D1
+    A2 -- "CWD detected" --> D2
+    MCP -- "read" --> D1
+    MCP -- "read" --> D2
 ```
 
 Your docs are organized in a separate directory (`DOCS_ROOT`). Alcove reads from there and serves it to your AI agent over MCP's stdio protocol. Your agent calls tools like `get_doc_file("PRD.md")` and gets project-specific answers.
@@ -148,4 +171,4 @@ cargo uninstall alcove    # remove binary
 
 ## License
 
-MIT OR Apache-2.0
+Apache-2.0
