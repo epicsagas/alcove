@@ -25,6 +25,7 @@ toml = "1"
 walkdir = "2"
 rust-i18n = "3.1.5"
 sys-locale = "0.3.2"
+tantivy = "0.25"
 
 [dev-dependencies]
 tempfile = "3.26.0"

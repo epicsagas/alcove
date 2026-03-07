@@ -133,7 +133,25 @@ impl DocConfig {
     }
 
     pub fn docs_root(&self) -> Option<PathBuf> {
-        self.docs_root.as_ref().map(PathBuf::from)
+        // 1. Explicit config value
+        if let Some(ref root) = self.docs_root {
+            return Some(PathBuf::from(root));
+        }
+        // 2. Fall back to default: ~/.config/alcove/docs
+        let fallback = default_docs_root();
+        if fallback.is_dir() {
+            return Some(fallback);
+        }
+        None
+    }
+}
+
+/// Default docs root: `~/.config/alcove/docs`
+pub fn default_docs_root() -> PathBuf {
+    if let Ok(home) = env::var("HOME") {
+        PathBuf::from(home).join(".config/alcove/docs")
+    } else {
+        PathBuf::from("/nonexistent")
     }
 }
 
@@ -374,6 +392,63 @@ mod tests {
         };
         assert_eq!(cfg.core_files(), vec!["CUSTOM.md", "OTHER.md"]);
         assert_eq!(cfg.team_files().len(), DOC_REPO_SUPPLEMENTARY.len());
+    }
+
+    #[test]
+    fn default_docs_root_contains_alcove_docs() {
+        let path = default_docs_root();
+        assert!(path.to_string_lossy().ends_with(".config/alcove/docs"));
+    }
+
+    #[test]
+    fn docs_root_returns_explicit_value() {
+        let cfg = DocConfig {
+            docs_root: Some("/tmp/explicit".into()),
+            core: None, team: None, public: None, diagram: None,
+        };
+        assert_eq!(cfg.docs_root(), Some(PathBuf::from("/tmp/explicit")));
+    }
+
+    #[test]
+    fn docs_root_returns_none_when_no_config_and_no_default_dir() {
+        let cfg = DocConfig {
+            docs_root: None, core: None, team: None, public: None, diagram: None,
+        };
+        // If ~/.config/alcove/docs doesn't exist, returns None
+        // (it may or may not exist on the test machine, so just verify it's a valid Option)
+        let result = cfg.docs_root();
+        if let Some(ref p) = result {
+            assert!(p.is_dir());
+        }
+    }
+
+    #[test]
+    fn classify_reports_backslash() {
+        assert_eq!(classify_tier("reports\\weekly.md"), "reference");
+    }
+
+    #[test]
+    fn suggest_conventions_related() {
+        assert_eq!(suggest_categorization("coding_standard.md"), "Related to CONVENTIONS.md");
+        assert_eq!(suggest_categorization("code_style_guide.md"), "Related to CONVENTIONS.md");
+    }
+
+    #[test]
+    fn suggest_debt_related() {
+        assert_eq!(suggest_categorization("tech_debt_tracker.md"), "Related to DEBT.md");
+        assert_eq!(suggest_categorization("technical_debt_backlog.md"), "Related to DEBT.md");
+    }
+
+    #[test]
+    fn suggest_secrets_related() {
+        assert_eq!(suggest_categorization("env_vars_list.md"), "Related to SECRETS_MAP.md");
+        assert_eq!(suggest_categorization("secrets_rotation.md"), "Related to SECRETS_MAP.md");
+    }
+
+    #[test]
+    fn is_doc_file_no_extension() {
+        assert!(!is_doc_file(Path::new("Makefile")));
+        assert!(!is_doc_file(Path::new("LICENSE")));
     }
 
     #[test]

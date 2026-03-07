@@ -114,13 +114,34 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
         },
         ToolDescription {
             name: "search_project_docs".into(),
-            description: "Search across all documentation files for a keyword or phrase. Returns matching lines with context.".into(),
+            description: concat!(
+                "Search documentation files for a keyword or phrase. ",
+                "Automatically uses BM25 ranked search when index is available, ",
+                "falls back to grep (substring match) otherwise.\n",
+                "\n",
+                "scope=\"project\" (default): current project only, based on CWD.\n",
+                "scope=\"global\": search across ALL projects in the doc repository.\n",
+                "\n",
+                "Use global scope when the user:\n",
+                "- does not specify a project, or says 'all projects', 'everywhere', 'across projects'\n",
+                "- references previously saved notes, knowledge, or past decisions\n",
+                "- wants to compare how different projects handle the same topic\n",
+                "- uses words like 'find everywhere', 'search everything', 'all docs'\n",
+                "- asks in Korean: '전체', '모든 프로젝트', '다른 프로젝트에서는'\n",
+                "\n",
+                "Use project scope (default) when the user asks about the current project context."
+            ).into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search query (case-insensitive substring match)"
+                        "description": "Search query"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["project", "global"],
+                        "description": "Search scope: 'project' (default, current project only) or 'global' (all projects). Omit or set to 'project' for current project."
                     },
                     "limit": {
                         "type": "integer",
@@ -224,6 +245,20 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                 "required": []
             }),
         },
+        ToolDescription {
+            name: "rebuild_index".into(),
+            description: concat!(
+                "Build or rebuild the full-text search index for all projects. ",
+                "Uses BM25 ranking for relevance-scored search results. ",
+                "Run this after adding or updating documents. ",
+                "The index enables the 'ranked' search mode in search_project_docs."
+            ).into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
     ];
 
     RpcResponse::ok(id, json!({ "tools": tools }))
@@ -267,9 +302,70 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     }
     if call.name == "init_project" {
         return match tools::tool_init_project(&docs_root, call.arguments) {
+            Ok(v) => {
+                // Auto-rebuild index after creating new project docs
+                let _ = crate::index::build_index(&docs_root);
+                RpcResponse::ok(id, mcp_text_result(&v))
+            }
+            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+        };
+    }
+    if call.name == "rebuild_index" {
+        return match crate::index::build_index(&docs_root) {
             Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
             Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
         };
+    }
+
+    // Search: auto mode selection — ranked (BM25) if index available, grep fallback
+    if call.name == "search_project_docs" {
+        let scope = call.arguments.get("scope")
+            .and_then(|v| v.as_str())
+            .unwrap_or("project");
+        // Accept mode as hidden override (not in schema, but still honored if passed)
+        let mode_override = call.arguments.get("mode")
+            .and_then(|v| v.as_str());
+
+        let is_global = scope == "global";
+        let limit = call.arguments.get("limit")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(20) as usize;
+        let query = call.arguments.get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let force_grep = mode_override == Some("grep");
+
+        // Try ranked search (unless explicitly forced to grep)
+        if !force_grep {
+            let index_dir = docs_root.join(".alcove").join("index");
+            if index_dir.exists() || crate::index::ensure_index_fresh(&docs_root) {
+                let project_filter = if is_global { None } else {
+                    tools::resolve_project(&docs_root).map(|r| r.name)
+                };
+                match crate::index::search_indexed(&docs_root, query, limit, project_filter.as_deref()) {
+                    Ok(v) => {
+                        // If ranked returned results, use them
+                        let matches = v["matches"].as_array();
+                        if matches.is_some_and(|m| !m.is_empty()) {
+                            return RpcResponse::ok(id, mcp_text_result(&v));
+                        }
+                        // Ranked returned 0 results → fall through to grep
+                    }
+                    Err(_) => {
+                        // Index error → fall through to grep
+                    }
+                }
+            }
+        }
+
+        // Grep fallback (or forced grep mode)
+        if is_global {
+            return match tools::tool_search_global(&docs_root, call.arguments) {
+                Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
+                Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+            };
+        }
     }
 
     // All other tools require a resolved project
@@ -410,6 +506,7 @@ mod tests {
         assert!(names.contains(&"list_projects"));
         assert!(names.contains(&"audit_project"));
         assert!(names.contains(&"init_project"));
+        assert!(names.contains(&"rebuild_index"));
     }
 
     #[test]
@@ -612,5 +709,178 @@ mod tests {
             text.contains("my_project"),
             "list_projects output should contain the created project directory"
         );
+    }
+
+    #[test]
+    fn dispatch_rebuild_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Create a project with a doc
+        let proj = tmp.path().join("indexproj");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("PRD.md"), "# PRD\n\nIndex test content.").unwrap();
+
+        unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
+        let req = make_req("tools/call", json!({"name": "rebuild_index", "arguments": {}}));
+        let resp = dispatch(req).unwrap();
+        unsafe { std::env::remove_var("DOCS_ROOT") };
+
+        assert!(resp.error.is_none(), "rebuild_index should succeed");
+        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("ok") || text.contains("skipped"), "result should contain status ok or skipped, got: {text}");
+    }
+
+    #[test]
+    fn dispatch_search_global_grep() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p1 = tmp.path().join("alpha");
+        std::fs::create_dir_all(&p1).unwrap();
+        std::fs::write(p1.join("PRD.md"), "# Alpha PRD\n\nUnique marker xyzzy.").unwrap();
+        let p2 = tmp.path().join("beta");
+        std::fs::create_dir_all(&p2).unwrap();
+        std::fs::write(p2.join("ARCH.md"), "# Beta Arch\n\nAnother xyzzy reference.").unwrap();
+
+        unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
+        let req = make_req("tools/call", json!({
+            "name": "search_project_docs",
+            "arguments": {"query": "xyzzy", "scope": "global"}
+        }));
+        let resp = dispatch(req).unwrap();
+        unsafe { std::env::remove_var("DOCS_ROOT") };
+
+        assert!(resp.error.is_none(), "global grep search should succeed");
+        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("alpha"), "should find in alpha project");
+        assert!(text.contains("beta"), "should find in beta project");
+    }
+
+    #[test]
+    fn dispatch_search_ranked_fallback_to_grep() {
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("falltest");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("DOC.md"), "# Test\n\nFallback marker plugh.").unwrap();
+
+        // No index built — ranked should fallback to global grep
+        unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
+        let req = make_req("tools/call", json!({
+            "name": "search_project_docs",
+            "arguments": {"query": "plugh", "scope": "global", "mode": "ranked"}
+        }));
+        let resp = dispatch(req).unwrap();
+        unsafe { std::env::remove_var("DOCS_ROOT") };
+
+        assert!(resp.error.is_none(), "ranked search should fallback, not error");
+        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("plugh"), "fallback grep should find the marker");
+    }
+
+    #[test]
+    fn dispatch_search_ranked_with_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("ranked");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("NOTES.md"), "# Notes\n\nBM25 scoring test document.").unwrap();
+
+        // Build index first (use inner fn to avoid global lock in parallel tests)
+        crate::index::build_index_unlocked(tmp.path()).unwrap();
+
+        unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
+        let req = make_req("tools/call", json!({
+            "name": "search_project_docs",
+            "arguments": {"query": "scoring", "scope": "global", "mode": "ranked"}
+        }));
+        let resp = dispatch(req).unwrap();
+        unsafe { std::env::remove_var("DOCS_ROOT") };
+
+        assert!(resp.error.is_none(), "ranked search with index should succeed");
+        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("ranked"), "should have ranked mode in result");
+        assert!(text.contains("score"), "should have score in result");
+    }
+
+    #[test]
+    fn search_schema_has_scope_but_no_mode() {
+        let resp = handle_tools_list(Some(json!(1)));
+        let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
+        let search = tools.iter().find(|t| t["name"] == "search_project_docs").unwrap();
+        let props = &search["inputSchema"]["properties"];
+        assert!(props["scope"].is_object(), "scope param should exist");
+        assert!(!props["mode"].is_object(), "mode param should NOT be in schema (auto selection)");
+        // Check scope enum values
+        let scope_enum = props["scope"]["enum"].as_array().unwrap();
+        assert!(scope_enum.contains(&json!("project")));
+        assert!(scope_enum.contains(&json!("global")));
+    }
+
+    #[test]
+    fn dispatch_search_auto_uses_ranked_when_index_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("autoproj");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("DOC.md"), "# Doc\n\nAuto mode test content here.").unwrap();
+
+        // Build index
+        crate::index::build_index_unlocked(tmp.path()).unwrap();
+
+        unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
+        // No mode param — should auto-select ranked
+        let req = make_req("tools/call", json!({
+            "name": "search_project_docs",
+            "arguments": {"query": "Auto mode", "scope": "global"}
+        }));
+        let resp = dispatch(req).unwrap();
+        unsafe { std::env::remove_var("DOCS_ROOT") };
+
+        assert!(resp.error.is_none(), "auto search should succeed");
+        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("ranked"), "auto mode with index should use ranked: {text}");
+        assert!(text.contains("score"), "ranked results should have scores");
+    }
+
+    #[test]
+    fn dispatch_search_auto_falls_back_to_grep_no_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("grepproj");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("DOC.md"), "# Doc\n\nFallback grep marker xyzzy.").unwrap();
+
+        // No index built — auto should fallback to grep
+        unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
+        let req = make_req("tools/call", json!({
+            "name": "search_project_docs",
+            "arguments": {"query": "xyzzy", "scope": "global"}
+        }));
+        let resp = dispatch(req).unwrap();
+        unsafe { std::env::remove_var("DOCS_ROOT") };
+
+        assert!(resp.error.is_none(), "grep fallback should succeed");
+        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("xyzzy"), "grep fallback should find the marker");
+    }
+
+    #[test]
+    fn dispatch_search_force_grep_mode() {
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("forceproj");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("DOC.md"), "# Doc\n\nForce grep marker plugh.").unwrap();
+
+        // Build index
+        crate::index::build_index_unlocked(tmp.path()).unwrap();
+
+        unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
+        // Explicitly force grep mode (hidden param)
+        let req = make_req("tools/call", json!({
+            "name": "search_project_docs",
+            "arguments": {"query": "plugh", "scope": "global", "mode": "grep"}
+        }));
+        let resp = dispatch(req).unwrap();
+        unsafe { std::env::remove_var("DOCS_ROOT") };
+
+        assert!(resp.error.is_none(), "forced grep should succeed");
+        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("plugh"), "grep should find the marker");
+        // Should NOT contain "score" (grep doesn't have scores)
+        assert!(!text.contains("score"), "forced grep should not have scores: {text}");
     }
 }

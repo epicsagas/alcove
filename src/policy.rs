@@ -1028,4 +1028,93 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
         assert_eq!(results[0].status, FileStatus::Warn);
         assert_eq!(results[0].reason.as_deref(), Some("minimal_content"));
     }
+
+    #[test]
+    fn count_list_items_stops_at_same_level_heading() {
+        let content = "## Features\n- item1\n- item2\n## Other\n- not counted";
+        let count = count_list_items_after_heading(content, "## Features");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn count_list_items_includes_sub_headings() {
+        let content = "## Features\n- item1\n### Sub\n- item2\n- item3\n## Other\n- nope";
+        let count = count_list_items_after_heading(content, "## Features");
+        assert_eq!(count, 3, "should count items under sub-headings too");
+    }
+
+    #[test]
+    fn count_list_items_asterisk_prefix() {
+        let content = "## Items\n* one\n* two\n* three";
+        let count = count_list_items_after_heading(content, "## Items");
+        assert_eq!(count, 3, "should count * list items");
+    }
+
+    #[test]
+    fn count_list_items_no_heading_match() {
+        let content = "## Something\n- item";
+        let count = count_list_items_after_heading(content, "## Missing");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn validate_project_repo_file_found() {
+        let tmp = TempDir::new().unwrap();
+        let project = "projrepo_test";
+        let project_dir = tmp.path().join(project);
+        fs::create_dir_all(project_dir.join(".alcove")).unwrap();
+
+        let policy_toml = r###"
+            [policy]
+            [[policy.required]]
+            name = "README.md"
+            location = "project-repo"
+        "###;
+        fs::write(project_dir.join(".alcove/policy.toml"), policy_toml).unwrap();
+
+        // Create the file in repo, not alcove
+        let repo = TempDir::new().unwrap();
+        fs::write(repo.path().join("README.md"), "# README\n\nProject readme with enough content to pass the 100 byte threshold for validation. Adding more text to be absolutely sure we exceed the limit.").unwrap();
+
+        let (_, results) = validate(tmp.path(), project, Some(repo.path())).unwrap();
+        assert_eq!(results[0].status, FileStatus::Pass);
+    }
+
+    #[test]
+    fn validate_project_repo_file_missing() {
+        let tmp = TempDir::new().unwrap();
+        let project = "projrepo_missing";
+        let project_dir = tmp.path().join(project);
+        fs::create_dir_all(project_dir.join(".alcove")).unwrap();
+
+        let policy_toml = r###"
+            [policy]
+            [[policy.required]]
+            name = "README.md"
+            location = "project-repo"
+        "###;
+        fs::write(project_dir.join(".alcove/policy.toml"), policy_toml).unwrap();
+
+        // No repo path — file can't be found
+        let (_, results) = validate(tmp.path(), project, None).unwrap();
+        assert_eq!(results[0].status, FileStatus::Fail);
+        assert_eq!(results[0].reason.as_deref(), Some("file_not_found"));
+    }
+
+    #[test]
+    fn file_status_as_str() {
+        assert_eq!(FileStatus::Pass.as_str(), "pass");
+        assert_eq!(FileStatus::Warn.as_str(), "warn");
+        assert_eq!(FileStatus::Fail.as_str(), "fail");
+    }
+
+    #[test]
+    fn default_policy_has_all_core_files() {
+        let policy = default_policy();
+        let core = load_config().core_files();
+        assert_eq!(policy.policy.required.len(), core.len());
+        for (req, name) in policy.policy.required.iter().zip(core.iter()) {
+            assert_eq!(&req.name, name);
+        }
+    }
 }
