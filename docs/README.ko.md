@@ -62,6 +62,8 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 - **한 번 설정, 모든 에이전트** — 한 번 설정하면 모든 MCP 호환 에이전트가 동일한 접근 권한을 얻음
 - **CWD 기반 프로젝트 자동 감지** — 프로젝트별 설정 불필요
 - **범위 지정 접근** — 각 프로젝트는 자신의 문서만 볼 수 있음
+- **스마트 검색** — BM25 랭킹 검색과 자동 인덱싱; 가장 관련성 높은 문서를 먼저 찾고, 필요 시 grep으로 폴백
+- **크로스 프로젝트 검색** — `scope: "global"`로 모든 프로젝트를 한 번에 검색 — 개인 지식 베이스로 활용
 - **프라이빗 문서는 프라이빗으로 유지** — 민감한 문서(시크릿 맵, 내부 결정, 기술 부채)가 공개 저장소에 들어가지 않음
 - **표준화된 문서 구조** — `policy.toml`로 모든 프로젝트와 팀에 일관된 문서를 적용
 - **크로스 레포 감사** — 프로젝트 저장소에 잘못 배치된 내부 문서를 찾아 수정 제안
@@ -75,6 +77,8 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 | 내부 문서가 Notion, Google Docs, 로컬 파일에 흩어져 있음 | 하나의 문서 저장소, 프로젝트별로 구조화 |
 | 각 AI 에이전트마다 문서 접근을 별도로 설정 | 한 번 설정, 모든 에이전트가 동일한 접근 공유 |
 | 프로젝트를 전환하면 문서 컨텍스트를 잃음 | CWD 자동 감지, 즉시 프로젝트 전환 |
+| 에이전트 검색이 무작위 매칭 줄을 반환 | BM25 랭킹 검색 — 최적 매치 우선, 자동 인덱싱 |
+| "인증 관련 노트 전부 검색" — 불가능 | 글로벌 검색으로 모든 프로젝트를 한 번에 쿼리 |
 | 민감한 문서가 프로젝트 저장소에 섞여 있거나 여기저기 흩어져 있음 | 프라이빗 문서는 프로젝트 저장소와 물리적으로 분리 |
 | 프로젝트와 팀원마다 문서 구조가 다름 | `policy.toml`로 모든 프로젝트에 표준 적용 |
 | 문서가 완성되었는지 확인할 방법이 없음 | `validate`가 누락된 파일, 빈 템플릿, 누락된 섹션을 감지 |
@@ -127,18 +131,25 @@ flowchart LR
 
     subgraph MCP["Alcove MCP 서버"]
         T1(overview)
-        T2(search)
+        T2("search (BM25 + grep)")
         T3(get_file)
         T4(audit)
         T5(init)
         T6(list)
         T7(validate)
+        T8(rebuild_index)
+    end
+
+    subgraph Index["검색 인덱스"]
+        IDX["tantivy BM25\n(자동 빌드)"]
     end
 
     A1 -- "CWD 감지" --> D1
     A2 -- "CWD 감지" --> D2
     Agents -- "stdio MCP" --> MCP
     MCP -- "읽기 전용" --> Docs
+    MCP -- "랭킹 검색" --> Index
+    Index -. "빌드 소스" .-> Docs
 ```
 
 문서는 별도 디렉토리(`DOCS_ROOT`)에 프로젝트별 폴더로 정리됩니다. Alcove는 거기서 읽어 stdio를 통해 MCP 호환 AI 에이전트에게 제공합니다. 에이전트는 `get_doc_file("PRD.md")` 같은 도구를 호출하여 어떤 에이전트를 사용하든 프로젝트별 답변을 얻습니다.
@@ -161,12 +172,13 @@ Alcove는 문서를 다음과 같이 분류합니다:
 | 도구 | 기능 |
 |------|------|
 | `get_project_docs_overview` | 분류 및 크기와 함께 모든 문서 목록 표시 |
-| `search_project_docs` | doc-repo와 프로젝트 저장소 양쪽에서 키워드 검색 |
+| `search_project_docs` | 스마트 검색 — BM25 랭킹 또는 grep 자동 선택, `scope: "global"`로 크로스 프로젝트 검색 지원 |
 | `get_doc_file` | 경로로 특정 문서 읽기 (대용량 파일은 `offset`/`limit` 지원) |
 | `list_projects` | 문서 저장소의 모든 프로젝트 표시 |
 | `audit_project` | 크로스 레포 감사 — doc-repo와 로컬 프로젝트 디렉토리를 스캔하고 조치 제안 |
 | `init_project` | 새 프로젝트 문서 스캐폴딩 (내부+외부 문서, 선택적 파일 생성) |
 | `validate_docs` | 팀 정책(`policy.toml`)에 따라 문서 검증 |
+| `rebuild_index` | 전문 검색 인덱스 재빌드 (보통 자동) |
 
 ## CLI
 
@@ -174,8 +186,29 @@ Alcove는 문서를 다음과 같이 분류합니다:
 alcove              MCP 서버 시작 (에이전트가 호출)
 alcove setup        대화형 설정 — 언제든 다시 실행하여 재설정
 alcove validate     정책에 따라 문서 검증 (--format json, --exit-code)
+alcove index        검색 인덱스 빌드 또는 재빌드
+alcove search       터미널에서 문서 검색
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
 ```
+
+## 검색
+
+Alcove는 자동으로 최적의 검색 전략을 선택합니다. 검색 인덱스가 존재하면 **BM25 랭킹 검색** ([tantivy](https://github.com/quickwit-oss/tantivy) 기반)을 사용하여 관련도 점수로 정렬된 결과를 반환합니다. 인덱스가 없으면 grep으로 폴백합니다. 사용자가 신경 쓸 필요 없습니다.
+
+```bash
+# 현재 프로젝트 검색 (CWD에서 자동 감지)
+alcove search "authentication flow"
+
+# 모든 프로젝트를 한 번에 검색 — 개인 지식 베이스
+alcove search "OAuth token refresh" --scope global
+
+# 정확한 부분 문자열 매칭이 필요하면 grep 모드 강제
+alcove search "FR-023" --mode grep
+```
+
+인덱스는 MCP 서버 시작 시 백그라운드에서 자동으로 빌드되며, 파일 변경을 감지하면 자동으로 재빌드합니다. 크론 잡도, 수동 작업도 필요 없습니다.
+
+**에이전트 사용법:** 에이전트는 쿼리로 `search_project_docs`를 호출하기만 하면 됩니다. Alcove가 랭킹, 중복 제거(파일당 하나의 결과), 크로스 프로젝트 검색, 폴백을 모두 처리합니다. 에이전트가 검색 모드를 선택할 필요가 없습니다.
 
 ## 프로젝트 감지
 

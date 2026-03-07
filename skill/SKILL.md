@@ -19,6 +19,10 @@ triggers:
   - clean up docs
   - audit docs
   - document cleanup
+  - search all projects
+  - find across projects
+  - knowledge base
+  - previously saved notes
 ---
 
 # Alcove
@@ -71,10 +75,27 @@ List all docs with tier classification. **Call this first** to see what's availa
 
 ### `search_project_docs`
 
-Case-insensitive keyword search across all project docs. Use for:
+Case-insensitive keyword search across project docs. Use for:
 - Finding where a specific feature/component is documented
 - Locating decision rationale
 - Checking if a convention exists
+
+**Parameters:**
+- `query` (required) — search keyword
+- `scope` (optional) — `"project"` (default, CWD only) or `"global"` (all projects)
+- `mode` (optional) — `"grep"` (default) or `"ranked"` (BM25 relevance scoring)
+- `limit` (optional) — max results (default: 20)
+
+**When to use global scope:**
+- User says "all projects", "everywhere", "across projects"
+- User references previously saved notes, knowledge, or past decisions
+- User wants to compare how different projects handle the same topic
+- User asks in Korean: "전체", "모든 프로젝트", "다른 프로젝트에서는"
+
+**When to use ranked mode:**
+- Large doc sets where grep returns too many results
+- User needs the most relevant matches, not all matches
+- Run `rebuild_index` first if index is stale
 
 ### `get_doc_file`
 
@@ -99,9 +120,13 @@ Audit docs across both alcove and the project repository. Returns:
 
 Use to organize documentation or before `init_project` to understand gaps.
 
+### `rebuild_index`
+
+Build or rebuild the BM25 full-text search index. Required for `mode: "ranked"` search. Index is automatically built after `init_project`, but run this manually after bulk document changes.
+
 ### `init_project`
 
-Initialize docs for a new project from the standard template.
+Initialize docs for a new project from the standard template. Automatically rebuilds the search index.
 
 **Arguments:**
 - `project_name` (required) — folder name in alcove

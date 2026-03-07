@@ -24,17 +24,19 @@
   <a href="https://buymeacoffee.com/epicsaga"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee" /></a>
 </p>
 
-Alcove es un servidor MCP que ofrece a los agentes de IA acceso de solo lectura y con alcance limitado a la documentacion privada de tu proyecto, sin exponerla en repositorios publicos.
+Alcove permite que cualquier agente de codificacion con IA lea la documentacion privada de tu proyecto, sin exponerla en repositorios publicos.
+
+Guarda PRDs, decisiones de arquitectura, mapas de secretos y runbooks internos en un solo lugar. Cada agente compatible con MCP obtiene el mismo acceso, en todos los proyectos, sin configuracion por proyecto.
 
 ## El problema
 
-Estas desarrollando varios proyectos simultaneamente, alternando entre diferentes agentes de IA. Cada proyecto tiene documentacion interna -- PRDs, decisiones de arquitectura, guias de despliegue, mapas de secretos -- que no deberia estar en tu repositorio publico de GitHub.
+Tienes documentos internos que no deberian estar en tu repositorio publico de GitHub. Pero tu agente de IA no puede ayudarte correctamente si no puede leerlos — inventa requisitos e ignora restricciones que ya documentaste.
 
-Pero tu agente de IA no puede ayudarte correctamente si no puede leerlos. Inventa requisitos. Ignora restricciones que ya documentaste. Y cada vez que cambias de agente o de proyecto, pierdes el contexto.
+Multiplica eso por varios proyectos y varios agentes. Cada uno tiene diferente configuracion. Cada vez que cambias, pierdes el contexto. Y no hay una forma estandar de organizar o validar nada.
 
 ## Como Alcove resuelve esto
 
-Alcove mantiene toda tu documentacion privada en **un unico repositorio compartido**, organizado por proyecto. Cualquier agente compatible con MCP accede de la misma manera, ya sea que estes en Claude Code, Cursor, Gemini CLI o Codex.
+Alcove mantiene toda tu documentacion privada en **un unico repositorio compartido**, organizado por proyecto. Cualquier agente compatible con MCP accede de la misma manera — ya sea Claude Code, Cursor, Gemini CLI o Codex.
 
 ```
 ~/projects/my-app $ claude "como esta implementada la autenticacion?"
@@ -56,15 +58,17 @@ Alcove mantiene toda tu documentacion privada en **un unico repositorio comparti
 
 ## Que hace
 
-- **Un repositorio de documentos, multiples proyectos** -- documentos privados organizados por proyecto, gestionados en un solo lugar
-- **Una configuracion, cualquier agente** -- configura una vez, cada agente compatible con MCP obtiene el mismo acceso
-- **Detecta tu proyecto automaticamente** desde CWD -- no se necesita configuracion por proyecto
-- **Acceso con alcance limitado** -- cada proyecto solo ve sus propios documentos
-- **Los documentos privados permanecen privados** -- documentos sensibles (mapa de secretos, decisiones internas, deuda tecnica) nunca tocan tu repositorio publico
-- **Estructura de documentos estandarizada** -- `policy.toml` impone documentacion consistente en todos los proyectos y equipos
-- **Auditoria entre repositorios** -- detecta documentos internos publicados accidentalmente en GitHub y sugiere correcciones
-- **Validacion de documentos** -- verifica archivos faltantes, plantillas sin completar, secciones requeridas
-- **Funciona con mas de 8 agentes** -- Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Antigravity, Gemini CLI
+- **Un repositorio de documentos, multiples proyectos** — documentos privados organizados por proyecto, gestionados en un solo lugar
+- **Una configuracion, cualquier agente** — configura una vez, cada agente compatible con MCP obtiene el mismo acceso
+- **Detecta tu proyecto automaticamente** desde CWD — no se necesita configuracion por proyecto
+- **Acceso con alcance limitado** — cada proyecto solo ve sus propios documentos
+- **Busqueda inteligente** — busqueda BM25 con ranking e indexacion automatica; encuentra los documentos mas relevantes primero, recurre a grep cuando es necesario
+- **Busqueda entre proyectos** — busca en todos los proyectos a la vez con `scope: "global"` — usalo como base de conocimiento personal
+- **Los documentos privados permanecen privados** — documentos sensibles (mapa de secretos, decisiones internas, deuda tecnica) nunca tocan tu repositorio publico
+- **Estructura de documentos estandarizada** — `policy.toml` impone documentacion consistente en todos los proyectos y equipos
+- **Auditoria entre repositorios** — detecta documentos internos mal ubicados en tu repositorio de proyecto y sugiere correcciones
+- **Validacion de documentos** — verifica archivos faltantes, plantillas sin completar, secciones requeridas
+- **Funciona con mas de 8 agentes** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Antigravity, Gemini CLI
 
 ## Por que Alcove
 
@@ -73,6 +77,8 @@ Alcove mantiene toda tu documentacion privada en **un unico repositorio comparti
 | Documentos internos dispersos en Notion, Google Docs, archivos locales | Un repositorio de documentos, estructurado por proyecto |
 | Cada agente de IA configurado por separado para acceder a documentos | Una configuracion, todos los agentes comparten el mismo acceso |
 | Cambiar de proyecto significa perder el contexto documental | Deteccion automatica por CWD, cambio instantaneo de proyecto |
+| Las busquedas del agente devuelven lineas aleatorias | Busqueda BM25 con ranking — mejores coincidencias primero, indexacion automatica |
+| "Buscar todas mis notas sobre autenticacion" — imposible | Busqueda global en todos los proyectos en una sola consulta |
 | Documentos sensibles con riesgo de filtrarse en repositorios publicos | Documentos privados fisicamente separados de los repositorios del proyecto |
 | La estructura de documentos varia por proyecto y miembro del equipo | `policy.toml` impone estandares en todos los proyectos |
 | Sin forma de verificar si los documentos estan completos | `validate` detecta archivos faltantes, plantillas vacias, secciones ausentes |
@@ -125,54 +131,94 @@ flowchart LR
 
     subgraph MCP["Servidor MCP Alcove"]
         T1(overview)
-        T2(search)
+        T2("search (BM25 + grep)")
         T3(get_file)
         T4(audit)
         T5(init)
         T6(list)
         T7(validate)
+        T8(rebuild_index)
+    end
+
+    subgraph Index["Indice de busqueda"]
+        IDX["tantivy BM25\n(auto-construido)"]
     end
 
     A1 -- "CWD detectado" --> D1
     A2 -- "CWD detectado" --> D2
     Agents -- "stdio MCP" --> MCP
     MCP -- "solo lectura" --> Docs
+    MCP -- "busqueda con ranking" --> Index
+    Index -. "construido desde" .-> Docs
 ```
 
 Tus documentos estan organizados en un directorio separado (`DOCS_ROOT`), una carpeta por proyecto. Alcove lee desde ahi y lo sirve a cualquier agente de IA compatible con MCP a traves de stdio. Tu agente llama a herramientas como `get_doc_file("PRD.md")` y obtiene respuestas especificas del proyecto, independientemente del agente que estes usando.
 
 ## Clasificacion de documentos
 
-Alcove clasifica los documentos en tres niveles:
+Alcove clasifica los documentos en los siguientes niveles:
 
 | Clasificacion | Donde se encuentra | Ejemplos |
 |---------------|-------------------|----------|
 | **doc-repo-required** | Alcove (privado) | PRD, Arquitectura, Decisiones, Convenciones |
 | **doc-repo-supplementary** | Alcove (privado) | Despliegue, Incorporacion, Pruebas, Guia operativa |
+| **reference** | Alcove carpeta `reports/` | Informes de auditoria, benchmarks, analisis |
 | **project-repo** | Tu repositorio de GitHub (publico) | README, CHANGELOG, CONTRIBUTING |
 
-La herramienta `audit` verifica ambas ubicaciones y sugiere acciones, como generar un README publico a partir de tu PRD privado, o mover informes mal ubicados de vuelta a Alcove.
+La herramienta `audit` escanea tanto el repositorio de documentos como el directorio local del proyecto, y sugiere acciones — como generar un README publico a partir de tu PRD privado, o mover informes mal ubicados de vuelta a Alcove.
 
 ## Herramientas MCP
 
 | Herramienta | Que hace |
 |-------------|----------|
 | `get_project_docs_overview` | Lista todos los documentos con clasificacion y tamanos |
-| `search_project_docs` | Busqueda por palabras clave en todos los documentos del proyecto |
-| `get_doc_file` | Lee un documento especifico por ruta |
+| `search_project_docs` | Busqueda inteligente — selecciona automaticamente BM25 con ranking o grep, soporta `scope: "global"` para busqueda entre proyectos |
+| `get_doc_file` | Lee un documento especifico por ruta (soporta `offset`/`limit` para archivos grandes) |
 | `list_projects` | Muestra todos los proyectos en tu repositorio de documentos |
-| `audit_project` | Auditoria entre repositorios con acciones sugeridas |
-| `init_project` | Genera la estructura de documentos para un nuevo proyecto a partir de una plantilla |
+| `audit_project` | Auditoria entre repositorios — escanea el repo de documentos y el proyecto local, sugiere acciones |
+| `init_project` | Genera la estructura de documentos para un nuevo proyecto (documentos internos+externos, creacion selectiva) |
 | `validate_docs` | Valida documentos contra la politica del equipo (`policy.toml`) |
+| `rebuild_index` | Reconstruye el indice de busqueda de texto completo (normalmente automatico) |
 
 ## CLI
 
 ```
 alcove              Iniciar el servidor MCP (los agentes lo invocan)
-alcove setup        Configuracion interactiva -- ejecuta en cualquier momento para reconfigurar
+alcove setup        Configuracion interactiva — ejecuta en cualquier momento para reconfigurar
 alcove validate     Validar documentos contra la politica (--format json, --exit-code)
+alcove index        Construir o reconstruir el indice de busqueda
+alcove search       Buscar documentos desde la terminal
 alcove uninstall    Eliminar habilidades, configuracion y archivos heredados
 ```
+
+## Busqueda
+
+Alcove selecciona automaticamente la mejor estrategia de busqueda. Cuando el indice de busqueda existe, usa **busqueda BM25 con ranking** (impulsada por [tantivy](https://github.com/quickwit-oss/tantivy)) para resultados ordenados por relevancia. Cuando no existe, recurre a grep. No necesitas preocuparte por ello.
+
+```bash
+# Buscar en el proyecto actual (auto-detectado desde CWD)
+alcove search "authentication flow"
+
+# Buscar en TODOS los proyectos — tu base de conocimiento personal
+alcove search "OAuth token refresh" --scope global
+
+# Forzar modo grep si necesitas coincidencia exacta de subcadenas
+alcove search "FR-023" --mode grep
+```
+
+El indice se construye automaticamente en segundo plano cuando el servidor MCP se inicia, y se reconstruye cuando detecta cambios en los archivos. Sin cron jobs, sin pasos manuales.
+
+**Como funciona para agentes:** los agentes simplemente llaman a `search_project_docs` con una consulta. Alcove se encarga del resto — ranking, deduplicacion (un resultado por archivo), busqueda entre proyectos y fallback. El agente nunca necesita elegir un modo de busqueda.
+
+## Deteccion de proyecto
+
+Por defecto, Alcove detecta el proyecto actual desde el directorio de trabajo de tu terminal (CWD). Puedes sobreescribirlo con la variable de entorno `MCP_PROJECT_NAME`:
+
+```bash
+MCP_PROJECT_NAME=my-api alcove
+```
+
+Util cuando tu CWD no coincide con un nombre de proyecto en tu repositorio de documentos.
 
 ## Politica de documentos
 
@@ -199,7 +245,7 @@ name = "ARCHITECTURE.md"
   min_items = 2
 ```
 
-Los archivos de politica se resuelven con prioridad: **proyecto** > **equipo** > **por defecto**. Esto asegura una calidad documental consistente en todos tus proyectos, permitiendo al mismo tiempo excepciones por proyecto.
+Los archivos de politica se resuelven con prioridad: **proyecto** (`<project>/.alcove/policy.toml`) > **equipo** (`DOCS_ROOT/.alcove/policy.toml`) > **por defecto** (lista de archivos core de config.toml). Esto asegura calidad documental consistente en todos tus proyectos, permitiendo excepciones por proyecto.
 
 ## Configuracion
 
@@ -229,11 +275,11 @@ Todo esto se configura de forma interactiva con `alcove setup`. Tambien puedes e
 |--------|-----|-----------|
 | Claude Code | `~/.claude.json` | `~/.claude/skills/alcove/` |
 | Cursor | `~/.cursor/mcp.json` | `~/.cursor/skills/alcove/` |
-| Claude Desktop | configuracion de plataforma | -- |
-| Cline (VS Code) | VS Code globalStorage | -- |
+| Claude Desktop | configuracion de plataforma | — |
+| Cline (VS Code) | VS Code globalStorage | — |
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
-| Codex CLI | `~/.codex/config.toml` | -- |
-| Antigravity | `~/.antigravity/settings.json` | -- |
+| Codex CLI | `~/.codex/config.toml` | — |
+| Antigravity | `~/.antigravity/settings.json` | — |
 | Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/skills/alcove/` |
 
 ## Idiomas compatibles
@@ -255,7 +301,7 @@ La CLI detecta automaticamente la configuracion regional de tu sistema. Tambien 
 
 ```bash
 # Sobreescribir idioma
-ALCOVE_LANG=ko alcove setup
+ALCOVE_LANG=es alcove setup
 ```
 
 ## Actualizar

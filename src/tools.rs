@@ -188,6 +188,8 @@ pub fn tool_overview(project_root: &Path, project_name: &str, detected_via: &str
 #[derive(Debug, Deserialize)]
 struct SearchArgs {
     query: String,
+    #[serde(default)]
+    scope: Option<String>,
     #[serde(default = "default_search_limit")]
     limit: usize,
 }
@@ -283,6 +285,70 @@ pub fn tool_search(project_root: &Path, args_value: Value, repo_path: Option<&Pa
 
     let truncated = matches.len() >= args.limit;
     Ok(json!({ "query": args.query, "matches": matches, "truncated": truncated }))
+}
+
+/// Global search across all projects in docs_root.
+pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> {
+    let args: SearchArgs = serde_json::from_value(args_value)
+        .context("search_project_docs requires { query, scope?, limit? }")?;
+
+    let query_lower = args.query.to_lowercase();
+    let mut matches = Vec::new();
+
+    let entries = std::fs::read_dir(docs_root)
+        .context("Failed to read DOCS_ROOT directory")?;
+
+    for entry in entries.flatten() {
+        if matches.len() >= args.limit {
+            break;
+        }
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
+            continue;
+        }
+
+        for walk_entry in WalkDir::new(&path)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
+        {
+            if matches.len() >= args.limit {
+                break;
+            }
+            let file_path = walk_entry.path();
+            let content = std::fs::read_to_string(file_path).unwrap_or_default();
+            let rel = file_path
+                .strip_prefix(&path)
+                .unwrap_or(file_path)
+                .to_string_lossy()
+                .to_string();
+
+            for (idx, line) in content.lines().enumerate() {
+                if line.to_lowercase().contains(&query_lower) {
+                    matches.push(json!({
+                        "project": name,
+                        "file": rel,
+                        "line": idx + 1,
+                        "snippet": line.trim(),
+                    }));
+                    if matches.len() >= args.limit {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let truncated = matches.len() >= args.limit;
+    Ok(json!({ "query": args.query, "scope": "global", "matches": matches, "truncated": truncated }))
 }
 
 // ---------------------------------------------------------------------------
@@ -1676,5 +1742,108 @@ mod tests {
         // matching the project name. A random name should not match.
         let result = detect_repo_path("__nonexistent_project_name_xyz__");
         assert!(result.is_none(), "should return None for unrelated project name");
+    }
+
+    // -- tool_search_global --
+
+    fn setup_multi_project_root() -> TempDir {
+        let tmp = TempDir::new().unwrap();
+        // Project 1: backend
+        let backend = tmp.path().join("backend");
+        fs::create_dir_all(&backend).unwrap();
+        fs::write(backend.join("PRD.md"), "# Backend PRD\n\nAuthentication flow using OAuth.").unwrap();
+        fs::write(backend.join("ARCHITECTURE.md"), "# Backend Architecture\n\nMicroservices design.").unwrap();
+        // Project 2: frontend
+        let frontend = tmp.path().join("frontend");
+        fs::create_dir_all(&frontend).unwrap();
+        fs::write(frontend.join("PRD.md"), "# Frontend PRD\n\nLogin page with OAuth integration.").unwrap();
+        // Project 3: notes (knowledge base)
+        let notes = tmp.path().join("notes");
+        fs::create_dir_all(&notes).unwrap();
+        fs::write(notes.join("k8s-tips.md"), "# K8s Tips\n\nTroubleshooting CrashLoopBackOff.").unwrap();
+        fs::write(notes.join("oauth-memo.md"), "# OAuth Memo\n\nOAuth 2.0 refresh token flow.").unwrap();
+        // Hidden/template dirs (should be skipped)
+        fs::create_dir_all(tmp.path().join(".hidden")).unwrap();
+        fs::write(tmp.path().join(".hidden/secret.md"), "# Secret").unwrap();
+        fs::create_dir_all(tmp.path().join("_template")).unwrap();
+        fs::write(tmp.path().join("_template/TEMPLATE.md"), "# Template").unwrap();
+        tmp
+    }
+
+    #[test]
+    fn global_search_finds_across_projects() {
+        let tmp = setup_multi_project_root();
+        let args = json!({"query": "OAuth", "scope": "global"});
+        let result = tool_search_global(tmp.path(), args).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        // OAuth appears in backend, frontend, and notes
+        let projects: Vec<&str> = matches.iter()
+            .filter_map(|m| m["project"].as_str())
+            .collect();
+        assert!(projects.contains(&"backend"), "should find in backend");
+        assert!(projects.contains(&"frontend"), "should find in frontend");
+        assert!(projects.contains(&"notes"), "should find in notes");
+    }
+
+    #[test]
+    fn global_search_returns_scope_field() {
+        let tmp = setup_multi_project_root();
+        let args = json!({"query": "OAuth", "scope": "global"});
+        let result = tool_search_global(tmp.path(), args).unwrap();
+        assert_eq!(result["scope"], "global");
+    }
+
+    #[test]
+    fn global_search_includes_project_field() {
+        let tmp = setup_multi_project_root();
+        let args = json!({"query": "K8s", "scope": "global"});
+        let result = tool_search_global(tmp.path(), args).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        assert!(!matches.is_empty());
+        // Every match must have a project field
+        for m in matches {
+            assert!(m["project"].is_string(), "each match must have project field");
+        }
+    }
+
+    #[test]
+    fn global_search_respects_limit() {
+        let tmp = setup_multi_project_root();
+        let args = json!({"query": "#", "scope": "global", "limit": 2});
+        let result = tool_search_global(tmp.path(), args).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(result["truncated"], true);
+    }
+
+    #[test]
+    fn global_search_skips_hidden_and_template() {
+        let tmp = setup_multi_project_root();
+        let args = json!({"query": "Secret", "scope": "global"});
+        let result = tool_search_global(tmp.path(), args).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        let projects: Vec<&str> = matches.iter()
+            .filter_map(|m| m["project"].as_str())
+            .collect();
+        assert!(!projects.contains(&".hidden"), "should skip hidden dirs");
+        assert!(!projects.contains(&"_template"), "should skip template dirs");
+    }
+
+    #[test]
+    fn global_search_no_results() {
+        let tmp = setup_multi_project_root();
+        let args = json!({"query": "zzz_nonexistent_zzz", "scope": "global"});
+        let result = tool_search_global(tmp.path(), args).unwrap();
+        assert!(result["matches"].as_array().unwrap().is_empty());
+        assert_eq!(result["truncated"], false);
+    }
+
+    #[test]
+    fn global_search_case_insensitive() {
+        let tmp = setup_multi_project_root();
+        let args = json!({"query": "oauth", "scope": "global"});
+        let result = tool_search_global(tmp.path(), args).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        assert!(matches.len() >= 3, "case-insensitive should find OAuth matches");
     }
 }

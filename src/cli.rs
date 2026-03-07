@@ -7,7 +7,7 @@ use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
 use rust_i18n::t;
 
 use crate::config::{
-    config_path, load_config, DocConfig,
+    config_path, default_docs_root, load_config, DocConfig,
     DOC_REPO_REQUIRED, DOC_REPO_SUPPLEMENTARY, PROJECT_REPO_FILES,
 };
 
@@ -119,7 +119,7 @@ fn resolve_docs_root_interactive() -> Result<PathBuf> {
     prompt_docs_root(current.as_deref())
 }
 
-/// Return saved docs root from env or config.toml (no prompt).
+/// Return saved docs root from env or config.toml, falling back to default.
 fn saved_docs_root() -> Option<PathBuf> {
     if let Ok(v) = std::env::var("DOCS_ROOT") {
         let p = PathBuf::from(&v);
@@ -132,24 +132,33 @@ fn saved_docs_root() -> Option<PathBuf> {
         && p.is_dir() {
             return Some(p);
         }
+    // Fall back to default docs root if it exists
+    let fallback = default_docs_root();
+    if fallback.is_dir() {
+        return Some(fallback);
+    }
     None
 }
 
 /// Interactive prompt for docs root. Shows `default` as pre-filled value if provided.
+/// Falls back to `~/.config/alcove/docs` when no previous value exists.
 fn prompt_docs_root(default: Option<&Path>) -> Result<PathBuf> {
     let theme = ColorfulTheme::default();
     let prompt = t!("setup.docs_prompt");
-    let input: String = match default {
-        Some(d) => Input::with_theme(&theme)
-            .with_prompt(prompt.as_ref())
-            .default(d.to_string_lossy().into_owned())
-            .interact_text()?,
-        None => Input::with_theme(&theme)
-            .with_prompt(prompt.as_ref())
-            .interact_text()?,
-    };
+    let fallback = default_docs_root();
+    let default_path = default.unwrap_or(&fallback);
+
+    let input: String = Input::with_theme(&theme)
+        .with_prompt(prompt.as_ref())
+        .default(default_path.to_string_lossy().into_owned())
+        .interact_text()?;
 
     let p = PathBuf::from(shellexpand(&input));
+
+    // Auto-create the directory if it doesn't exist (especially for default path)
+    if !p.exists() {
+        std::fs::create_dir_all(&p)?;
+    }
     if !p.is_dir() {
         anyhow::bail!("{}", t!("setup.invalid_path", path = p.display()));
     }
@@ -651,6 +660,184 @@ fn print_validation_human(
         style(fail).red(),
     );
     println!();
+}
+
+// ---------------------------------------------------------------------------
+// alcove index
+// ---------------------------------------------------------------------------
+
+pub fn cmd_index() -> Result<()> {
+    let docs_root = match saved_docs_root() {
+        Some(p) => p,
+        None => {
+            anyhow::bail!("docs_root is not configured. Run `alcove setup` first.");
+        }
+    };
+
+    println!(
+        "{}",
+        style("Building search index...").bold()
+    );
+
+    let result = crate::index::build_index(&docs_root)?;
+
+    let projects = result["projects"].as_u64().unwrap_or(0);
+    let indexed = result["indexed"].as_u64().unwrap_or(0);
+    let skipped = result["skipped"].as_u64().unwrap_or(0);
+
+    println!(
+        "  {} {} project(s), {} file(s) indexed, {} skipped (unchanged)",
+        style("✓").green(),
+        projects,
+        indexed,
+        skipped,
+    );
+    println!(
+        "  {} {}",
+        style("Index:").dim(),
+        result["index_path"].as_str().unwrap_or("unknown"),
+    );
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// alcove search
+// ---------------------------------------------------------------------------
+
+pub fn cmd_search(query: &str, scope: &str, mode: &str, limit: usize) -> Result<()> {
+    let docs_root = match saved_docs_root() {
+        Some(p) => p,
+        None => {
+            anyhow::bail!("docs_root is not configured. Run `alcove setup` first.");
+        }
+    };
+
+    let use_ranked = match mode {
+        "grep" => false,
+        "ranked" => true,
+        _ => {
+            // "auto": use ranked if index exists or can be built
+            let index_dir = docs_root.join(".alcove").join("index");
+            index_dir.exists() || crate::index::is_index_stale(&docs_root)
+        }
+    };
+
+    let result = if use_ranked {
+        // Auto-rebuild index if stale or missing
+        if crate::index::is_index_stale(&docs_root) {
+            eprintln!("{}", style("Rebuilding search index...").dim());
+            let _ = crate::index::build_index(&docs_root);
+        }
+        let project_filter = if scope == "global" {
+            None
+        } else {
+            crate::tools::resolve_project(&docs_root).map(|r| r.name)
+        };
+        match crate::index::search_indexed(&docs_root, query, limit, project_filter.as_deref()) {
+            Ok(v) => {
+                let matches = v["matches"].as_array();
+                if matches.is_some_and(|m| !m.is_empty()) {
+                    v
+                } else {
+                    // Ranked returned 0 results → fallback to grep
+                    run_grep_search(&docs_root, query, scope, limit)?
+                }
+            }
+            Err(_) => {
+                // Index error → fallback to grep
+                if mode != "ranked" {
+                    // Only show warning in auto mode, not when user explicitly chose ranked
+                    eprintln!(
+                        "{}",
+                        style("Index unavailable, falling back to grep.").yellow()
+                    );
+                }
+                run_grep_search(&docs_root, query, scope, limit)?
+            }
+        }
+    } else {
+        run_grep_search(&docs_root, query, scope, limit)?
+    };
+
+    let empty = vec![];
+    let matches = result["matches"].as_array().unwrap_or(&empty);
+
+    if matches.is_empty() {
+        println!("{}", style("No results found.").dim());
+        return Ok(());
+    }
+
+    println!(
+        "{} {} result(s) for {}",
+        style("Found").bold(),
+        matches.len(),
+        style(format!("\"{}\"", query)).cyan(),
+    );
+    if result.get("mode").and_then(|v| v.as_str()) == Some("ranked") {
+        println!("{}", style("  (ranked by BM25 relevance)").dim());
+    }
+    println!();
+
+    for m in matches {
+        let project = m.get("project").and_then(|v| v.as_str());
+        let file = m.get("file").and_then(|v| v.as_str()).unwrap_or("?");
+        let line = m.get("line").or(m.get("line_start"));
+        let snippet = m.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+        let score = m.get("score").and_then(|v| v.as_f64());
+
+        let location = if let Some(proj) = project {
+            format!("{}:{}", style(proj).green(), style(file).cyan())
+        } else {
+            style(file).cyan().to_string()
+        };
+
+        let line_info = line
+            .and_then(|v| v.as_u64())
+            .map(|l| format!(":{l}"))
+            .unwrap_or_default();
+
+        let score_info = score
+            .map(|s| format!(" {}", style(format!("[{s:.3}]")).dim()))
+            .unwrap_or_default();
+
+        println!("  {}{}{}", location, style(line_info).dim(), score_info);
+
+        // Show snippet (truncate long lines, respecting char boundaries)
+        let display = if snippet.chars().count() > 120 {
+            let truncated: String = snippet.chars().take(117).collect();
+            format!("{truncated}...")
+        } else {
+            snippet.to_string()
+        };
+        println!("    {}", style(display).dim());
+    }
+
+    if result.get("truncated") == Some(&serde_json::json!(true)) {
+        println!();
+        println!("{}", style("  (results truncated, use --limit to see more)").dim());
+    }
+
+    Ok(())
+}
+
+fn run_grep_search(docs_root: &std::path::Path, query: &str, scope: &str, limit: usize) -> Result<serde_json::Value> {
+    if scope == "global" {
+        crate::tools::tool_search_global(docs_root, serde_json::json!({"query": query, "scope": "global", "limit": limit}))
+    } else {
+        let resolved = crate::tools::resolve_project(docs_root);
+        match resolved {
+            Some(r) => {
+                let project_root = docs_root.join(&r.name);
+                crate::tools::tool_search(&project_root, serde_json::json!({"query": query, "limit": limit}), r.repo_path.as_deref())
+            }
+            None => {
+                anyhow::bail!(
+                    "Could not detect project. Run from within a project directory, set MCP_PROJECT_NAME, or use --scope global."
+                );
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

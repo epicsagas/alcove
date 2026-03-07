@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod index;
 mod mcp;
 mod policy;
 mod tools;
@@ -60,6 +61,22 @@ enum Commands {
         #[arg(long)]
         exit_code: bool,
     },
+    /// Build or rebuild the full-text search index for ranked search
+    Index,
+    /// Search across project docs from the command line
+    Search {
+        /// Search query
+        query: String,
+        /// Search scope: project (default) or global
+        #[arg(long, default_value = "project")]
+        scope: String,
+        /// Search mode: auto (default, ranked if index exists, else grep), grep, or ranked
+        #[arg(long, default_value = "auto")]
+        mode: String,
+        /// Max results
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +98,8 @@ fn main() -> Result<()> {
         Some(Commands::Setup) => cli::cmd_setup(),
         Some(Commands::Uninstall) => cli::cmd_uninstall(),
         Some(Commands::Validate { format, exit_code }) => cli::cmd_validate(&format, exit_code),
+        Some(Commands::Index) => cli::cmd_index(),
+        Some(Commands::Search { query, scope, mode, limit }) => cli::cmd_search(&query, &scope, &mode, limit),
     }
 }
 
@@ -89,6 +108,15 @@ fn main() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn serve() -> Result<()> {
+    // Background index build on server start
+    std::thread::spawn(|| {
+        if let Some(docs_root) = config::load_config().docs_root() {
+            if docs_root.is_dir() {
+                let _ = index::build_index(&docs_root);
+            }
+        }
+    });
+
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 

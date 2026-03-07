@@ -62,6 +62,8 @@ Alcove keeps all your private docs in **one shared repository**, organized by pr
 - **One setup, any agent** — configure once, every MCP-compatible agent gets the same access
 - **Auto-detects your project** from CWD — no per-project config needed
 - **Scoped access** — each project only sees its own docs
+- **Smart search** — BM25 ranked search with auto-indexing; finds the most relevant docs first, falls back to grep when needed
+- **Cross-project search** — search across all projects at once with `scope: "global"` — use it as a personal knowledge base
 - **Private docs stay private** — sensitive docs (secrets map, internal decisions, tech debt) never touch your public repo
 - **Standardized doc structure** — `policy.toml` enforces consistent docs across all projects and teams
 - **Cross-repo audit** — finds internal docs misplaced in your project repo, suggests fixes
@@ -75,6 +77,8 @@ Alcove keeps all your private docs in **one shared repository**, organized by pr
 | Internal docs scattered across Notion, Google Docs, local files | One doc-repo, structured by project |
 | Each AI agent configured separately for doc access | One setup, all agents share the same access |
 | Switching projects means losing doc context | CWD auto-detection, instant project switch |
+| Agent searches return random matching lines | BM25 ranked search — best matches first, auto-indexed |
+| "Search all my notes about auth" — impossible | Global search across every project in one query |
 | Sensitive docs sitting in project repos or scattered locally | Private docs physically separated from project repos |
 | Doc structure differs per project and team member | `policy.toml` enforces standards across all projects |
 | No way to check if docs are complete | `validate` catches missing files, empty templates, missing sections |
@@ -127,18 +131,25 @@ flowchart LR
 
     subgraph MCP["Alcove MCP server"]
         T1(overview)
-        T2(search)
+        T2("search (BM25 + grep)")
         T3(get_file)
         T4(audit)
         T5(init)
         T6(list)
         T7(validate)
+        T8(rebuild_index)
+    end
+
+    subgraph Index["Search index"]
+        IDX["tantivy BM25\n(auto-built)"]
     end
 
     A1 -- "CWD detected" --> D1
     A2 -- "CWD detected" --> D2
     Agents -- "stdio MCP" --> MCP
     MCP -- "read-only" --> Docs
+    MCP -- "ranked search" --> Index
+    Index -. "built from" .-> Docs
 ```
 
 Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove reads from there and serves it to any MCP-compatible AI agent over stdio. Your agent calls tools like `get_doc_file("PRD.md")` and gets project-specific answers — regardless of which agent you're using.
@@ -161,12 +172,13 @@ The `audit` tool scans both your doc-repo and local project directory, then sugg
 | Tool | What it does |
 |------|-------------|
 | `get_project_docs_overview` | List all docs with classification and sizes |
-| `search_project_docs` | Keyword search across doc-repo and project repo |
+| `search_project_docs` | Smart search — auto-selects BM25 ranked or grep, supports `scope: "global"` for cross-project search |
 | `get_doc_file` | Read a specific doc by path (supports `offset`/`limit` for large files) |
 | `list_projects` | Show all projects in your docs repo |
 | `audit_project` | Cross-repo audit — scans doc-repo and local project repo, suggests actions |
 | `init_project` | Scaffold docs for a new project (internal + external docs, selective file creation) |
 | `validate_docs` | Validate docs against team policy (`policy.toml`) |
+| `rebuild_index` | Rebuild the full-text search index (usually automatic) |
 
 ## CLI
 
@@ -174,8 +186,29 @@ The `audit` tool scans both your doc-repo and local project directory, then sugg
 alcove              Start MCP server (agents call this)
 alcove setup        Interactive setup — re-run anytime to reconfigure
 alcove validate     Validate docs against policy (--format json, --exit-code)
+alcove index        Build or rebuild the search index
+alcove search       Search docs from the terminal
 alcove uninstall    Remove skills, config, and legacy files
 ```
+
+## Search
+
+Alcove automatically picks the best search strategy. When the search index exists, it uses **BM25 ranked search** (powered by [tantivy](https://github.com/quickwit-oss/tantivy)) for relevance-scored results. When it doesn't, it falls back to grep. You never have to think about it.
+
+```bash
+# Search the current project (auto-detected from CWD)
+alcove search "authentication flow"
+
+# Search across ALL projects — your personal knowledge base
+alcove search "OAuth token refresh" --scope global
+
+# Force grep mode if you want exact substring matching
+alcove search "FR-023" --mode grep
+```
+
+The index builds automatically in the background when the MCP server starts, and rebuilds when it detects file changes. No cron jobs, no manual steps.
+
+**How it works for agents:** agents just call `search_project_docs` with a query. Alcove handles the rest — ranking, deduplication (one result per file), cross-project search, and fallback. The agent never needs to choose a search mode.
 
 ## Project detection
 

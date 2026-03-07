@@ -133,7 +133,25 @@ impl DocConfig {
     }
 
     pub fn docs_root(&self) -> Option<PathBuf> {
-        self.docs_root.as_ref().map(PathBuf::from)
+        // 1. Explicit config value
+        if let Some(ref root) = self.docs_root {
+            return Some(PathBuf::from(root));
+        }
+        // 2. Fall back to default: ~/.config/alcove/docs
+        let fallback = default_docs_root();
+        if fallback.is_dir() {
+            return Some(fallback);
+        }
+        None
+    }
+}
+
+/// Default docs root: `~/.config/alcove/docs`
+pub fn default_docs_root() -> PathBuf {
+    if let Ok(home) = env::var("HOME") {
+        PathBuf::from(home).join(".config/alcove/docs")
+    } else {
+        PathBuf::from("/nonexistent")
     }
 }
 
