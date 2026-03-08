@@ -86,7 +86,17 @@ Case-insensitive keyword search across project docs. Use for:
 - `mode` (optional) — `"grep"` (default) or `"ranked"` (BM25 relevance scoring)
 - `limit` (optional) — max results (default: 20)
 
-**When to use global scope:**
+**Scope rule — IMPORTANT:**
+- **Default is ALWAYS current project only.** Do NOT scan all projects unless the user explicitly requests it.
+- If the request is ambiguous, ask the user first: "Current project only, or all projects?"
+- Ambiguous phrases that do NOT imply global scope (treat as current project, or ask):
+  - "docs repo", "documentation", "check the docs", "review docs"
+  - "remaining items", "what's missing", "status check", "doc health"
+  - "look through everything", "go over everything", "summarize docs"
+  - "clean up docs", "organize docs", "doc audit"
+- Never assume global scope from vague references to a "docs repo" or "documentation".
+
+**When to use global scope (explicit signals only):**
 - User says "all projects", "everywhere", "across projects"
 - User references previously saved notes, knowledge, or past decisions
 - User wants to compare how different projects handle the same topic
@@ -134,6 +144,13 @@ Initialize docs for a new project from the standard template. Automatically rebu
 - `overwrite` (optional) — overwrite existing files (default: false)
 
 ## Agent Instructions
+
+### Scope principle
+
+**Always scope to the current project unless the user explicitly says otherwise.**
+- Phrases like "check docs", "remaining items", "doc status", "clean up", "audit" → current project only.
+- If the intent is ambiguous between current project and all projects, **ask the user** before proceeding.
+- Only use global scope or scan multiple projects when the user explicitly names them or uses keywords like "all projects", "across projects", "everywhere".
 
 ### Answering project questions
 
