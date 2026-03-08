@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::config::load_config;
 
@@ -63,12 +63,24 @@ pub struct NamingPolicy {
     pub max_length: usize,
 }
 
-fn default_enforce() -> String { "warn".into() }
-fn default_version() -> String { "1".into() }
-fn default_true() -> bool { true }
-fn default_case() -> String { "free".into() }
-fn default_extension() -> String { ".md".into() }
-fn default_max_length() -> usize { 50 }
+fn default_enforce() -> String {
+    "warn".into()
+}
+fn default_version() -> String {
+    "1".into()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_case() -> String {
+    "free".into()
+}
+fn default_extension() -> String {
+    ".md".into()
+}
+fn default_max_length() -> usize {
+    50
+}
 
 // ---------------------------------------------------------------------------
 // Policy resolution
@@ -285,9 +297,9 @@ fn validate_sections(content: &str, sections: &[RequiredSection]) -> Vec<Section
 
     for section in sections {
         let heading_lower = section.heading.to_lowercase();
-        let found = content.lines().any(|line| {
-            line.trim().to_lowercase().starts_with(&heading_lower)
-        });
+        let found = content
+            .lines()
+            .any(|line| line.trim().to_lowercase().starts_with(&heading_lower));
 
         if !found && section.required {
             results.push(SectionResult {
@@ -366,7 +378,11 @@ fn count_list_items_after_heading(content: &str, heading: &str) -> usize {
 // JSON output (for MCP tool)
 // ---------------------------------------------------------------------------
 
-pub fn validation_to_json(policy: &PolicyFile, results: &[ValidationResult], source: &str) -> Value {
+pub fn validation_to_json(
+    policy: &PolicyFile,
+    results: &[ValidationResult],
+    source: &str,
+) -> Value {
     let overall = if results.iter().any(|r| r.status == FileStatus::Fail) {
         "fail"
     } else if results.iter().any(|r| r.status == FileStatus::Warn) {
@@ -375,36 +391,52 @@ pub fn validation_to_json(policy: &PolicyFile, results: &[ValidationResult], sou
         "pass"
     };
 
-    let file_results: Vec<Value> = results.iter().map(|r| {
-        let mut entry = json!({
-            "file": r.file,
-            "status": r.status.as_str(),
-        });
+    let file_results: Vec<Value> = results
+        .iter()
+        .map(|r| {
+            let mut entry = json!({
+                "file": r.file,
+                "status": r.status.as_str(),
+            });
 
-        if let Some(ref reason) = r.reason {
-            entry["reason"] = json!(reason);
-        }
+            if let Some(ref reason) = r.reason {
+                entry["reason"] = json!(reason);
+            }
 
-        if !r.sections.is_empty() {
-            let sections: Vec<Value> = r.sections.iter().map(|s| {
-                let mut sec = json!({
-                    "heading": s.heading,
-                    "status": s.status.as_str(),
-                });
-                if let Some(ref detail) = s.detail {
-                    sec["detail"] = json!(detail);
-                }
-                sec
-            }).collect();
-            entry["sections"] = json!(sections);
-        }
+            if !r.sections.is_empty() {
+                let sections: Vec<Value> = r
+                    .sections
+                    .iter()
+                    .map(|s| {
+                        let mut sec = json!({
+                            "heading": s.heading,
+                            "status": s.status.as_str(),
+                        });
+                        if let Some(ref detail) = s.detail {
+                            sec["detail"] = json!(detail);
+                        }
+                        sec
+                    })
+                    .collect();
+                entry["sections"] = json!(sections);
+            }
 
-        entry
-    }).collect();
+            entry
+        })
+        .collect();
 
-    let pass_count = results.iter().filter(|r| r.status == FileStatus::Pass).count();
-    let warn_count = results.iter().filter(|r| r.status == FileStatus::Warn).count();
-    let fail_count = results.iter().filter(|r| r.status == FileStatus::Fail).count();
+    let pass_count = results
+        .iter()
+        .filter(|r| r.status == FileStatus::Pass)
+        .count();
+    let warn_count = results
+        .iter()
+        .filter(|r| r.status == FileStatus::Warn)
+        .count();
+    let fail_count = results
+        .iter()
+        .filter(|r| r.status == FileStatus::Fail)
+        .count();
 
     json!({
         "status": overall,
@@ -427,8 +459,8 @@ pub fn validation_to_json(policy: &PolicyFile, results: &[ValidationResult], sou
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     fn setup_with_policy(policy_toml: &str) -> (TempDir, String) {
         let tmp = TempDir::new().unwrap();
@@ -456,12 +488,14 @@ mod tests {
 
     #[test]
     fn load_team_policy() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             enforce = "strict"
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         let policy = load_policy(tmp.path(), &project);
         assert_eq!(policy.policy.enforce, "strict");
         assert_eq!(policy.policy.required.len(), 1);
@@ -469,21 +503,27 @@ mod tests {
 
     #[test]
     fn project_policy_overrides_team() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             enforce = "strict"
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         // Create project-level policy
         let proj_policy_dir = tmp.path().join(&project).join(".alcove");
         fs::create_dir_all(&proj_policy_dir).unwrap();
-        fs::write(proj_policy_dir.join("policy.toml"), r###"
+        fs::write(
+            proj_policy_dir.join("policy.toml"),
+            r###"
             [policy]
             enforce = "warn"
             [[policy.required]]
             name = "CUSTOM.md"
-        "###).unwrap();
+        "###,
+        )
+        .unwrap();
 
         let policy = load_policy(tmp.path(), &project);
         assert_eq!(policy.policy.enforce, "warn");
@@ -494,12 +534,14 @@ mod tests {
 
     #[test]
     fn validate_missing_file() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             enforce = "strict"
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         let (_, results) = validate(tmp.path(), &project, None).unwrap();
         assert_eq!(results[0].status, FileStatus::Fail);
         assert_eq!(results[0].reason.as_deref(), Some("file_not_found"));
@@ -507,11 +549,13 @@ mod tests {
 
     #[test]
     fn validate_existing_file() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         let content = format!("# PRD\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
@@ -521,11 +565,13 @@ mod tests {
 
     #[test]
     fn validate_template_unfilled() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         let content = format!("# ProjectName PRD\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
@@ -536,11 +582,13 @@ mod tests {
 
     #[test]
     fn validate_minimal_content() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         fs::write(tmp.path().join(&project).join("PRD.md"), "# PRD\n").unwrap();
 
         let (_, results) = validate(tmp.path(), &project, None).unwrap();
@@ -552,12 +600,14 @@ mod tests {
 
     #[test]
     fn validate_finds_alias() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "PRD.md"
             aliases = ["prd.md", "PRODUCT.md"]
-        "###);
+        "###,
+        );
         let content = format!("# Product\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRODUCT.md"), content).unwrap();
 
@@ -569,7 +619,8 @@ mod tests {
 
     #[test]
     fn validate_sections_pass() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "PRD.md"
@@ -579,7 +630,8 @@ mod tests {
               [[policy.required.sections]]
               heading = "## Goals"
               required = true
-        "###);
+        "###,
+        );
         let content = "# PRD\n\n## Overview\n\nSome overview text here.\n\n## Goals\n\nSome goals text here and more.\n\nExtra content to pass minimal check.";
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
@@ -590,7 +642,8 @@ mod tests {
 
     #[test]
     fn validate_section_missing() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "PRD.md"
@@ -600,18 +653,28 @@ mod tests {
               [[policy.required.sections]]
               heading = "## Missing Section"
               required = true
-        "###);
-        let content = format!("# PRD\n\n## Overview\n\nSome content here.\n\n{}\n\nMore content.", "x".repeat(100));
+        "###,
+        );
+        let content = format!(
+            "# PRD\n\n## Overview\n\nSome content here.\n\n{}\n\nMore content.",
+            "x".repeat(100)
+        );
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
         let (_, results) = validate(tmp.path(), &project, None).unwrap();
         assert_eq!(results[0].status, FileStatus::Fail);
-        assert!(results[0].sections.iter().any(|s| s.status == FileStatus::Fail));
+        assert!(
+            results[0]
+                .sections
+                .iter()
+                .any(|s| s.status == FileStatus::Fail)
+        );
     }
 
     #[test]
     fn validate_section_min_items() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "PRD.md"
@@ -619,8 +682,12 @@ mod tests {
               heading = "## Features"
               required = true
               min_items = 3
-        "###);
-        let content = format!("# PRD\n\n## Features\n\n- Feature 1\n- Feature 2\n\n{}", "x".repeat(100));
+        "###,
+        );
+        let content = format!(
+            "# PRD\n\n## Features\n\n- Feature 1\n- Feature 2\n\n{}",
+            "x".repeat(100)
+        );
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
         let (_, results) = validate(tmp.path(), &project, None).unwrap();
@@ -632,7 +699,8 @@ mod tests {
 
     #[test]
     fn validate_section_min_items_pass() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "PRD.md"
@@ -640,7 +708,8 @@ mod tests {
               heading = "## Features"
               required = true
               min_items = 2
-        "###);
+        "###,
+        );
         let content = "# PRD\n\n## Features\n\n- Feature 1\n- Feature 2\n- Feature 3\n\nExtra content to be over 100 bytes easily here.";
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
@@ -652,12 +721,14 @@ mod tests {
 
     #[test]
     fn validate_project_repo_location() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "CHANGELOG.md"
             location = "project-repo"
-        "###);
+        "###,
+        );
         let repo = TempDir::new().unwrap();
         let content = format!("# Changelog\n\n{}", "x".repeat(200));
         fs::write(repo.path().join("CHANGELOG.md"), content).unwrap();
@@ -668,12 +739,14 @@ mod tests {
 
     #[test]
     fn validate_project_repo_missing() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "CHANGELOG.md"
             location = "project-repo"
-        "###);
+        "###,
+        );
         // No repo path provided
         let (_, results) = validate(tmp.path(), &project, None).unwrap();
         assert_eq!(results[0].status, FileStatus::Fail);
@@ -798,7 +871,8 @@ mod tests {
 
     #[test]
     fn count_items_mixed_dash_and_asterisk() {
-        let content = "## Mixed\n\n- dash item\n* star item\n- another dash\n* another star\n\n## End\n";
+        let content =
+            "## Mixed\n\n- dash item\n* star item\n- another dash\n* another star\n\n## End\n";
         assert_eq!(count_list_items_after_heading(content, "## Mixed"), 4);
     }
 
@@ -815,7 +889,8 @@ mod tests {
 
     #[test]
     fn validate_all_sections_passing() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             enforce = "strict"
             [[policy.required]]
@@ -828,7 +903,8 @@ mod tests {
               heading = "## Goals"
               required = true
               min_items = 1
-        "###);
+        "###,
+        );
         let content = "\
 # PRD
 
@@ -848,19 +924,26 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
         let (_, results) = validate(tmp.path(), &project, None).unwrap();
         assert_eq!(results[0].status, FileStatus::Pass);
         assert_eq!(results[0].sections.len(), 2);
-        assert!(results[0].sections.iter().all(|s| s.status == FileStatus::Pass));
+        assert!(
+            results[0]
+                .sections
+                .iter()
+                .all(|s| s.status == FileStatus::Pass)
+        );
     }
 
     // -- validate: enforce = "strict" vs "relaxed" appears in JSON output --
 
     #[test]
     fn validate_enforce_strict_in_json_output() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             enforce = "strict"
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         let content = format!("# PRD\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
@@ -872,12 +955,14 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
 
     #[test]
     fn validate_enforce_relaxed_in_json_output() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             enforce = "relaxed"
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         let content = format!("# PRD\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
@@ -992,7 +1077,8 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
 
     #[test]
     fn load_policy_with_naming_section() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             enforce = "strict"
 
@@ -1003,7 +1089,8 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
 
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         let policy = load_policy(tmp.path(), &project);
         assert_eq!(policy.policy.enforce, "strict");
         let naming = policy.policy.naming.as_ref().unwrap();
@@ -1016,11 +1103,13 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
 
     #[test]
     fn validate_empty_zero_byte_file() {
-        let (tmp, project) = setup_with_policy(r###"
+        let (tmp, project) = setup_with_policy(
+            r###"
             [policy]
             [[policy.required]]
             name = "PRD.md"
-        "###);
+        "###,
+        );
         fs::write(tmp.path().join(&project).join("PRD.md"), "").unwrap();
 
         let (_, results) = validate(tmp.path(), &project, None).unwrap();

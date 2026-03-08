@@ -7,8 +7,8 @@ use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
 use rust_i18n::t;
 
 use crate::config::{
-    config_path, default_docs_root, load_config, DocConfig,
-    DOC_REPO_REQUIRED, DOC_REPO_SUPPLEMENTARY, PROJECT_REPO_FILES,
+    DOC_REPO_REQUIRED, DOC_REPO_SUPPLEMENTARY, DocConfig, PROJECT_REPO_FILES, config_path,
+    default_docs_root, load_config,
 };
 
 // ---------------------------------------------------------------------------
@@ -28,13 +28,9 @@ enum McpConfig {
         server_key: &'static str,
     },
     /// OpenCode format: { "mcp": { "alcove": { "type": "local", ... } } }
-    OpenCode {
-        path: &'static str,
-    },
+    OpenCode { path: &'static str },
     /// Codex TOML format
-    Codex {
-        path: &'static str,
-    },
+    Codex { path: &'static str },
 }
 
 fn home() -> PathBuf {
@@ -45,12 +41,18 @@ fn agents() -> Vec<AgentDef> {
     vec![
         AgentDef {
             name: "Claude Code",
-            mcp_config: McpConfig::Json { path: "~/.claude.json", server_key: "mcpServers" },
+            mcp_config: McpConfig::Json {
+                path: "~/.claude.json",
+                server_key: "mcpServers",
+            },
             skill_dir: Some("~/.claude/skills/alcove"),
         },
         AgentDef {
             name: "Cursor",
-            mcp_config: McpConfig::Json { path: "~/.cursor/mcp.json", server_key: "mcpServers" },
+            mcp_config: McpConfig::Json {
+                path: "~/.cursor/mcp.json",
+                server_key: "mcpServers",
+            },
             skill_dir: Some("~/.cursor/skills/alcove"),
         },
         AgentDef {
@@ -79,27 +81,40 @@ fn agents() -> Vec<AgentDef> {
         },
         AgentDef {
             name: "OpenCode",
-            mcp_config: McpConfig::OpenCode { path: "~/.config/opencode/opencode.json" },
+            mcp_config: McpConfig::OpenCode {
+                path: "~/.config/opencode/opencode.json",
+            },
             skill_dir: Some("~/.opencode/skills/alcove"),
         },
         AgentDef {
             name: "Codex CLI",
-            mcp_config: McpConfig::Codex { path: "~/.codex/config.toml" },
+            mcp_config: McpConfig::Codex {
+                path: "~/.codex/config.toml",
+            },
             skill_dir: Some("~/.codex/skills/alcove"),
         },
         AgentDef {
             name: "Copilot CLI",
-            mcp_config: McpConfig::Json { path: "~/.copilot/mcp-config.json", server_key: "mcpServers" },
+            mcp_config: McpConfig::Json {
+                path: "~/.copilot/mcp-config.json",
+                server_key: "mcpServers",
+            },
             skill_dir: Some("~/.copilot/skills/alcove"),
         },
         AgentDef {
             name: "Antigravity",
-            mcp_config: McpConfig::Json { path: "~/.gemini/antigravity/mcp_config.json", server_key: "mcpServers" },
+            mcp_config: McpConfig::Json {
+                path: "~/.gemini/antigravity/mcp_config.json",
+                server_key: "mcpServers",
+            },
             skill_dir: None, // skills.txt references external skill dirs
         },
         AgentDef {
             name: "Gemini CLI",
-            mcp_config: McpConfig::Json { path: "~/.gemini/settings.json", server_key: "mcpServers" },
+            mcp_config: McpConfig::Json {
+                path: "~/.gemini/settings.json",
+                server_key: "mcpServers",
+            },
             skill_dir: Some("~/.gemini/skills/alcove"),
         },
     ]
@@ -134,9 +149,10 @@ fn saved_docs_root() -> Option<PathBuf> {
     }
     let cfg = load_config();
     if let Some(p) = cfg.docs_root()
-        && p.is_dir() {
-            return Some(p);
-        }
+        && p.is_dir()
+    {
+        return Some(p);
+    }
     // Fall back to default docs root if it exists
     let fallback = default_docs_root();
     if fallback.is_dir() {
@@ -238,7 +254,12 @@ fn install_skill_to(dir: &Path) -> Result<()> {
 // MCP config writers
 // ---------------------------------------------------------------------------
 
-fn write_json_mcp(config_path: &Path, server_key: &str, binary: &Path, docs_root: &Path) -> Result<()> {
+fn write_json_mcp(
+    config_path: &Path,
+    server_key: &str,
+    binary: &Path,
+    docs_root: &Path,
+) -> Result<()> {
     let mut config: serde_json::Value = if config_path.exists() {
         let content = fs::read_to_string(config_path)?;
         serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
@@ -333,11 +354,17 @@ fn select_agents(prompt: &str) -> Result<Vec<usize>> {
 
 const DIAGRAM_FORMATS: &[(&str, &str)] = &[
     ("mermaid", "Mermaid — GitHub/GitLab native, most popular"),
-    ("plantuml", "PlantUML — Enterprise UML, richest diagram types"),
+    (
+        "plantuml",
+        "PlantUML — Enterprise UML, richest diagram types",
+    ),
     ("d2", "D2 — Modern, clean rendering, Go-based"),
     ("ascii", "ASCII art — Universal, no renderer needed"),
     ("graphviz", "Graphviz (DOT) — Classic graph visualization"),
-    ("structurizr", "Structurizr (C4) — Architecture-focused C4 model"),
+    (
+        "structurizr",
+        "Structurizr (C4) — Architecture-focused C4 model",
+    ),
     ("excalidraw", "Excalidraw — Hand-drawn style, brainstorming"),
 ];
 
@@ -375,7 +402,12 @@ fn select_categories() -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
             |c| c.core_files(),
         ),
         cfg.as_ref().map_or_else(
-            || DOC_REPO_SUPPLEMENTARY.iter().map(|s| s.to_string()).collect(),
+            || {
+                DOC_REPO_SUPPLEMENTARY
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect()
+            },
             |c| c.team_files(),
         ),
         cfg.as_ref().map_or_else(
@@ -404,16 +436,17 @@ fn select_categories() -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
         println!(
             "  {} {}",
             style("✓").green(),
-            t!("setup.category_status", label = cat.label, selected = files.len(), total = items.len())
+            t!(
+                "setup.category_status",
+                label = cat.label,
+                selected = files.len(),
+                total = items.len()
+            )
         );
         results.push(files);
     }
 
-    Ok((
-        results.remove(0),
-        results.remove(0),
-        results.remove(0),
-    ))
+    Ok((results.remove(0), results.remove(0), results.remove(0)))
 }
 
 /// Load config fresh from disk (bypasses OnceLock cache).
@@ -439,13 +472,23 @@ pub fn cmd_setup() -> Result<()> {
 
     // 1. Docs root
     println!();
-    println!("{}", style(format!("── {} ──", t!("setup.docs_repo"))).bold());
+    println!(
+        "{}",
+        style(format!("── {} ──", t!("setup.docs_repo"))).bold()
+    );
     let docs_root = resolve_docs_root_interactive()?;
-    println!("  {} {}", style("✓").green(), t!("setup.docs_root_set", path = docs_root.display()));
+    println!(
+        "  {} {}",
+        style("✓").green(),
+        t!("setup.docs_root_set", path = docs_root.display())
+    );
 
     // 2. Document categories
     println!();
-    println!("{}", style(format!("── {} ──", t!("setup.categories"))).bold());
+    println!(
+        "{}",
+        style(format!("── {} ──", t!("setup.categories"))).bold()
+    );
     let (core_files, team_files, public_files) = select_categories()?;
 
     // 3. Diagram format
@@ -465,10 +508,20 @@ pub fn cmd_setup() -> Result<()> {
         .default(diagram_default)
         .interact()?;
     let diagram_format = DIAGRAM_FORMATS[diagram_idx].0;
-    println!("  {} {}", style("✓").green(), t!("setup.diagram_set", format = diagram_format));
+    println!(
+        "  {} {}",
+        style("✓").green(),
+        t!("setup.diagram_set", format = diagram_format)
+    );
 
     // 4. Save config
-    save_full_config(&docs_root, diagram_format, &core_files, &team_files, &public_files)?;
+    save_full_config(
+        &docs_root,
+        diagram_format,
+        &core_files,
+        &team_files,
+        &public_files,
+    )?;
 
     // 4. Agent setup
     println!();
@@ -487,17 +540,29 @@ pub fn cmd_setup() -> Result<()> {
             McpConfig::Json { path, server_key } => {
                 let p = expand_path(path);
                 write_json_mcp(&p, server_key, &bin, &docs_root)?;
-                println!("  {} {}", style("✓").green(), t!("setup.mcp_set", path = path));
+                println!(
+                    "  {} {}",
+                    style("✓").green(),
+                    t!("setup.mcp_set", path = path)
+                );
             }
             McpConfig::OpenCode { path } => {
                 let p = expand_path(path);
                 write_opencode_mcp(&p, &bin, &docs_root)?;
-                println!("  {} {}", style("✓").green(), t!("setup.mcp_set", path = path));
+                println!(
+                    "  {} {}",
+                    style("✓").green(),
+                    t!("setup.mcp_set", path = path)
+                );
             }
             McpConfig::Codex { path } => {
                 let p = expand_path(path);
                 write_codex_mcp(&p, &bin, &docs_root)?;
-                println!("  {} {}", style("✓").green(), t!("setup.mcp_set", path = path));
+                println!(
+                    "  {} {}",
+                    style("✓").green(),
+                    t!("setup.mcp_set", path = path)
+                );
             }
         }
 
@@ -505,7 +570,11 @@ pub fn cmd_setup() -> Result<()> {
         if let Some(skill_path) = agent.skill_dir {
             let p = expand_path(skill_path);
             install_skill_to(&p)?;
-            println!("  {} {}", style("✓").green(), t!("setup.skill_set", path = skill_path));
+            println!(
+                "  {} {}",
+                style("✓").green(),
+                t!("setup.skill_set", path = skill_path)
+            );
         }
     }
 
@@ -542,7 +611,11 @@ pub fn cmd_uninstall() -> Result<()> {
         let p = expand_path(d);
         if p.exists() {
             fs::remove_dir_all(&p)?;
-            println!("  {} {}", style("✓").green(), t!("uninstall.removed_skill", path = d));
+            println!(
+                "  {} {}",
+                style("✓").green(),
+                t!("uninstall.removed_skill", path = d)
+            );
         }
     }
 
@@ -550,23 +623,36 @@ pub fn cmd_uninstall() -> Result<()> {
     let cfg = config_path();
     if cfg.exists() {
         fs::remove_file(&cfg)?;
-        println!("  {} {}", style("✓").green(), t!("uninstall.removed_config", path = cfg.display()));
+        println!(
+            "  {} {}",
+            style("✓").green(),
+            t!("uninstall.removed_config", path = cfg.display())
+        );
     }
     // Legacy config
     let legacy = cfg.with_file_name("config");
     if legacy.exists() {
         fs::remove_file(&legacy)?;
-        println!("  {} {}", style("✓").green(), t!("uninstall.removed_legacy", path = legacy.display()));
+        println!(
+            "  {} {}",
+            style("✓").green(),
+            t!("uninstall.removed_legacy", path = legacy.display())
+        );
     }
 
     println!();
-    println!("  {}", style(t!("uninstall.binary_hint").to_string()).yellow());
+    println!(
+        "  {}",
+        style(t!("uninstall.binary_hint").to_string()).yellow()
+    );
     println!();
     println!("  {}", t!("uninstall.mcp_hint"));
     println!("    Claude Code:    ~/.claude.json");
     println!("    Cursor:         ~/.cursor/mcp.json");
     println!("    Claude Desktop: ~/Library/Application Support/Claude/claude_desktop_config.json");
-    println!("    Cline:          ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
+    println!(
+        "    Cline:          ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
+    );
     println!("    OpenCode:       ~/.config/opencode/opencode.json");
     println!("    Codex:          ~/.codex/config.toml");
     println!("    Copilot CLI:    ~/.copilot/mcp-config.json");
@@ -633,7 +719,11 @@ fn print_validation_human(
     println!();
     println!(
         "{}",
-        style(format!("Document Policy: {} (source: {source})", pol.policy.enforce)).bold()
+        style(format!(
+            "Document Policy: {} (source: {source})",
+            pol.policy.enforce
+        ))
+        .bold()
     );
     println!("{}", style(format!("Project: {project_name}")).dim());
     println!();
@@ -644,7 +734,11 @@ fn print_validation_human(
             FileStatus::Warn => style("  WARN").yellow(),
             FileStatus::Fail => style("  FAIL").red(),
         };
-        let reason = r.reason.as_deref().map(|s| format!(" — {s}")).unwrap_or_default();
+        let reason = r
+            .reason
+            .as_deref()
+            .map(|s| format!(" — {s}"))
+            .unwrap_or_default();
         println!("{icon} {}{reason}", r.file);
 
         for s in &r.sections {
@@ -653,14 +747,27 @@ fn print_validation_human(
                 FileStatus::Warn => style("    WARN").yellow(),
                 FileStatus::Fail => style("    FAIL").red(),
             };
-            let detail = s.detail.as_deref().map(|d| format!(" ({d})")).unwrap_or_default();
+            let detail = s
+                .detail
+                .as_deref()
+                .map(|d| format!(" ({d})"))
+                .unwrap_or_default();
             println!("{sec_icon} {}{detail}", s.heading);
         }
     }
 
-    let pass = results.iter().filter(|r| r.status == FileStatus::Pass).count();
-    let warn = results.iter().filter(|r| r.status == FileStatus::Warn).count();
-    let fail = results.iter().filter(|r| r.status == FileStatus::Fail).count();
+    let pass = results
+        .iter()
+        .filter(|r| r.status == FileStatus::Pass)
+        .count();
+    let warn = results
+        .iter()
+        .filter(|r| r.status == FileStatus::Warn)
+        .count();
+    let fail = results
+        .iter()
+        .filter(|r| r.status == FileStatus::Fail)
+        .count();
 
     println!();
     println!(
@@ -684,10 +791,7 @@ pub fn cmd_index() -> Result<()> {
         }
     };
 
-    println!(
-        "{}",
-        style("Building search index...").bold()
-    );
+    println!("{}", style("Building search index...").bold());
 
     let result = crate::index::build_index(&docs_root)?;
 
@@ -825,21 +929,36 @@ pub fn cmd_search(query: &str, scope: &str, mode: &str, limit: usize) -> Result<
 
     if result.get("truncated") == Some(&serde_json::json!(true)) {
         println!();
-        println!("{}", style("  (results truncated, use --limit to see more)").dim());
+        println!(
+            "{}",
+            style("  (results truncated, use --limit to see more)").dim()
+        );
     }
 
     Ok(())
 }
 
-fn run_grep_search(docs_root: &std::path::Path, query: &str, scope: &str, limit: usize) -> Result<serde_json::Value> {
+fn run_grep_search(
+    docs_root: &std::path::Path,
+    query: &str,
+    scope: &str,
+    limit: usize,
+) -> Result<serde_json::Value> {
     if scope == "global" {
-        crate::tools::tool_search_global(docs_root, serde_json::json!({"query": query, "scope": "global", "limit": limit}))
+        crate::tools::tool_search_global(
+            docs_root,
+            serde_json::json!({"query": query, "scope": "global", "limit": limit}),
+        )
     } else {
         let resolved = crate::tools::resolve_project(docs_root);
         match resolved {
             Some(r) => {
                 let project_root = docs_root.join(&r.name);
-                crate::tools::tool_search(&project_root, serde_json::json!({"query": query, "limit": limit}), r.repo_path.as_deref())
+                crate::tools::tool_search(
+                    &project_root,
+                    serde_json::json!({"query": query, "limit": limit}),
+                    r.repo_path.as_deref(),
+                )
             }
             None => {
                 anyhow::bail!(
@@ -863,8 +982,19 @@ fn save_full_config(
     public_files: &[String],
 ) -> Result<()> {
     let cfg_path = config_path();
-    save_full_config_to(&cfg_path, docs_root, diagram_format, core_files, team_files, public_files)?;
-    println!("  {} {}", style("✓").green(), t!("setup.config_saved", path = cfg_path.display()));
+    save_full_config_to(
+        &cfg_path,
+        docs_root,
+        diagram_format,
+        core_files,
+        team_files,
+        public_files,
+    )?;
+    println!(
+        "  {} {}",
+        style("✓").green(),
+        t!("setup.config_saved", path = cfg_path.display())
+    );
     Ok(())
 }
 
@@ -879,7 +1009,11 @@ fn save_full_config_to(
     fs::create_dir_all(cfg_path.parent().unwrap())?;
 
     let fmt_list = |files: &[String]| -> String {
-        files.iter().map(|f| format!("\"{}\"", f)).collect::<Vec<_>>().join(", ")
+        files
+            .iter()
+            .map(|f| format!("\"{}\"", f))
+            .collect::<Vec<_>>()
+            .join(", ")
     };
 
     let content = format!(
@@ -1031,7 +1165,11 @@ mod tests {
     #[test]
     fn categories_defaults_are_non_empty() {
         for cat in CATEGORIES {
-            assert!(!cat.defaults.is_empty(), "category '{}' should have defaults", cat.label);
+            assert!(
+                !cat.defaults.is_empty(),
+                "category '{}' should have defaults",
+                cat.label
+            );
         }
     }
 
@@ -1101,8 +1239,7 @@ mod tests {
                 "other": { "command": "other-tool" }
             }
         });
-        fs::write(&cfg, serde_json::to_string_pretty(&existing).unwrap())
-            .expect("failed to write");
+        fs::write(&cfg, serde_json::to_string_pretty(&existing).unwrap()).expect("failed to write");
 
         let bin = PathBuf::from("/bin/alcove");
         let docs = PathBuf::from("/docs");
@@ -1159,7 +1296,8 @@ mod tests {
         let existing = serde_json::json!({ "mcp": { "other": { "type": "remote" } } });
         fs::write(&cfg, serde_json::to_string(&existing).unwrap()).expect("failed to write");
 
-        let result = write_opencode_mcp(&cfg, &PathBuf::from("/bin/alcove"), &PathBuf::from("/docs"));
+        let result =
+            write_opencode_mcp(&cfg, &PathBuf::from("/bin/alcove"), &PathBuf::from("/docs"));
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
@@ -1239,8 +1377,7 @@ mod tests {
     fn save_docs_root_updates_existing_docs_root() {
         let tmp = TempDir::new().expect("failed to create temp dir");
         let cfg = tmp.path().join("config.toml");
-        fs::write(&cfg, "docs_root = \"/old/path\"\nother = \"keep\"\n")
-            .expect("failed to write");
+        fs::write(&cfg, "docs_root = \"/old/path\"\nother = \"keep\"\n").expect("failed to write");
 
         let new_docs = tmp.path().join("new_docs");
         let result = save_docs_root_to(&cfg, &new_docs);

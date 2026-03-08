@@ -114,7 +114,12 @@ impl DocConfig {
 
     pub fn team_files(&self) -> Vec<String> {
         self.team.as_ref().map_or_else(
-            || DOC_REPO_SUPPLEMENTARY.iter().map(|s| s.to_string()).collect(),
+            || {
+                DOC_REPO_SUPPLEMENTARY
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect()
+            },
             |c| c.files.clone(),
         )
     }
@@ -169,10 +174,17 @@ pub fn load_config() -> &'static DocConfig {
         let path = config_path();
         if path.exists()
             && let Ok(content) = std::fs::read_to_string(&path)
-                && let Ok(cfg) = toml::from_str::<DocConfig>(&content) {
-                    return cfg;
-                }
-        DocConfig { docs_root: None, core: None, team: None, public: None, diagram: None }
+            && let Ok(cfg) = toml::from_str::<DocConfig>(&content)
+        {
+            return cfg;
+        }
+        DocConfig {
+            docs_root: None,
+            core: None,
+            team: None,
+            public: None,
+            diagram: None,
+        }
     })
 }
 
@@ -202,12 +214,17 @@ pub fn classify_tier(relative_path: &str) -> &'static str {
 pub fn suggest_categorization(filename: &str) -> &'static str {
     let lower = filename.to_lowercase();
 
-    if lower.contains("product") || lower.contains("requirement")
-        || lower.contains("spec") || lower.contains("summary") {
+    if lower.contains("product")
+        || lower.contains("requirement")
+        || lower.contains("spec")
+        || lower.contains("summary")
+    {
         return "Related to PRD.md";
     }
-    if lower.contains("design") || lower.contains("orchestration")
-        || lower.contains("implementation") {
+    if lower.contains("design")
+        || lower.contains("orchestration")
+        || lower.contains("implementation")
+    {
         return "Related to ARCHITECTURE.md";
     }
     if lower.contains("plan") || lower.contains("roadmap") || lower.contains("todo") {
@@ -225,10 +242,14 @@ pub fn suggest_categorization(filename: &str) -> &'static str {
     if lower.contains("env_var") || lower.contains("secrets") {
         return "Related to SECRETS_MAP.md";
     }
-    if lower.contains("audit") || lower.contains("benchmark")
-        || lower.contains("analysis") || lower.contains("competitive")
-        || lower.contains("comprehensive") || lower.contains("session")
-        || lower.contains("report") {
+    if lower.contains("audit")
+        || lower.contains("benchmark")
+        || lower.contains("analysis")
+        || lower.contains("competitive")
+        || lower.contains("comprehensive")
+        || lower.contains("session")
+        || lower.contains("report")
+    {
         return "Candidate for reports/ folder";
     }
 
@@ -263,7 +284,11 @@ mod tests {
     #[test]
     fn classify_core_files() {
         for name in DOC_REPO_REQUIRED {
-            assert_eq!(classify_tier(name), "doc-repo-required", "failed for {name}");
+            assert_eq!(
+                classify_tier(name),
+                "doc-repo-required",
+                "failed for {name}"
+            );
         }
     }
 
@@ -276,7 +301,11 @@ mod tests {
     #[test]
     fn classify_supplementary_files() {
         for name in DOC_REPO_SUPPLEMENTARY {
-            assert_eq!(classify_tier(name), "doc-repo-supplementary", "failed for {name}");
+            assert_eq!(
+                classify_tier(name),
+                "doc-repo-supplementary",
+                "failed for {name}"
+            );
         }
     }
 
@@ -302,39 +331,75 @@ mod tests {
 
     #[test]
     fn suggest_prd_related() {
-        assert_eq!(suggest_categorization("product_overview.md"), "Related to PRD.md");
-        assert_eq!(suggest_categorization("requirements.md"), "Related to PRD.md");
+        assert_eq!(
+            suggest_categorization("product_overview.md"),
+            "Related to PRD.md"
+        );
+        assert_eq!(
+            suggest_categorization("requirements.md"),
+            "Related to PRD.md"
+        );
         assert_eq!(suggest_categorization("SPEC_v2.md"), "Related to PRD.md");
     }
 
     #[test]
     fn suggest_architecture_related() {
-        assert_eq!(suggest_categorization("design_doc.md"), "Related to ARCHITECTURE.md");
-        assert_eq!(suggest_categorization("implementation_guide.md"), "Related to ARCHITECTURE.md");
+        assert_eq!(
+            suggest_categorization("design_doc.md"),
+            "Related to ARCHITECTURE.md"
+        );
+        assert_eq!(
+            suggest_categorization("implementation_guide.md"),
+            "Related to ARCHITECTURE.md"
+        );
     }
 
     #[test]
     fn suggest_progress_related() {
-        assert_eq!(suggest_categorization("roadmap.md"), "Related to PROGRESS.md");
-        assert_eq!(suggest_categorization("plan_q3.md"), "Related to PROGRESS.md");
+        assert_eq!(
+            suggest_categorization("roadmap.md"),
+            "Related to PROGRESS.md"
+        );
+        assert_eq!(
+            suggest_categorization("plan_q3.md"),
+            "Related to PROGRESS.md"
+        );
     }
 
     #[test]
     fn suggest_decisions_related() {
-        assert_eq!(suggest_categorization("ADR-001.md"), "Related to DECISIONS.md");
-        assert_eq!(suggest_categorization("feasibility_study.md"), "Related to DECISIONS.md");
+        assert_eq!(
+            suggest_categorization("ADR-001.md"),
+            "Related to DECISIONS.md"
+        );
+        assert_eq!(
+            suggest_categorization("feasibility_study.md"),
+            "Related to DECISIONS.md"
+        );
     }
 
     #[test]
     fn suggest_reports_folder() {
-        assert_eq!(suggest_categorization("benchmark_results.md"), "Candidate for reports/ folder");
-        assert_eq!(suggest_categorization("audit_2026.md"), "Candidate for reports/ folder");
-        assert_eq!(suggest_categorization("analysis_report.md"), "Candidate for reports/ folder");
+        assert_eq!(
+            suggest_categorization("benchmark_results.md"),
+            "Candidate for reports/ folder"
+        );
+        assert_eq!(
+            suggest_categorization("audit_2026.md"),
+            "Candidate for reports/ folder"
+        );
+        assert_eq!(
+            suggest_categorization("analysis_report.md"),
+            "Candidate for reports/ folder"
+        );
     }
 
     #[test]
     fn suggest_uncategorized() {
-        assert_eq!(suggest_categorization("random.md"), "Uncategorized — ask user");
+        assert_eq!(
+            suggest_categorization("random.md"),
+            "Uncategorized — ask user"
+        );
     }
 
     #[test]
@@ -404,7 +469,10 @@ mod tests {
     fn docs_root_returns_explicit_value() {
         let cfg = DocConfig {
             docs_root: Some("/tmp/explicit".into()),
-            core: None, team: None, public: None, diagram: None,
+            core: None,
+            team: None,
+            public: None,
+            diagram: None,
         };
         assert_eq!(cfg.docs_root(), Some(PathBuf::from("/tmp/explicit")));
     }
@@ -412,7 +480,11 @@ mod tests {
     #[test]
     fn docs_root_returns_none_when_no_config_and_no_default_dir() {
         let cfg = DocConfig {
-            docs_root: None, core: None, team: None, public: None, diagram: None,
+            docs_root: None,
+            core: None,
+            team: None,
+            public: None,
+            diagram: None,
         };
         // If ~/.config/alcove/docs doesn't exist, returns None
         // (it may or may not exist on the test machine, so just verify it's a valid Option)
@@ -429,20 +501,38 @@ mod tests {
 
     #[test]
     fn suggest_conventions_related() {
-        assert_eq!(suggest_categorization("coding_standard.md"), "Related to CONVENTIONS.md");
-        assert_eq!(suggest_categorization("code_style_guide.md"), "Related to CONVENTIONS.md");
+        assert_eq!(
+            suggest_categorization("coding_standard.md"),
+            "Related to CONVENTIONS.md"
+        );
+        assert_eq!(
+            suggest_categorization("code_style_guide.md"),
+            "Related to CONVENTIONS.md"
+        );
     }
 
     #[test]
     fn suggest_debt_related() {
-        assert_eq!(suggest_categorization("tech_debt_tracker.md"), "Related to DEBT.md");
-        assert_eq!(suggest_categorization("technical_debt_backlog.md"), "Related to DEBT.md");
+        assert_eq!(
+            suggest_categorization("tech_debt_tracker.md"),
+            "Related to DEBT.md"
+        );
+        assert_eq!(
+            suggest_categorization("technical_debt_backlog.md"),
+            "Related to DEBT.md"
+        );
     }
 
     #[test]
     fn suggest_secrets_related() {
-        assert_eq!(suggest_categorization("env_vars_list.md"), "Related to SECRETS_MAP.md");
-        assert_eq!(suggest_categorization("secrets_rotation.md"), "Related to SECRETS_MAP.md");
+        assert_eq!(
+            suggest_categorization("env_vars_list.md"),
+            "Related to SECRETS_MAP.md"
+        );
+        assert_eq!(
+            suggest_categorization("secrets_rotation.md"),
+            "Related to SECRETS_MAP.md"
+        );
     }
 
     #[test]

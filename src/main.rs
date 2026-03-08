@@ -99,7 +99,12 @@ fn main() -> Result<()> {
         Some(Commands::Uninstall) => cli::cmd_uninstall(),
         Some(Commands::Validate { format, exit_code }) => cli::cmd_validate(&format, exit_code),
         Some(Commands::Index) => cli::cmd_index(),
-        Some(Commands::Search { query, scope, mode, limit }) => cli::cmd_search(&query, &scope, &mode, limit),
+        Some(Commands::Search {
+            query,
+            scope,
+            mode,
+            limit,
+        }) => cli::cmd_search(&query, &scope, &mode, limit),
     }
 }
 
@@ -111,9 +116,10 @@ fn serve() -> Result<()> {
     // Background index build on server start
     std::thread::spawn(|| {
         if let Some(docs_root) = config::load_config().docs_root()
-            && docs_root.is_dir() {
-                let _ = index::build_index(&docs_root);
-            }
+            && docs_root.is_dir()
+        {
+            let _ = index::build_index(&docs_root);
+        }
     });
 
     let stdin = io::stdin();
@@ -128,11 +134,8 @@ fn serve() -> Result<()> {
         let req: mcp::RpcRequest = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(e) => {
-                let resp = mcp::RpcResponse::err(
-                    None,
-                    -32700,
-                    format!("Failed to parse request: {e}"),
-                );
+                let resp =
+                    mcp::RpcResponse::err(None, -32700, format!("Failed to parse request: {e}"));
                 writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
                 stdout.flush()?;
                 continue;

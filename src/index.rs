@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::{self, *};
@@ -90,7 +90,10 @@ fn chunk_content(content: &str) -> Vec<Chunk> {
             let overlap_lines: Vec<String> = chunk_lines[keep_from..].to_vec();
             chunk_start_line = i - overlap_lines.len();
             chunk_lines = overlap_lines;
-            current_chars = chunk_lines.iter().map(|l: &String| l.chars().count() + 1).sum();
+            current_chars = chunk_lines
+                .iter()
+                .map(|l: &String| l.chars().count() + 1)
+                .sum();
         }
 
         chunk_lines.push(line.to_string());
@@ -139,7 +142,10 @@ impl IndexMeta {
 fn file_mtime_secs(path: &Path) -> u64 {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
-        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).map_err(std::io::Error::other))
+        .and_then(|t| {
+            t.duration_since(SystemTime::UNIX_EPOCH)
+                .map_err(std::io::Error::other)
+        })
         .map(|d| d.as_secs())
         .unwrap_or(0)
 }
@@ -164,7 +170,11 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
         if !path.is_dir() {
             continue;
         }
-        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
             continue;
         }
@@ -174,7 +184,11 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
             .filter(|e| e.file_type().is_file() && crate::config::is_doc_file(e.path()))
         {
             let file_path = walk_entry.path();
-            let rel = file_path.strip_prefix(docs_root).unwrap_or(file_path).to_string_lossy().to_string();
+            let rel = file_path
+                .strip_prefix(docs_root)
+                .unwrap_or(file_path)
+                .to_string_lossy()
+                .to_string();
             let mtime = file_mtime_secs(file_path);
             current_files.insert(rel.clone());
             match meta.files.get(&rel) {
@@ -213,7 +227,10 @@ pub fn ensure_index_fresh(docs_root: &Path) -> bool {
 /// Uses an atomic flag to prevent concurrent builds.
 pub fn build_index(docs_root: &Path) -> Result<JsonValue> {
     // Acquire build lock (non-blocking: if already building, skip)
-    if INDEX_BUILDING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+    if INDEX_BUILDING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         return Ok(json!({
             "status": "skipped",
             "reason": "Index build already in progress",
@@ -231,12 +248,12 @@ pub fn build_index_unlocked(docs_root: &Path) -> Result<JsonValue> {
     build_index_inner(docs_root)
 }
 
-
 fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
     let dir = index_dir(docs_root);
     std::fs::create_dir_all(&dir)?;
 
-    let (schema, project_field, file_field, chunk_id_field, body_field, line_start_field) = build_schema();
+    let (schema, project_field, file_field, chunk_id_field, body_field, line_start_field) =
+        build_schema();
 
     let mut meta = IndexMeta::load(docs_root);
     let mut indexed_count = 0u64;
@@ -244,7 +261,8 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
     let mut project_count = 0u64;
 
     // Determine which files changed
-    let mut current_files: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+    let mut current_files: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
     let mut files_to_index: Vec<(String, String, PathBuf)> = Vec::new(); // (project, rel_path, full_path)
 
     for entry in std::fs::read_dir(docs_root)
@@ -255,7 +273,11 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
         if !path.is_dir() {
             continue;
         }
-        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
             continue;
         }
@@ -267,11 +289,19 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
             .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
         {
             let file_path = walk_entry.path().to_path_buf();
-            let rel = file_path.strip_prefix(docs_root).unwrap_or(&file_path).to_string_lossy().to_string();
+            let rel = file_path
+                .strip_prefix(docs_root)
+                .unwrap_or(&file_path)
+                .to_string_lossy()
+                .to_string();
             let mtime = file_mtime_secs(&file_path);
             current_files.insert(rel.clone(), mtime);
 
-            let rel_to_project = file_path.strip_prefix(&path).unwrap_or(&file_path).to_string_lossy().to_string();
+            let rel_to_project = file_path
+                .strip_prefix(&path)
+                .unwrap_or(&file_path)
+                .to_string_lossy()
+                .to_string();
 
             if meta.files.get(&rel).copied() == Some(mtime) {
                 skipped_count += 1;
@@ -297,7 +327,8 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
             })
             .context("Failed to create search index")?;
 
-        let mut writer: IndexWriter = index.writer(15_000_000)
+        let mut writer: IndexWriter = index
+            .writer(15_000_000)
             .context("Failed to create index writer")?;
 
         // Index all files
@@ -306,7 +337,11 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
             if !path.is_dir() {
                 continue;
             }
-            let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
                 continue;
             }
@@ -318,7 +353,11 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
             {
                 let file_path = walk_entry.path();
                 let content = std::fs::read_to_string(file_path).unwrap_or_default();
-                let rel = file_path.strip_prefix(&path).unwrap_or(file_path).to_string_lossy().to_string();
+                let rel = file_path
+                    .strip_prefix(&path)
+                    .unwrap_or(file_path)
+                    .to_string_lossy()
+                    .to_string();
 
                 for (chunk_idx, chunk) in chunk_content(&content).iter().enumerate() {
                     let mut doc = TantivyDocument::new();
@@ -336,8 +375,7 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
         writer.commit().context("Failed to commit index")?;
     } else if !files_to_index.is_empty() {
         // Incremental update
-        let index = Index::open_in_dir(&dir)
-            .context("Failed to open existing index")?;
+        let index = Index::open_in_dir(&dir).context("Failed to open existing index")?;
         let mut writer: IndexWriter = index.writer(15_000_000)?;
 
         for (project_name, rel_path, file_path) in &files_to_index {
@@ -383,7 +421,9 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
 /// meaning in the tantivy query parser. We escape them so user input is treated
 /// as a literal phrase search.
 fn sanitize_query(query: &str) -> String {
-    let special = ['+', '-', '(', ')', '{', '}', '[', ']', '^', '~', '*', '?', '\\', '/', ':', '!'];
+    let special = [
+        '+', '-', '(', ')', '{', '}', '[', ']', '^', '~', '*', '?', '\\', '/', ':', '!',
+    ];
     let mut sanitized = String::with_capacity(query.len());
     for ch in query.chars() {
         if special.contains(&ch) {
@@ -405,7 +445,12 @@ fn sanitize_query(query: &str) -> String {
 
 /// Search using BM25 ranking via tantivy index.
 /// Returns top-k chunks ranked by relevance, deduplicated per file (best chunk wins).
-pub fn search_indexed(docs_root: &Path, query: &str, limit: usize, project_filter: Option<&str>) -> Result<JsonValue> {
+pub fn search_indexed(
+    docs_root: &Path,
+    query: &str,
+    limit: usize,
+    project_filter: Option<&str>,
+) -> Result<JsonValue> {
     let dir = index_dir(docs_root);
     if !dir.exists() {
         anyhow::bail!("Search index not found. Run index rebuild first.");
@@ -430,12 +475,13 @@ pub fn search_indexed(docs_root: &Path, query: &str, limit: usize, project_filte
         }));
     }
 
-    let (_schema, project_field, file_field, _chunk_id_field, body_field, line_start_field) = build_schema();
+    let (_schema, project_field, file_field, _chunk_id_field, body_field, line_start_field) =
+        build_schema();
 
-    let index = Index::open_in_dir(&dir)
-        .context("Failed to open search index")?;
+    let index = Index::open_in_dir(&dir).context("Failed to open search index")?;
 
-    let reader = index.reader_builder()
+    let reader = index
+        .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()
         .context("Failed to create index reader")?;
@@ -443,32 +489,38 @@ pub fn search_indexed(docs_root: &Path, query: &str, limit: usize, project_filte
     let searcher = reader.searcher();
 
     let query_parser = QueryParser::for_index(&index, vec![body_field]);
-    let parsed_query = query_parser.parse_query(&sanitized)
+    let parsed_query = query_parser
+        .parse_query(&sanitized)
         .context("Failed to parse search query")?;
 
     // Fetch more candidates for deduplication
-    let top_docs = searcher.search(&parsed_query, &TopDocs::with_limit(limit * 5))
+    let top_docs = searcher
+        .search(&parsed_query, &TopDocs::with_limit(limit * 5))
         .context("Search failed")?;
 
     // Deduplicate: keep only the best-scoring chunk per (project, file) pair
-    let mut seen: std::collections::HashMap<(String, String), usize> = std::collections::HashMap::new();
+    let mut seen: std::collections::HashMap<(String, String), usize> =
+        std::collections::HashMap::new();
     let mut results = Vec::new();
 
     for (score, doc_address) in top_docs {
         let doc: TantivyDocument = searcher.doc(doc_address)?;
 
-        let project = doc.get_first(project_field)
+        let project = doc
+            .get_first(project_field)
             .and_then(|v| schema::Value::as_str(&v))
             .unwrap_or("")
             .to_string();
 
         // Apply project filter if specified
         if let Some(filter) = project_filter
-            && project != filter {
-                continue;
-            }
+            && project != filter
+        {
+            continue;
+        }
 
-        let file = doc.get_first(file_field)
+        let file = doc
+            .get_first(file_field)
             .and_then(|v| schema::Value::as_str(&v))
             .unwrap_or("")
             .to_string();
@@ -480,12 +532,14 @@ pub fn search_indexed(docs_root: &Path, query: &str, limit: usize, project_filte
         }
         seen.insert(key, results.len());
 
-        let body = doc.get_first(body_field)
+        let body = doc
+            .get_first(body_field)
             .and_then(|v| schema::Value::as_str(&v))
             .unwrap_or("")
             .to_string();
 
-        let line_start = doc.get_first(line_start_field)
+        let line_start = doc
+            .get_first(line_start_field)
             .and_then(|v| schema::Value::as_u64(&v))
             .unwrap_or(0);
 
@@ -639,7 +693,8 @@ mod tests {
 
         let result = search_indexed(tmp.path(), "Template", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
-        let projects: Vec<&str> = matches.iter()
+        let projects: Vec<&str> = matches
+            .iter()
             .filter_map(|m| m["project"].as_str())
             .collect();
         assert!(!projects.contains(&"_template"));
@@ -656,10 +711,20 @@ mod tests {
     #[test]
     fn chunk_content_long_splits() {
         // Create content longer than CHUNK_SIZE
-        let lines: Vec<String> = (0..100).map(|i| format!("This is line number {} with some padding text to make it longer.", i)).collect();
+        let lines: Vec<String> = (0..100)
+            .map(|i| {
+                format!(
+                    "This is line number {} with some padding text to make it longer.",
+                    i
+                )
+            })
+            .collect();
         let content = lines.join("\n");
         let chunks = chunk_content(&content);
-        assert!(chunks.len() > 1, "long content should produce multiple chunks");
+        assert!(
+            chunks.len() > 1,
+            "long content should produce multiple chunks"
+        );
         // First chunk starts at line 1
         assert_eq!(chunks[0].line_start, 1);
     }
@@ -682,7 +747,10 @@ mod tests {
     fn is_index_fresh_after_build() {
         let tmp = setup_indexed_root();
         build_index_unlocked(tmp.path()).unwrap();
-        assert!(!is_index_stale(tmp.path()), "just-built index should not be stale");
+        assert!(
+            !is_index_stale(tmp.path()),
+            "just-built index should not be stale"
+        );
     }
 
     #[test]
@@ -693,8 +761,15 @@ mod tests {
 
         // Modify a file (need to change mtime)
         std::thread::sleep(std::time::Duration::from_secs(1));
-        fs::write(tmp.path().join("backend/PRD.md"), "# Updated PRD\n\nNew content added.").unwrap();
-        assert!(is_index_stale(tmp.path()), "modified file should make index stale");
+        fs::write(
+            tmp.path().join("backend/PRD.md"),
+            "# Updated PRD\n\nNew content added.",
+        )
+        .unwrap();
+        assert!(
+            is_index_stale(tmp.path()),
+            "modified file should make index stale"
+        );
     }
 
     #[test]
@@ -704,7 +779,10 @@ mod tests {
 
         // Add a new file
         fs::write(tmp.path().join("backend/NEW.md"), "# New doc").unwrap();
-        assert!(is_index_stale(tmp.path()), "new file should make index stale");
+        assert!(
+            is_index_stale(tmp.path()),
+            "new file should make index stale"
+        );
     }
 
     #[test]
@@ -735,7 +813,10 @@ mod tests {
 
         // Delete a file
         fs::remove_file(tmp.path().join("backend/PRD.md")).unwrap();
-        assert!(is_index_stale(tmp.path()), "deleted file should make index stale");
+        assert!(
+            is_index_stale(tmp.path()),
+            "deleted file should make index stale"
+        );
     }
 
     #[test]
@@ -756,7 +837,7 @@ mod tests {
 
         // These should not panic or error
         let result = search_indexed(tmp.path(), "C++", 10, None).unwrap();
-        assert!(result["matches"].as_array().unwrap().is_empty() || true);
+        assert!(result["matches"].is_array());
 
         let result = search_indexed(tmp.path(), "test:query", 10, None).unwrap();
         assert!(result["matches"].is_array());
@@ -784,7 +865,10 @@ mod tests {
         // Create a large file that will produce multiple chunks mentioning the same term
         let mut content = String::new();
         for i in 0..50 {
-            content.push_str(&format!("Line {}: The authentication system uses OAuth tokens.\n", i));
+            content.push_str(&format!(
+                "Line {}: The authentication system uses OAuth tokens.\n",
+                i
+            ));
         }
         fs::write(proj.join("BIG.md"), &content).unwrap();
 
@@ -795,7 +879,11 @@ mod tests {
         // Should have at most 1 result per file (BIG.md), not multiple chunks
         let files: Vec<&str> = matches.iter().filter_map(|m| m["file"].as_str()).collect();
         let unique_files: std::collections::HashSet<&&str> = files.iter().collect();
-        assert_eq!(files.len(), unique_files.len(), "results should be deduplicated by file");
+        assert_eq!(
+            files.len(),
+            unique_files.len(),
+            "results should be deduplicated by file"
+        );
     }
 
     #[test]
@@ -844,11 +932,18 @@ mod tests {
         build_index_unlocked(tmp.path()).unwrap();
 
         // Add new file
-        fs::write(tmp.path().join("backend/NEW.md"), "# New Document\n\nFresh content here.").unwrap();
+        fs::write(
+            tmp.path().join("backend/NEW.md"),
+            "# New Document\n\nFresh content here.",
+        )
+        .unwrap();
         let r2 = build_index_unlocked(tmp.path()).unwrap();
         assert_eq!(r2["status"], "ok");
         // The new file should be picked up (indexed >= 1)
-        assert!(r2["indexed"].as_u64().unwrap_or(0) >= 1, "incremental rebuild should index new file");
+        assert!(
+            r2["indexed"].as_u64().unwrap_or(0) >= 1,
+            "incremental rebuild should index new file"
+        );
     }
 
     #[test]
@@ -865,13 +960,22 @@ mod tests {
         let flag = AtomicBool::new(false);
 
         // First acquire succeeds
-        assert!(flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok());
+        assert!(
+            flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+        );
         // Second acquire fails (simulating concurrent call)
-        assert!(flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err());
+        assert!(
+            flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+        );
         // Release
         flag.store(false, Ordering::SeqCst);
         // Now acquire succeeds again
-        assert!(flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok());
+        assert!(
+            flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+        );
         flag.store(false, Ordering::SeqCst);
     }
 }

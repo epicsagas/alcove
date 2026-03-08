@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use walkdir::WalkDir;
 
 use crate::config::{classify_tier, is_doc_file, load_config, suggest_categorization};
@@ -27,7 +27,11 @@ pub fn resolve_project(docs_root: &Path) -> Option<ResolvedProject> {
         let name = name.trim().to_string();
         if !name.is_empty() && docs_root.join(&name).is_dir() {
             let repo_path = detect_repo_path(&name);
-            return Some(ResolvedProject { name, detected_via: "env", repo_path });
+            return Some(ResolvedProject {
+                name,
+                detected_via: "env",
+                repo_path,
+            });
         }
     }
 
@@ -39,8 +43,11 @@ pub fn resolve_project(docs_root: &Path) -> Option<ResolvedProject> {
             .filter(|e| e.path().is_dir())
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
-                if name.starts_with('.') || name.starts_with('_')
-                    || name == "mcp" || name == "skills" || name == "scripts"
+                if name.starts_with('.')
+                    || name.starts_with('_')
+                    || name == "mcp"
+                    || name == "skills"
+                    || name == "scripts"
                 {
                     None
                 } else {
@@ -52,14 +59,15 @@ pub fn resolve_project(docs_root: &Path) -> Option<ResolvedProject> {
         let mut path = cwd.as_path();
         loop {
             if let Some(dirname) = path.file_name().and_then(|f| f.to_str())
-                && available.iter().any(|p| p == dirname) {
-                    let repo_path = Some(path.to_path_buf());
-                    return Some(ResolvedProject {
-                        name: dirname.to_string(),
-                        detected_via: "cwd",
-                        repo_path,
-                    });
-                }
+                && available.iter().any(|p| p == dirname)
+            {
+                let repo_path = Some(path.to_path_buf());
+                return Some(ResolvedProject {
+                    name: dirname.to_string(),
+                    detected_via: "cwd",
+                    repo_path,
+                });
+            }
             match path.parent() {
                 Some(parent) if parent != path => path = parent,
                 _ => break,
@@ -75,9 +83,10 @@ fn detect_repo_path(project_name: &str) -> Option<PathBuf> {
     let mut path = cwd.as_path();
     loop {
         if let Some(dirname) = path.file_name().and_then(|f| f.to_str())
-            && dirname == project_name {
-                return Some(path.to_path_buf());
-            }
+            && dirname == project_name
+        {
+            return Some(path.to_path_buf());
+        }
         match path.parent() {
             Some(parent) if parent != path => path = parent,
             _ => break,
@@ -90,7 +99,12 @@ fn detect_repo_path(project_name: &str) -> Option<PathBuf> {
 // Tool: get_project_docs_overview
 // ---------------------------------------------------------------------------
 
-pub fn tool_overview(project_root: &Path, project_name: &str, detected_via: &str, repo_path: Option<&Path>) -> Result<Value> {
+pub fn tool_overview(
+    project_root: &Path,
+    project_name: &str,
+    detected_via: &str,
+    repo_path: Option<&Path>,
+) -> Result<Value> {
     let mut bridge_files = Vec::new();
 
     for entry in WalkDir::new(project_root)
@@ -143,7 +157,11 @@ pub fn tool_overview(project_root: &Path, project_name: &str, detected_via: &str
                 if !is_doc_file(path) {
                     continue;
                 }
-                let rel = path.strip_prefix(rp).unwrap_or(path).to_string_lossy().to_string();
+                let rel = path
+                    .strip_prefix(rp)
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .to_string();
                 let size = entry.metadata().ok().map(|m| m.len()).unwrap_or(0);
                 repo_files.push(json!({
                     "path": rel,
@@ -242,7 +260,11 @@ fn search_dir_for_query(
     }
 }
 
-pub fn tool_search(project_root: &Path, args_value: Value, repo_path: Option<&Path>) -> Result<Value> {
+pub fn tool_search(
+    project_root: &Path,
+    args_value: Value,
+    repo_path: Option<&Path>,
+) -> Result<Value> {
     let args: SearchArgs = serde_json::from_value(args_value)
         .context("search_project_docs requires { query, limit? }")?;
 
@@ -250,7 +272,14 @@ pub fn tool_search(project_root: &Path, args_value: Value, repo_path: Option<&Pa
     let mut matches = Vec::new();
 
     // 1. Search alcove folder
-    search_dir_for_query(project_root, project_root, &query_lower, "alcove", args.limit, &mut matches);
+    search_dir_for_query(
+        project_root,
+        project_root,
+        &query_lower,
+        "alcove",
+        args.limit,
+        &mut matches,
+    );
 
     // 2. Search project repo (root-level + docs/) if available
     if let Some(rp) = repo_path {
@@ -278,7 +307,14 @@ pub fn tool_search(project_root: &Path, args_value: Value, repo_path: Option<&Pa
                 }
             }
         }
-        search_dir_for_query(&rp.join("docs"), rp, &query_lower, "project-repo", args.limit, &mut matches);
+        search_dir_for_query(
+            &rp.join("docs"),
+            rp,
+            &query_lower,
+            "project-repo",
+            args.limit,
+            &mut matches,
+        );
     }
 
     let truncated = matches.len() >= args.limit;
@@ -293,8 +329,7 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
     let query_lower = args.query.to_lowercase();
     let mut matches = Vec::new();
 
-    let entries = std::fs::read_dir(docs_root)
-        .context("Failed to read DOCS_ROOT directory")?;
+    let entries = std::fs::read_dir(docs_root).context("Failed to read DOCS_ROOT directory")?;
 
     for entry in entries.flatten() {
         if matches.len() >= args.limit {
@@ -346,7 +381,9 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
     }
 
     let truncated = matches.len() >= args.limit;
-    Ok(json!({ "query": args.query, "scope": "global", "matches": matches, "truncated": truncated }))
+    Ok(
+        json!({ "query": args.query, "scope": "global", "matches": matches, "truncated": truncated }),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -399,8 +436,7 @@ pub fn tool_get_file(project_root: &Path, args_value: Value) -> Result<Value> {
 pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
     let mut projects = Vec::new();
 
-    let entries = std::fs::read_dir(docs_root)
-        .context("Failed to read DOCS_ROOT directory")?;
+    let entries = std::fs::read_dir(docs_root).context("Failed to read DOCS_ROOT directory")?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -510,10 +546,7 @@ pub fn tool_init_project(docs_root: &Path, args_value: Value) -> Result<Value> {
             .strip_prefix(&template_root)
             .unwrap_or(entry.path());
 
-        let filename = rel
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or("");
+        let filename = rel.file_name().and_then(|f| f.to_str()).unwrap_or("");
 
         if rel == Path::new("README.md") || filename == ".gitkeep" {
             continue;
@@ -521,7 +554,10 @@ pub fn tool_init_project(docs_root: &Path, args_value: Value) -> Result<Value> {
 
         if let Some(ref filter) = file_filter {
             let rel_str = rel.to_string_lossy();
-            if !filter.iter().any(|f| f == filename || f == rel_str.as_ref()) {
+            if !filter
+                .iter()
+                .any(|f| f == filename || f == rel_str.as_ref())
+            {
                 continue;
             }
         }
@@ -552,18 +588,17 @@ pub fn tool_init_project(docs_root: &Path, args_value: Value) -> Result<Value> {
     if let Some(ref project_path) = args.project_path {
         let project_dir = PathBuf::from(project_path);
         if !project_dir.exists() || !project_dir.is_dir() {
-            anyhow::bail!(
-                "project_path does not exist or is not a directory: {project_path}"
-            );
+            anyhow::bail!("project_path does not exist or is not a directory: {project_path}");
         }
 
         repo_path_used = project_path.clone();
 
         let mut create_repo_file = |filename: &str, content: String| -> Result<()> {
             if let Some(ref filter) = file_filter
-                && !filter.iter().any(|f| f == filename) {
-                    return Ok(());
-                }
+                && !filter.iter().any(|f| f == filename)
+            {
+                return Ok(());
+            }
             let dest = project_dir.join(filename);
             if dest.exists() && !overwrite {
                 repo_skipped.push(filename.to_string());
@@ -699,7 +734,11 @@ cd {name}
 // Tool: audit_project
 // ---------------------------------------------------------------------------
 
-pub fn tool_audit(project_root: &Path, project_name: &str, repo_path: Option<&Path>) -> Result<Value> {
+pub fn tool_audit(
+    project_root: &Path,
+    project_name: &str,
+    repo_path: Option<&Path>,
+) -> Result<Value> {
     let mut tier1_status = Vec::new();
     let core_files = load_config().core_files();
 
@@ -797,10 +836,7 @@ pub fn tool_audit(project_root: &Path, project_name: &str, repo_path: Option<&Pa
         for entry in std::fs::read_dir(rp).into_iter().flatten().flatten() {
             let path = entry.path();
             if path.is_file() && is_doc_file(&path) {
-                let filename = path
-                    .file_name()
-                    .and_then(|f| f.to_str())
-                    .unwrap_or("");
+                let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
                 let rel = filename.to_string();
                 let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
                 let tier = classify_tier(&rel);
@@ -829,10 +865,7 @@ pub fn tool_audit(project_root: &Path, project_name: &str, repo_path: Option<&Pa
                     .unwrap_or(path)
                     .to_string_lossy()
                     .to_string();
-                let filename = path
-                    .file_name()
-                    .and_then(|f| f.to_str())
-                    .unwrap_or("");
+                let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
                 let size = entry.metadata().ok().map(|m| m.len()).unwrap_or(0);
                 let tier = classify_tier(&rel);
                 repo_docs.push(json!({
@@ -860,7 +893,8 @@ pub fn tool_audit(project_root: &Path, project_name: &str, repo_path: Option<&Pa
         .filter(|s| s["status"] == "minimal")
         .filter_map(|s| s["file"].as_str().map(String::from))
         .collect();
-    let populated = core_files.len() - missing_files.len() - unfilled_files.len() - minimal_files.len();
+    let populated =
+        core_files.len() - missing_files.len() - unfilled_files.len() - minimal_files.len();
 
     let mut suggested_actions: Vec<Value> = Vec::new();
 
@@ -922,13 +956,19 @@ pub fn tool_audit(project_root: &Path, project_name: &str, repo_path: Option<&Pa
 
     // Cross-repo suggestions
     if repo_path.is_some() {
-        let repo_filenames: Vec<String> = repo_docs.iter()
+        let repo_filenames: Vec<String> = repo_docs
+            .iter()
             .filter_map(|d| d["filename"].as_str().map(String::from))
             .collect();
 
         let public_files = load_config().public_files();
-        let missing_public: Vec<&str> = public_files.iter()
-            .filter(|f| !repo_filenames.iter().any(|r| r.to_lowercase() == f.to_lowercase()))
+        let missing_public: Vec<&str> = public_files
+            .iter()
+            .filter(|f| {
+                !repo_filenames
+                    .iter()
+                    .any(|r| r.to_lowercase() == f.to_lowercase())
+            })
             .map(|s| s.as_str())
             .collect();
         if !missing_public.is_empty() {
@@ -979,7 +1019,10 @@ pub fn tool_audit(project_root: &Path, project_name: &str, repo_path: Option<&Pa
             if tier == "project-repo" {
                 continue;
             }
-            if duplicate_in_repo.iter().any(|d| d.to_lowercase() == fname_lower) {
+            if duplicate_in_repo
+                .iter()
+                .any(|d| d.to_lowercase() == fname_lower)
+            {
                 continue;
             }
 
@@ -1094,9 +1137,7 @@ pub fn slice_content(content: &str, offset: Option<usize>, limit: Option<usize>)
         return String::new();
     }
 
-    let end = limit
-        .map(|l| (start + l).min(total))
-        .unwrap_or(total);
+    let end = limit.map(|l| (start + l).min(total)).unwrap_or(total);
 
     chars[start..end].iter().collect()
 }
@@ -1116,14 +1157,30 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path().join("testproj");
         fs::create_dir_all(project.join("reports")).unwrap();
-        fs::write(project.join("PRD.md"), "# Product Requirements\n\nReal content here about the product.").unwrap();
-        fs::write(project.join("ARCHITECTURE.md"), "# Architecture\n\nSystem design overview.").unwrap();
-        fs::write(project.join("reports/audit.md"), "# Audit Report\n\nFindings.").unwrap();
+        fs::write(
+            project.join("PRD.md"),
+            "# Product Requirements\n\nReal content here about the product.",
+        )
+        .unwrap();
+        fs::write(
+            project.join("ARCHITECTURE.md"),
+            "# Architecture\n\nSystem design overview.",
+        )
+        .unwrap();
+        fs::write(
+            project.join("reports/audit.md"),
+            "# Audit Report\n\nFindings.",
+        )
+        .unwrap();
         // Template dir for init_project
         let template = tmp.path().join("_template");
         fs::create_dir_all(template.join("reports")).unwrap();
         fs::write(template.join("PRD.md"), "# ProjectName PRD\n\nTODO").unwrap();
-        fs::write(template.join("ARCHITECTURE.md"), "# ProjectName Architecture\n\nTODO").unwrap();
+        fs::write(
+            template.join("ARCHITECTURE.md"),
+            "# ProjectName Architecture\n\nTODO",
+        )
+        .unwrap();
         fs::write(template.join("README.md"), "Template readme (skipped)").unwrap();
         fs::write(template.join("reports/.gitkeep"), "").unwrap();
         tmp
@@ -1183,7 +1240,9 @@ mod tests {
         fs::create_dir_all(tmp.path().join(".hidden")).unwrap();
         // _template already exists
         let result = tool_list_projects(tmp.path()).unwrap();
-        let names: Vec<&str> = result["projects"].as_array().unwrap()
+        let names: Vec<&str> = result["projects"]
+            .as_array()
+            .unwrap()
             .iter()
             .filter_map(|p| p["name"].as_str())
             .collect();
@@ -1195,7 +1254,9 @@ mod tests {
     fn list_projects_counts_docs() {
         let tmp = setup_docs_root();
         let result = tool_list_projects(tmp.path()).unwrap();
-        let proj = result["projects"].as_array().unwrap()
+        let proj = result["projects"]
+            .as_array()
+            .unwrap()
             .iter()
             .find(|p| p["name"] == "testproj")
             .unwrap();
@@ -1239,7 +1300,11 @@ mod tests {
         let result = tool_search(&project_root, args, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty());
-        assert!(matches.iter().any(|m| m["file"].as_str().unwrap().contains("ARCHITECTURE")));
+        assert!(
+            matches
+                .iter()
+                .any(|m| m["file"].as_str().unwrap().contains("ARCHITECTURE"))
+        );
     }
 
     #[test]
@@ -1293,7 +1358,12 @@ mod tests {
         let args = json!({"relative_path": "PRD.md"});
         let result = tool_get_file(&project_root, args).unwrap();
         assert_eq!(result["path"], "PRD.md");
-        assert!(result["content"].as_str().unwrap().contains("Product Requirements"));
+        assert!(
+            result["content"]
+                .as_str()
+                .unwrap()
+                .contains("Product Requirements")
+        );
         assert!(result["total_chars"].as_u64().unwrap() > 0);
     }
 
@@ -1353,8 +1423,12 @@ mod tests {
         let args = json!({"project_name": "newproj"});
         let result = tool_init_project(tmp.path(), args).unwrap();
         assert_eq!(result["project_name"], "newproj");
-        let created: Vec<&str> = result["internal_docs"]["created"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str()).collect();
+        let created: Vec<&str> = result["internal_docs"]["created"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
         assert!(created.contains(&"PRD.md"));
         assert!(created.contains(&"ARCHITECTURE.md"));
         // Verify files on disk
@@ -1382,9 +1456,17 @@ mod tests {
     fn init_project_overwrite() {
         let tmp = setup_docs_root();
         tool_init_project(tmp.path(), json!({"project_name": "overtest"})).unwrap();
-        let result = tool_init_project(tmp.path(), json!({"project_name": "overtest", "overwrite": true})).unwrap();
-        let created: Vec<&str> = result["internal_docs"]["created"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str()).collect();
+        let result = tool_init_project(
+            tmp.path(),
+            json!({"project_name": "overtest", "overwrite": true}),
+        )
+        .unwrap();
+        let created: Vec<&str> = result["internal_docs"]["created"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
         assert!(created.contains(&"PRD.md"));
     }
 
@@ -1393,8 +1475,12 @@ mod tests {
         let tmp = setup_docs_root();
         let args = json!({"project_name": "filtered", "files": ["PRD.md"]});
         let result = tool_init_project(tmp.path(), args).unwrap();
-        let created: Vec<&str> = result["internal_docs"]["created"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str()).collect();
+        let created: Vec<&str> = result["internal_docs"]["created"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
         assert!(created.contains(&"PRD.md"));
         assert!(!created.contains(&"ARCHITECTURE.md"));
     }
@@ -1408,8 +1494,12 @@ mod tests {
             "project_path": repo.path().to_string_lossy()
         });
         let result = tool_init_project(tmp.path(), args).unwrap();
-        let repo_created: Vec<&str> = result["external_docs"]["created"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str()).collect();
+        let repo_created: Vec<&str> = result["external_docs"]["created"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
         assert!(repo_created.contains(&"README.md"));
         assert!(repo_created.contains(&"CHANGELOG.md"));
         assert!(repo_created.contains(&"QUICKSTART.md"));
@@ -1459,10 +1549,17 @@ mod tests {
         let tmp = setup_docs_root();
         let project_root = tmp.path().join("testproj");
         // Write a file with ProjectName placeholder
-        fs::write(project_root.join("CONVENTIONS.md"), "# ProjectName Conventions\n\nPlaceholder.").unwrap();
+        fs::write(
+            project_root.join("CONVENTIONS.md"),
+            "# ProjectName Conventions\n\nPlaceholder.",
+        )
+        .unwrap();
         let result = tool_audit(&project_root, "testproj", None).unwrap();
         let required = result["doc_repo"]["required"].as_array().unwrap();
-        let conv = required.iter().find(|r| r["file"] == "CONVENTIONS.md").unwrap();
+        let conv = required
+            .iter()
+            .find(|r| r["file"] == "CONVENTIONS.md")
+            .unwrap();
         assert_eq!(conv["status"], "template-unfilled");
     }
 
@@ -1498,7 +1595,11 @@ mod tests {
 
         let result = tool_audit(&project_root, "emptyproj", None).unwrap();
         let actions = result["suggested_actions"].as_array().unwrap();
-        assert!(actions.iter().any(|a| a["action"] == "create_missing_internal"));
+        assert!(
+            actions
+                .iter()
+                .any(|a| a["action"] == "create_missing_internal")
+        );
     }
 
     #[test]
@@ -1547,7 +1648,10 @@ mod tests {
         let result = tool_search(&project_root, args, None).unwrap();
         // Empty query matches every line
         let matches = result["matches"].as_array().unwrap();
-        assert!(!matches.is_empty(), "empty query should match all non-empty lines");
+        assert!(
+            !matches.is_empty(),
+            "empty query should match all non-empty lines"
+        );
     }
 
     // -- tool_get_file: read a .txt file --
@@ -1561,7 +1665,12 @@ mod tests {
         let args = json!({"relative_path": "notes.txt"});
         let result = tool_get_file(&project_root, args).unwrap();
         assert_eq!(result["path"], "notes.txt");
-        assert!(result["content"].as_str().unwrap().contains("Plain text notes"));
+        assert!(
+            result["content"]
+                .as_str()
+                .unwrap()
+                .contains("Plain text notes")
+        );
     }
 
     // -- tool_get_file: read a file in a nested subdirectory (3 levels deep) --
@@ -1572,7 +1681,11 @@ mod tests {
         let project_root = tmp.path().join("testproj");
         let deep_dir = project_root.join("level1/level2/level3");
         fs::create_dir_all(&deep_dir).unwrap();
-        fs::write(deep_dir.join("deep.md"), "# Deep File\n\nContent at depth 3.").unwrap();
+        fs::write(
+            deep_dir.join("deep.md"),
+            "# Deep File\n\nContent at depth 3.",
+        )
+        .unwrap();
 
         let args = json!({"relative_path": "level1/level2/level3/deep.md"});
         let result = tool_get_file(&project_root, args).unwrap();
@@ -1618,15 +1731,27 @@ mod tests {
             .iter()
             .filter_map(|v| v.as_str())
             .collect();
-        assert!(repo_created.contains(&"README.md"), "README.md should be created");
-        assert!(repo_created.contains(&"CHANGELOG.md"), "CHANGELOG.md should be created");
+        assert!(
+            repo_created.contains(&"README.md"),
+            "README.md should be created"
+        );
+        assert!(
+            repo_created.contains(&"CHANGELOG.md"),
+            "CHANGELOG.md should be created"
+        );
 
         // Verify content on disk contains project name substitution
         let readme = fs::read_to_string(repo.path().join("README.md")).unwrap();
-        assert!(readme.contains("repodocs"), "README should contain project name");
+        assert!(
+            readme.contains("repodocs"),
+            "README should contain project name"
+        );
 
         let changelog = fs::read_to_string(repo.path().join("CHANGELOG.md")).unwrap();
-        assert!(changelog.contains("repodocs"), "CHANGELOG should contain project name");
+        assert!(
+            changelog.contains("repodocs"),
+            "CHANGELOG should contain project name"
+        );
     }
 
     // -- tool_overview: empty project directory --
@@ -1667,7 +1792,10 @@ mod tests {
         // .rs, .css, plain .json are not doc files
         assert!(!file_paths.contains(&"main.rs"), "should exclude .rs");
         assert!(!file_paths.contains(&"style.css"), "should exclude .css");
-        assert!(!file_paths.contains(&"data.json"), "should exclude non-openapi .json");
+        assert!(
+            !file_paths.contains(&"data.json"),
+            "should exclude non-openapi .json"
+        );
         // Total should be 2
         assert_eq!(result["doc_repo"]["count"].as_u64().unwrap(), 2);
     }
@@ -1683,8 +1811,16 @@ mod tests {
         fs::write(repo.path().join("README.md"), "# Project Readme").unwrap();
         let docs_dir = repo.path().join("docs");
         fs::create_dir_all(&docs_dir).unwrap();
-        fs::write(docs_dir.join("guide.md"), "# User Guide\n\nDetailed usage instructions.").unwrap();
-        fs::write(docs_dir.join("api.md"), "# API Reference\n\nEndpoint documentation.").unwrap();
+        fs::write(
+            docs_dir.join("guide.md"),
+            "# User Guide\n\nDetailed usage instructions.",
+        )
+        .unwrap();
+        fs::write(
+            docs_dir.join("api.md"),
+            "# API Reference\n\nEndpoint documentation.",
+        )
+        .unwrap();
 
         let result = tool_audit(&project_root, "testproj", Some(repo.path())).unwrap();
         let repo_docs = result["project_repo"]["docs"].as_array().unwrap();
@@ -1696,7 +1832,10 @@ mod tests {
             repo_docs.len()
         );
 
-        let paths: Vec<&str> = repo_docs.iter().filter_map(|d| d["path"].as_str()).collect();
+        let paths: Vec<&str> = repo_docs
+            .iter()
+            .filter_map(|d| d["path"].as_str())
+            .collect();
         assert!(paths.contains(&"README.md"));
         assert!(paths.iter().any(|p| p.contains("guide.md")));
         assert!(paths.iter().any(|p| p.contains("api.md")));
@@ -1710,7 +1849,10 @@ mod tests {
         // No project directories, just an empty root
         let result = tool_list_projects(tmp.path()).unwrap();
         let projects = result["projects"].as_array().unwrap();
-        assert!(projects.is_empty(), "empty docs root should yield no projects");
+        assert!(
+            projects.is_empty(),
+            "empty docs root should yield no projects"
+        );
     }
 
     // -- resolve_project: MCP_PROJECT_NAME env var --
@@ -1722,10 +1864,14 @@ mod tests {
         fs::create_dir_all(&project_dir).unwrap();
 
         // SAFETY: This test is single-threaded and we restore the env var immediately.
-        unsafe { env::set_var("MCP_PROJECT_NAME", "envproj"); }
+        unsafe {
+            env::set_var("MCP_PROJECT_NAME", "envproj");
+        }
         let resolved = resolve_project(tmp.path());
         // Clean up env var immediately to avoid test pollution
-        unsafe { env::remove_var("MCP_PROJECT_NAME"); }
+        unsafe {
+            env::remove_var("MCP_PROJECT_NAME");
+        }
 
         let resolved = resolved.expect("should resolve project from env var");
         assert_eq!(resolved.name, "envproj");
@@ -1739,7 +1885,10 @@ mod tests {
         // detect_repo_path walks up CWD looking for a directory component
         // matching the project name. A random name should not match.
         let result = detect_repo_path("__nonexistent_project_name_xyz__");
-        assert!(result.is_none(), "should return None for unrelated project name");
+        assert!(
+            result.is_none(),
+            "should return None for unrelated project name"
+        );
     }
 
     // -- tool_search_global --
@@ -1749,17 +1898,37 @@ mod tests {
         // Project 1: backend
         let backend = tmp.path().join("backend");
         fs::create_dir_all(&backend).unwrap();
-        fs::write(backend.join("PRD.md"), "# Backend PRD\n\nAuthentication flow using OAuth.").unwrap();
-        fs::write(backend.join("ARCHITECTURE.md"), "# Backend Architecture\n\nMicroservices design.").unwrap();
+        fs::write(
+            backend.join("PRD.md"),
+            "# Backend PRD\n\nAuthentication flow using OAuth.",
+        )
+        .unwrap();
+        fs::write(
+            backend.join("ARCHITECTURE.md"),
+            "# Backend Architecture\n\nMicroservices design.",
+        )
+        .unwrap();
         // Project 2: frontend
         let frontend = tmp.path().join("frontend");
         fs::create_dir_all(&frontend).unwrap();
-        fs::write(frontend.join("PRD.md"), "# Frontend PRD\n\nLogin page with OAuth integration.").unwrap();
+        fs::write(
+            frontend.join("PRD.md"),
+            "# Frontend PRD\n\nLogin page with OAuth integration.",
+        )
+        .unwrap();
         // Project 3: notes (knowledge base)
         let notes = tmp.path().join("notes");
         fs::create_dir_all(&notes).unwrap();
-        fs::write(notes.join("k8s-tips.md"), "# K8s Tips\n\nTroubleshooting CrashLoopBackOff.").unwrap();
-        fs::write(notes.join("oauth-memo.md"), "# OAuth Memo\n\nOAuth 2.0 refresh token flow.").unwrap();
+        fs::write(
+            notes.join("k8s-tips.md"),
+            "# K8s Tips\n\nTroubleshooting CrashLoopBackOff.",
+        )
+        .unwrap();
+        fs::write(
+            notes.join("oauth-memo.md"),
+            "# OAuth Memo\n\nOAuth 2.0 refresh token flow.",
+        )
+        .unwrap();
         // Hidden/template dirs (should be skipped)
         fs::create_dir_all(tmp.path().join(".hidden")).unwrap();
         fs::write(tmp.path().join(".hidden/secret.md"), "# Secret").unwrap();
@@ -1775,7 +1944,8 @@ mod tests {
         let result = tool_search_global(tmp.path(), args).unwrap();
         let matches = result["matches"].as_array().unwrap();
         // OAuth appears in backend, frontend, and notes
-        let projects: Vec<&str> = matches.iter()
+        let projects: Vec<&str> = matches
+            .iter()
             .filter_map(|m| m["project"].as_str())
             .collect();
         assert!(projects.contains(&"backend"), "should find in backend");
@@ -1800,7 +1970,10 @@ mod tests {
         assert!(!matches.is_empty());
         // Every match must have a project field
         for m in matches {
-            assert!(m["project"].is_string(), "each match must have project field");
+            assert!(
+                m["project"].is_string(),
+                "each match must have project field"
+            );
         }
     }
 
@@ -1820,11 +1993,15 @@ mod tests {
         let args = json!({"query": "Secret", "scope": "global"});
         let result = tool_search_global(tmp.path(), args).unwrap();
         let matches = result["matches"].as_array().unwrap();
-        let projects: Vec<&str> = matches.iter()
+        let projects: Vec<&str> = matches
+            .iter()
             .filter_map(|m| m["project"].as_str())
             .collect();
         assert!(!projects.contains(&".hidden"), "should skip hidden dirs");
-        assert!(!projects.contains(&"_template"), "should skip template dirs");
+        assert!(
+            !projects.contains(&"_template"),
+            "should skip template dirs"
+        );
     }
 
     #[test]
@@ -1842,7 +2019,10 @@ mod tests {
         let args = json!({"query": "oauth", "scope": "global"});
         let result = tool_search_global(tmp.path(), args).unwrap();
         let matches = result["matches"].as_array().unwrap();
-        assert!(matches.len() >= 3, "case-insensitive should find OAuth matches");
+        assert!(
+            matches.len() >= 3,
+            "case-insensitive should find OAuth matches"
+        );
     }
 
     // -- audit: cross-repo duplicate detection --
@@ -1858,8 +2038,13 @@ mod tests {
 
         let result = tool_audit(&project_root, "testproj", Some(repo.path())).unwrap();
         let actions = result["suggested_actions"].as_array().unwrap();
-        let has_exposed_warning = actions.iter().any(|a| a["action"] == "resolve_exposed_internal_docs");
-        assert!(has_exposed_warning, "should warn about internal docs in project repo");
+        let has_exposed_warning = actions
+            .iter()
+            .any(|a| a["action"] == "resolve_exposed_internal_docs");
+        assert!(
+            has_exposed_warning,
+            "should warn about internal docs in project repo"
+        );
     }
 
     #[test]
@@ -1879,13 +2064,22 @@ mod tests {
         let repo = TempDir::new().unwrap();
         let docs_dir = repo.path().join("docs");
         fs::create_dir_all(&docs_dir).unwrap();
-        fs::write(docs_dir.join("guide.md"), "# Guide\n\nUnique marker zxcvbn.").unwrap();
+        fs::write(
+            docs_dir.join("guide.md"),
+            "# Guide\n\nUnique marker zxcvbn.",
+        )
+        .unwrap();
 
         let args = json!({"query": "zxcvbn"});
         let result = tool_search(&project_root, args, Some(repo.path())).unwrap();
         let matches = result["matches"].as_array().unwrap();
-        assert!(matches.iter().any(|m| m["source"] == "project-repo" && m["file"].as_str().unwrap().contains("guide")),
-            "should find file in repo's docs/ subdirectory");
+        assert!(
+            matches
+                .iter()
+                .any(|m| m["source"] == "project-repo"
+                    && m["file"].as_str().unwrap().contains("guide")),
+            "should find file in repo's docs/ subdirectory"
+        );
     }
 
     // -- tool_search_global: empty query --

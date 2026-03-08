@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::config::load_config;
 use crate::tools;
@@ -40,7 +40,12 @@ pub struct RpcError {
 
 impl RpcResponse {
     pub fn ok(id: Option<Value>, result: Value) -> Self {
-        Self { jsonrpc: "2.0".into(), id, result: Some(result), error: None }
+        Self {
+            jsonrpc: "2.0".into(),
+            id,
+            result: Some(result),
+            error: None,
+        }
     }
 
     pub fn err(id: Option<Value>, code: i32, message: String) -> Self {
@@ -75,7 +80,11 @@ pub fn dispatch(req: RpcRequest) -> Option<RpcResponse> {
         "notifications/initialized" | "initialized" => None,
         "tools/list" => Some(handle_tools_list(req.id)),
         "tools/call" => Some(handle_tool_call(req.id, req.params)),
-        _ => Some(RpcResponse::err(req.id, -32601, format!("Method not found: {}", req.method))),
+        _ => Some(RpcResponse::err(
+            req.id,
+            -32601,
+            format!("Method not found: {}", req.method),
+        )),
     }
 }
 
@@ -84,16 +93,19 @@ pub fn dispatch(req: RpcRequest) -> Option<RpcResponse> {
 // ---------------------------------------------------------------------------
 
 fn handle_initialize(id: Option<Value>) -> RpcResponse {
-    RpcResponse::ok(id, json!({
-        "protocolVersion": "2024-11-05",
-        "capabilities": {
-            "tools": { "listChanged": false }
-        },
-        "serverInfo": {
-            "name": "alcove",
-            "version": env!("CARGO_PKG_VERSION")
-        }
-    }))
+    RpcResponse::ok(
+        id,
+        json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {
+                "tools": { "listChanged": false }
+            },
+            "serverInfo": {
+                "name": "alcove",
+                "version": env!("CARGO_PKG_VERSION")
+            }
+        }),
+    )
 }
 
 fn handle_tools_list(id: Option<Value>) -> RpcResponse {
@@ -279,18 +291,17 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
 
     let docs_root = match std::env::var("DOCS_ROOT") {
         Ok(v) => PathBuf::from(v),
-        Err(_) => {
-            match load_config().docs_root() {
-                Some(p) if p.is_dir() => p,
-                _ => {
-                    return RpcResponse::err(
-                        id,
-                        -32000,
-                        "DOCS_ROOT environment variable is not set and config.toml has no docs_root.".into(),
-                    );
-                }
+        Err(_) => match load_config().docs_root() {
+            Some(p) if p.is_dir() => p,
+            _ => {
+                return RpcResponse::err(
+                    id,
+                    -32000,
+                    "DOCS_ROOT environment variable is not set and config.toml has no docs_root."
+                        .into(),
+                );
             }
-        }
+        },
     };
 
     // list_projects and init_project don't need a resolved project
@@ -319,18 +330,23 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
 
     // Search: auto mode selection — ranked (BM25) if index available, grep fallback
     if call.name == "search_project_docs" {
-        let scope = call.arguments.get("scope")
+        let scope = call
+            .arguments
+            .get("scope")
             .and_then(|v| v.as_str())
             .unwrap_or("project");
         // Accept mode as hidden override (not in schema, but still honored if passed)
-        let mode_override = call.arguments.get("mode")
-            .and_then(|v| v.as_str());
+        let mode_override = call.arguments.get("mode").and_then(|v| v.as_str());
 
         let is_global = scope == "global";
-        let limit = call.arguments.get("limit")
+        let limit = call
+            .arguments
+            .get("limit")
             .and_then(|v| v.as_u64())
             .unwrap_or(20) as usize;
-        let query = call.arguments.get("query")
+        let query = call
+            .arguments
+            .get("query")
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -340,10 +356,17 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         if !force_grep {
             let index_dir = docs_root.join(".alcove").join("index");
             if index_dir.exists() || crate::index::ensure_index_fresh(&docs_root) {
-                let project_filter = if is_global { None } else {
+                let project_filter = if is_global {
+                    None
+                } else {
                     tools::resolve_project(&docs_root).map(|r| r.name)
                 };
-                match crate::index::search_indexed(&docs_root, query, limit, project_filter.as_deref()) {
+                match crate::index::search_indexed(
+                    &docs_root,
+                    query,
+                    limit,
+                    project_filter.as_deref(),
+                ) {
                     Ok(v) => {
                         // If ranked returned results, use them
                         let matches = v["matches"].as_array();
@@ -379,7 +402,11 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                         .filter(|e| e.path().is_dir())
                         .filter_map(|e| {
                             let name = e.file_name().to_string_lossy().to_string();
-                            if name.starts_with('.') || name.starts_with('_') { None } else { Some(name) }
+                            if name.starts_with('.') || name.starts_with('_') {
+                                None
+                            } else {
+                                Some(name)
+                            }
                         })
                         .collect()
                 })
@@ -401,7 +428,12 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     let repo_path = resolved.repo_path.as_deref();
 
     let result = match call.name.as_str() {
-        "get_project_docs_overview" => tools::tool_overview(&project_root, &resolved.name, resolved.detected_via, repo_path),
+        "get_project_docs_overview" => tools::tool_overview(
+            &project_root,
+            &resolved.name,
+            resolved.detected_via,
+            repo_path,
+        ),
         "search_project_docs" => tools::tool_search(&project_root, call.arguments, repo_path),
         "get_doc_file" => tools::tool_get_file(&project_root, call.arguments),
         "audit_project" => tools::tool_audit(&project_root, &resolved.name, repo_path),
@@ -490,7 +522,10 @@ mod tests {
     #[test]
     fn dispatch_initialized_notification() {
         let resp = dispatch(make_req("notifications/initialized", json!({})));
-        assert!(resp.is_none(), "notifications should not produce a response");
+        assert!(
+            resp.is_none(),
+            "notifications should not produce a response"
+        );
     }
 
     #[test]
@@ -514,7 +549,11 @@ mod tests {
         let resp = dispatch(make_req("tools/list", json!({}))).unwrap();
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
         for tool in &tools {
-            assert!(tool["inputSchema"].is_object(), "tool {} missing schema", tool["name"]);
+            assert!(
+                tool["inputSchema"].is_object(),
+                "tool {} missing schema",
+                tool["name"]
+            );
             assert_eq!(tool["inputSchema"]["type"], "object");
         }
     }
@@ -559,7 +598,10 @@ mod tests {
     fn dispatch_initialized_without_notifications_prefix() {
         // "initialized" (without "notifications/" prefix) should also return None
         let resp = dispatch(make_req("initialized", json!({})));
-        assert!(resp.is_none(), "bare 'initialized' should not produce a response");
+        assert!(
+            resp.is_none(),
+            "bare 'initialized' should not produce a response"
+        );
     }
 
     #[test]
@@ -603,8 +645,14 @@ mod tests {
         let validate = validate.unwrap();
         let schema = &validate["inputSchema"];
         assert_eq!(schema["type"], "object");
-        assert!(schema["properties"].is_object(), "validate_docs schema should have properties object");
-        assert!(schema["required"].is_array(), "validate_docs schema should have required array");
+        assert!(
+            schema["properties"].is_object(),
+            "validate_docs schema should have properties object"
+        );
+        assert!(
+            schema["required"].is_array(),
+            "validate_docs schema should have required array"
+        );
     }
 
     #[test]
@@ -648,12 +696,16 @@ mod tests {
         let req: RpcRequest = serde_json::from_str(json_str).unwrap();
         assert_eq!(req.method, "initialize");
         assert!(req.id.is_none(), "id should be None when absent");
-        assert!(req.params.is_null(), "params should default to null when absent");
+        assert!(
+            req.params.is_null(),
+            "params should default to null when absent"
+        );
     }
 
     #[test]
     fn rpc_request_deserialization_with_all_fields() {
-        let json_str = r#"{"jsonrpc": "2.0", "id": 42, "method": "tools/list", "params": {"foo": "bar"}}"#;
+        let json_str =
+            r#"{"jsonrpc": "2.0", "id": 42, "method": "tools/list", "params": {"foo": "bar"}}"#;
         let req: RpcRequest = serde_json::from_str(json_str).unwrap();
         assert_eq!(req.id, Some(json!(42)));
         assert_eq!(req.method, "tools/list");
@@ -664,7 +716,10 @@ mod tests {
     fn rpc_response_ok_with_none_id_skips_id_in_json() {
         let resp = RpcResponse::ok(None, json!("hello"));
         let serialized = serde_json::to_string(&resp).unwrap();
-        assert!(!serialized.contains("\"id\""), "id should be skipped when None");
+        assert!(
+            !serialized.contains("\"id\""),
+            "id should be skipped when None"
+        );
         assert!(serialized.contains("\"result\""));
     }
 
@@ -696,13 +751,20 @@ mod tests {
         // SAFETY: test is single-threaded; no other thread reads DOCS_ROOT concurrently.
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
 
-        let req = make_req("tools/call", json!({"name": "list_projects", "arguments": {}}));
+        let req = make_req(
+            "tools/call",
+            json!({"name": "list_projects", "arguments": {}}),
+        );
         let resp = dispatch(req).unwrap();
 
         // SAFETY: test is single-threaded; restoring env to previous state.
         unsafe { std::env::remove_var("DOCS_ROOT") };
 
-        assert!(resp.error.is_none(), "list_projects should succeed: {:?}", resp.error);
+        assert!(
+            resp.error.is_none(),
+            "list_projects should succeed: {:?}",
+            resp.error
+        );
         let result = resp.result.unwrap();
         let text = result["content"][0]["text"].as_str().unwrap();
         assert!(
@@ -720,13 +782,22 @@ mod tests {
         std::fs::write(proj.join("PRD.md"), "# PRD\n\nIndex test content.").unwrap();
 
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
-        let req = make_req("tools/call", json!({"name": "rebuild_index", "arguments": {}}));
+        let req = make_req(
+            "tools/call",
+            json!({"name": "rebuild_index", "arguments": {}}),
+        );
         let resp = dispatch(req).unwrap();
         unsafe { std::env::remove_var("DOCS_ROOT") };
 
         assert!(resp.error.is_none(), "rebuild_index should succeed");
-        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
-        assert!(text.contains("ok") || text.contains("skipped"), "result should contain status ok or skipped, got: {text}");
+        let text = resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            text.contains("ok") || text.contains("skipped"),
+            "result should contain status ok or skipped, got: {text}"
+        );
     }
 
     #[test]
@@ -737,18 +808,28 @@ mod tests {
         std::fs::write(p1.join("PRD.md"), "# Alpha PRD\n\nUnique marker xyzzy.").unwrap();
         let p2 = tmp.path().join("beta");
         std::fs::create_dir_all(&p2).unwrap();
-        std::fs::write(p2.join("ARCH.md"), "# Beta Arch\n\nAnother xyzzy reference.").unwrap();
+        std::fs::write(
+            p2.join("ARCH.md"),
+            "# Beta Arch\n\nAnother xyzzy reference.",
+        )
+        .unwrap();
 
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
-        let req = make_req("tools/call", json!({
-            "name": "search_project_docs",
-            "arguments": {"query": "xyzzy", "scope": "global"}
-        }));
+        let req = make_req(
+            "tools/call",
+            json!({
+                "name": "search_project_docs",
+                "arguments": {"query": "xyzzy", "scope": "global"}
+            }),
+        );
         let resp = dispatch(req).unwrap();
         unsafe { std::env::remove_var("DOCS_ROOT") };
 
         assert!(resp.error.is_none(), "global grep search should succeed");
-        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        let text = resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
         assert!(text.contains("alpha"), "should find in alpha project");
         assert!(text.contains("beta"), "should find in beta project");
     }
@@ -762,16 +843,28 @@ mod tests {
 
         // No index built — ranked should fallback to global grep
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
-        let req = make_req("tools/call", json!({
-            "name": "search_project_docs",
-            "arguments": {"query": "plugh", "scope": "global", "mode": "ranked"}
-        }));
+        let req = make_req(
+            "tools/call",
+            json!({
+                "name": "search_project_docs",
+                "arguments": {"query": "plugh", "scope": "global", "mode": "ranked"}
+            }),
+        );
         let resp = dispatch(req).unwrap();
         unsafe { std::env::remove_var("DOCS_ROOT") };
 
-        assert!(resp.error.is_none(), "ranked search should fallback, not error");
-        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
-        assert!(text.contains("plugh"), "fallback grep should find the marker");
+        assert!(
+            resp.error.is_none(),
+            "ranked search should fallback, not error"
+        );
+        let text = resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            text.contains("plugh"),
+            "fallback grep should find the marker"
+        );
     }
 
     #[test]
@@ -779,21 +872,34 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("ranked");
         std::fs::create_dir_all(&proj).unwrap();
-        std::fs::write(proj.join("NOTES.md"), "# Notes\n\nBM25 scoring test document.").unwrap();
+        std::fs::write(
+            proj.join("NOTES.md"),
+            "# Notes\n\nBM25 scoring test document.",
+        )
+        .unwrap();
 
         // Build index first (use inner fn to avoid global lock in parallel tests)
         crate::index::build_index_unlocked(tmp.path()).unwrap();
 
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
-        let req = make_req("tools/call", json!({
-            "name": "search_project_docs",
-            "arguments": {"query": "scoring", "scope": "global", "mode": "ranked"}
-        }));
+        let req = make_req(
+            "tools/call",
+            json!({
+                "name": "search_project_docs",
+                "arguments": {"query": "scoring", "scope": "global", "mode": "ranked"}
+            }),
+        );
         let resp = dispatch(req).unwrap();
         unsafe { std::env::remove_var("DOCS_ROOT") };
 
-        assert!(resp.error.is_none(), "ranked search with index should succeed");
-        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(
+            resp.error.is_none(),
+            "ranked search with index should succeed"
+        );
+        let text = resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
         assert!(text.contains("ranked"), "should have ranked mode in result");
         assert!(text.contains("score"), "should have score in result");
     }
@@ -802,10 +908,16 @@ mod tests {
     fn search_schema_has_scope_but_no_mode() {
         let resp = handle_tools_list(Some(json!(1)));
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        let search = tools.iter().find(|t| t["name"] == "search_project_docs").unwrap();
+        let search = tools
+            .iter()
+            .find(|t| t["name"] == "search_project_docs")
+            .unwrap();
         let props = &search["inputSchema"]["properties"];
         assert!(props["scope"].is_object(), "scope param should exist");
-        assert!(!props["mode"].is_object(), "mode param should NOT be in schema (auto selection)");
+        assert!(
+            !props["mode"].is_object(),
+            "mode param should NOT be in schema (auto selection)"
+        );
         // Check scope enum values
         let scope_enum = props["scope"]["enum"].as_array().unwrap();
         assert!(scope_enum.contains(&json!("project")));
@@ -824,16 +936,25 @@ mod tests {
 
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
         // No mode param — should auto-select ranked
-        let req = make_req("tools/call", json!({
-            "name": "search_project_docs",
-            "arguments": {"query": "Auto mode", "scope": "global"}
-        }));
+        let req = make_req(
+            "tools/call",
+            json!({
+                "name": "search_project_docs",
+                "arguments": {"query": "Auto mode", "scope": "global"}
+            }),
+        );
         let resp = dispatch(req).unwrap();
         unsafe { std::env::remove_var("DOCS_ROOT") };
 
         assert!(resp.error.is_none(), "auto search should succeed");
-        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
-        assert!(text.contains("ranked"), "auto mode with index should use ranked: {text}");
+        let text = resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            text.contains("ranked"),
+            "auto mode with index should use ranked: {text}"
+        );
         assert!(text.contains("score"), "ranked results should have scores");
     }
 
@@ -846,16 +967,25 @@ mod tests {
 
         // No index built — auto should fallback to grep
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
-        let req = make_req("tools/call", json!({
-            "name": "search_project_docs",
-            "arguments": {"query": "xyzzy", "scope": "global"}
-        }));
+        let req = make_req(
+            "tools/call",
+            json!({
+                "name": "search_project_docs",
+                "arguments": {"query": "xyzzy", "scope": "global"}
+            }),
+        );
         let resp = dispatch(req).unwrap();
         unsafe { std::env::remove_var("DOCS_ROOT") };
 
         assert!(resp.error.is_none(), "grep fallback should succeed");
-        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
-        assert!(text.contains("xyzzy"), "grep fallback should find the marker");
+        let text = resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            text.contains("xyzzy"),
+            "grep fallback should find the marker"
+        );
     }
 
     #[test]
@@ -870,17 +1000,26 @@ mod tests {
 
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
         // Explicitly force grep mode (hidden param)
-        let req = make_req("tools/call", json!({
-            "name": "search_project_docs",
-            "arguments": {"query": "plugh", "scope": "global", "mode": "grep"}
-        }));
+        let req = make_req(
+            "tools/call",
+            json!({
+                "name": "search_project_docs",
+                "arguments": {"query": "plugh", "scope": "global", "mode": "grep"}
+            }),
+        );
         let resp = dispatch(req).unwrap();
         unsafe { std::env::remove_var("DOCS_ROOT") };
 
         assert!(resp.error.is_none(), "forced grep should succeed");
-        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        let text = resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
         assert!(text.contains("plugh"), "grep should find the marker");
         // Should NOT contain "score" (grep doesn't have scores)
-        assert!(!text.contains("score"), "forced grep should not have scores: {text}");
+        assert!(
+            !text.contains("score"),
+            "forced grep should not have scores: {text}"
+        );
     }
 }
