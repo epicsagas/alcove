@@ -86,7 +86,17 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 ## クイックスタート
 
 ```bash
+# オプション 1: Homebrew (macOS)
+brew tap epicsagas/alcove
+brew install alcove
+
+# オプション 2: ビルド済みバイナリ (cargo-binstall、コンパイル不要)
+cargo install cargo-binstall
+cargo binstall alcove
+
+# オプション 3: ソースから
 cargo install alcove
+
 alcove setup
 ```
 
@@ -292,6 +302,13 @@ ALCOVE_LANG=ja alcove setup
 ## アップデート
 
 ```bash
+# Homebrew
+brew upgrade alcove
+
+# cargo-binstall
+cargo binstall alcove
+
+# ソースから
 cargo install alcove
 ```
 

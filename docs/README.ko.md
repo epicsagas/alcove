@@ -86,7 +86,17 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 ## 빠른 시작
 
 ```bash
+# 옵션 1: Homebrew (macOS)
+brew tap epicsagas/alcove
+brew install alcove
+
+# 옵션 2: 사전 빌드 바이너리 (cargo-binstall, 컴파일 불필요)
+cargo install cargo-binstall
+cargo binstall alcove
+
+# 옵션 3: 소스 빌드
 cargo install alcove
+
 alcove setup
 ```
 
@@ -292,6 +302,13 @@ ALCOVE_LANG=ko alcove setup
 ## 업데이트
 
 ```bash
+# Homebrew
+brew upgrade alcove
+
+# cargo-binstall
+cargo binstall alcove
+
+# 소스에서
 cargo install alcove
 ```
 

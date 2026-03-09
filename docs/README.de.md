@@ -86,7 +86,17 @@ Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository
 ## Schnellstart
 
 ```bash
+# Option 1: Homebrew (macOS)
+brew tap epicsagas/alcove
+brew install alcove
+
+# Option 2: Vorgefertigtes Binary (cargo-binstall, keine Kompilierung)
+cargo install cargo-binstall
+cargo binstall alcove
+
+# Option 3: Aus Quellcode
 cargo install alcove
+
 alcove setup
 ```
 
@@ -292,6 +302,13 @@ ALCOVE_LANG=de alcove setup
 ## Aktualisieren
 
 ```bash
+# Homebrew
+brew upgrade alcove
+
+# cargo-binstall
+cargo binstall alcove
+
+# Aus Quellcode
 cargo install alcove
 ```
 

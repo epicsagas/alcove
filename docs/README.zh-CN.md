@@ -86,7 +86,17 @@ Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织
 ## 快速开始
 
 ```bash
+# 方式 1：Homebrew（macOS）
+brew tap epicsagas/alcove
+brew install alcove
+
+# 方式 2：预构建二进制（cargo-binstall，无需编译）
+cargo install cargo-binstall
+cargo binstall alcove
+
+# 方式 3：从源码构建
 cargo install alcove
+
 alcove setup
 ```
 
@@ -292,6 +302,13 @@ ALCOVE_LANG=zh-CN alcove setup
 ## 更新
 
 ```bash
+# Homebrew
+brew upgrade alcove
+
+# cargo-binstall
+cargo binstall alcove
+
+# 从源码
 cargo install alcove
 ```
 

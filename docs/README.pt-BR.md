@@ -86,7 +86,17 @@ O Alcove mantém todos os seus documentos privados em **um único repositório c
 ## Início rápido
 
 ```bash
+# Opção 1: Homebrew (macOS)
+brew tap epicsagas/alcove
+brew install alcove
+
+# Opção 2: Binário pré-compilado (cargo-binstall, sem compilação)
+cargo install cargo-binstall
+cargo binstall alcove
+
+# Opção 3: A partir do código-fonte
 cargo install alcove
+
 alcove setup
 ```
 
@@ -292,6 +302,13 @@ ALCOVE_LANG=pt-BR alcove setup
 ## Atualizar
 
 ```bash
+# Homebrew
+brew upgrade alcove
+
+# cargo-binstall
+cargo binstall alcove
+
+# A partir do código-fonte
 cargo install alcove
 ```
 
