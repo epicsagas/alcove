@@ -87,8 +87,7 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 
 ```bash
 # 옵션 1: Homebrew (macOS)
-brew tap epicsagas/alcove
-brew install alcove
+brew install epicsagas/alcove/alcove
 
 # 옵션 2: 사전 빌드 바이너리 (cargo-binstall, 컴파일 불필요)
 cargo install cargo-binstall
@@ -303,7 +302,7 @@ ALCOVE_LANG=ko alcove setup
 
 ```bash
 # Homebrew
-brew upgrade alcove
+brew upgrade epicsagas/alcove/alcove
 
 # cargo-binstall
 cargo binstall alcove
