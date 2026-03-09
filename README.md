@@ -86,7 +86,12 @@ Alcove keeps all your private docs in **one shared repository**, organized by pr
 ## Quick start
 
 ```bash
+# Recommended: install pre-built binary (fast, no compilation)
+cargo binstall alcove
+
+# Alternative: install from source
 cargo install alcove
+
 alcove setup
 ```
 
@@ -106,6 +111,9 @@ git clone https://github.com/epicsagas/alcove.git
 cd alcove
 make install
 ```
+
+> **Note**: Pre-built binaries are available for Linux (x86\_64), macOS (Apple Silicon & Intel), and Windows.
+> Use `cargo binstall alcove` ([cargo-binstall](https://github.com/cargo-bins/cargo-binstall)) to skip compilation.
 
 ## How it works
 
@@ -292,6 +300,10 @@ ALCOVE_LANG=ko alcove setup
 ## Update
 
 ```bash
+# Recommended
+cargo binstall alcove
+
+# From source
 cargo install alcove
 ```
 
