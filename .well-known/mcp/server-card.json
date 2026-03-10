@@ -1,0 +1,43 @@
+{
+  "name": "Alcove",
+  "description": "MCP server that gives AI coding agents on-demand access to private project docs via BM25 ranked search. One setup for Claude Code, Cursor, Codex, Gemini CLI, Copilot, Cline, and more. Docs stay private, never in public repos.",
+  "icon": "https://raw.githubusercontent.com/epicsagas/alcove/main/alcove.png",
+  "tools": [
+    {
+      "name": "search_project_docs",
+      "description": "BM25 ranked full-text search or grep fallback. Supports scope: \"global\" for cross-project search."
+    },
+    {
+      "name": "get_project_docs_overview",
+      "description": "List all docs for the current project with classification and sizes."
+    },
+    {
+      "name": "get_doc_file",
+      "description": "Read a specific doc file. Supports offset/limit for large files."
+    },
+    {
+      "name": "list_projects",
+      "description": "Show all projects in the docs repo."
+    },
+    {
+      "name": "audit_project",
+      "description": "Scan doc-repo and project repo, suggest actions for misplaced or missing docs."
+    },
+    {
+      "name": "init_project",
+      "description": "Scaffold docs for a new project with standard templates."
+    },
+    {
+      "name": "validate_docs",
+      "description": "Validate docs against team policy (policy.toml). Supports --format json and --exit-code."
+    },
+    {
+      "name": "rebuild_index",
+      "description": "Rebuild the full-text search index manually."
+    },
+    {
+      "name": "check_doc_changes",
+      "description": "Detect added, modified, or deleted docs since last index build."
+    }
+  ]
+}
