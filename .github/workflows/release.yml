@@ -35,7 +35,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -93,3 +93,52 @@ jobs:
           files: |
             alcove-*.tar.gz
             alcove-*.zip
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  update-homebrew:
+    name: Update Homebrew Tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute SHA256 for macOS tarballs
+        id: sha
+        run: |
+          BASE="https://github.com/epicsagas/alcove/releases/download/${GITHUB_REF_NAME}"
+          curl -sLf --retry 5 --retry-delay 10 "${BASE}/alcove-aarch64-apple-darwin.tar.gz" -o arm.tar.gz
+          curl -sLf --retry 5 --retry-delay 10 "${BASE}/alcove-x86_64-apple-darwin.tar.gz" -o intel.tar.gz
+          echo "arm=$(sha256sum arm.tar.gz | awk '{print $1}')" >> $GITHUB_OUTPUT
+          echo "intel=$(sha256sum intel.tar.gz | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: epicsagas/homebrew-alcove
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update formula
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" Formula/alcove.rb
+          # Update sha256 lines in order: first = arm, second = intel
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${{ steps.sha.outputs.arm }}\"/" Formula/alcove.rb
+          sed -i "0,/sha256 \".*\"/! s/sha256 \".*\"/sha256 \"${{ steps.sha.outputs.intel }}\"/" Formula/alcove.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/alcove.rb
+          git commit -m "alcove ${GITHUB_REF_NAME#v}"
+          git push
