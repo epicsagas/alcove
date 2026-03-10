@@ -1,14 +1,31 @@
 ---
 name: alcove
 description: >
-  Reads and manages private project documentation stored in a separate Alcove docs repository.
+  Grounds the agent in authoritative internal project documentation stored in a private Alcove docs repository.
   Covers project design, architecture, requirements, progress tracking, coding conventions,
   technical debt, secrets mapping, and environment configuration.
   Also initializes, organizes, audits, and validates project documentation.
-  Activates whenever the request involves project documentation — regardless of input language.
+  Activates whenever the agent needs authoritative project information — regardless of input language.
 ---
 
 # Alcove
+
+## Invocation
+
+This skill can be called explicitly via slash command in supported agents:
+
+```
+/alcove                          Summarize current project docs and status
+/alcove status                   Show current progress and next steps
+/alcove architecture             Explain the tech stack and system design
+/alcove conventions              List coding rules and naming conventions
+/alcove decisions                Review architecture decision records
+/alcove debt                     List known issues and technical debt
+/alcove search auth flow         Search docs for a specific topic
+/alcove what conventions apply?  Ask a doc question directly
+```
+
+It also activates automatically when the agent needs authoritative project context — see "When to Use" below.
 
 ## When to Use
 
@@ -20,7 +37,7 @@ description: >
 - User asks about **past decisions and their rationale**
 - User wants to **initialize documentation for a new project**
 - User asks to **organize, clean up, or audit project documentation**
-- You need context grounded in internal docs instead of guessing
+- **The answer may exist in project docs** — check alcove before answering, not after
 
 ## How It Works
 
@@ -58,15 +75,11 @@ List all docs with tier classification. **Call this first** to see what's availa
 
 ### `search_project_docs`
 
-Case-insensitive keyword search across project docs. Use for:
-- Finding where a specific feature/component is documented
-- Locating decision rationale
-- Checking if a convention exists
+Search across project docs with automatic mode selection — uses BM25 ranked search when the index is available, falls back to grep otherwise. No manual mode selection needed.
 
 **Parameters:**
-- `query` (required) — search keyword
+- `query` (required) — search keyword or phrase
 - `scope` (optional) — `"project"` (default, CWD only) or `"global"` (all projects)
-- `mode` (optional) — `"grep"` (default) or `"ranked"` (BM25 relevance scoring)
 - `limit` (optional) — max results (default: 20)
 
 **Scope rule — IMPORTANT:**
@@ -83,11 +96,6 @@ Case-insensitive keyword search across project docs. Use for:
 - User says "all projects", "everywhere", "across projects"
 - User references previously saved notes, knowledge, or past decisions
 - User wants to compare how different projects handle the same topic
-
-**When to use ranked mode:**
-- Large doc sets where grep returns too many results
-- User needs the most relevant matches, not all matches
-- Run `rebuild_index` first if index is stale
 
 ### `get_doc_file`
 
@@ -123,7 +131,11 @@ Detect document changes since the last index build. Reports added, modified, and
 
 ### `rebuild_index`
 
-Build or rebuild the BM25 full-text search index. Required for `mode: "ranked"` search. Index is automatically built after `init_project`, but run this manually after bulk document changes.
+Build or rebuild the BM25 full-text search index. Enables ranked search results in `search_project_docs`. Index is automatically built after `init_project`, but run this manually after bulk document changes.
+
+### `validate_docs`
+
+Validate project docs against team policy (`policy.toml`). Checks required files exist, templates are filled, required sections are present. Returns pass/warn/fail status per file.
 
 ### `init_project`
 
@@ -133,6 +145,7 @@ Initialize docs for a new project from the standard template. Automatically rebu
 - `project_name` (required) — folder name in alcove
 - `project_path` (optional) — absolute path to project repo for public docs (README, CHANGELOG)
 - `overwrite` (optional) — overwrite existing files (default: false)
+- `files` (optional) — specific files to create (e.g. `["PRD.md", "ARCHITECTURE.md"]`); if omitted, creates all required internal docs
 
 ## Agent Instructions
 
@@ -145,6 +158,8 @@ Initialize docs for a new project from the standard template. Automatically rebu
 
 ### Answering project questions
 
+**Never answer architecture, conventions, or environment questions from memory.** If the information may exist in docs, check alcove first — always ground answers in authoritative sources.
+
 1. Call `get_project_docs_overview` to see available docs and their tiers.
 2. Based on the question, read the most relevant file:
    - "What does this do?" → `PRD.md`
@@ -155,7 +170,7 @@ Initialize docs for a new project from the standard template. Automatically rebu
    - "What env vars needed?" → `SECRETS_MAP.md`
    - "Any known issues?" → `DEBT.md`
 3. If unsure which file, use `search_project_docs` with keywords.
-4. Summarize key decisions, constraints, and implications. Avoid dumping full files unless explicitly asked.
+4. Summarize key decisions, constraints, and implications, citing relevant sections. Do not dump full files unless explicitly requested.
 5. **Never contradict existing decisions** — if DECISIONS.md says "use JWT", don't suggest sessions.
 
 ### Initializing a new project

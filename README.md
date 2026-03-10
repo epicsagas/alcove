@@ -2,7 +2,7 @@
   <img src="alcove.png" alt="Alcove" width="100%" />
 </p>
 
-<p align="center">A quiet place for your project docs.</p>
+<p align="center"><strong>Your AI agent doesn't know your project. Alcove fixes that.</strong></p>
 
 <p align="center">
   <a href="README.md">English</a> ·
@@ -24,26 +24,39 @@
   <a href="https://buymeacoffee.com/epicsaga"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee" /></a>
 </p>
 
-Alcove lets any AI coding agent read and manage your private project docs — without leaking them into public repos.
+Alcove is an MCP server that gives AI coding agents on-demand access to your private project docs — without dumping everything into the context window, without leaking docs into public repos, and without per-project config for every agent you use.
 
-Keep PRDs, architecture decisions, secrets maps, and internal runbooks in one place. Every MCP-compatible agent gets the same tools, across every project, with zero per-project config.
+## Demo
+
+<!-- demo.gif -->
+> *`cd my-app` → ask agent → Alcove retrieves ranked docs → switch to `my-api` → same workflow, zero reconfiguration*
 
 ## The problem
 
-You have internal docs that shouldn't live in your public GitHub repo. But your AI agent can't help you properly if it can't read them — it invents requirements and ignores constraints you already documented.
+You have two bad options.
 
-Now multiply that across several projects and several agents. Each has different config. Every time you switch, you lose context. And there's no standard way to organize or validate any of it.
+**Option A: Put docs in `CLAUDE.md` / `AGENTS.md`**
+Every file gets injected into the context window on every run.
+Works for short conventions. Breaks down with real project docs.
+10 architecture files = context bloat = slower, more expensive, less accurate responses.
+
+**Option B: Don't put docs in**
+Your agent invents requirements you already documented.
+It ignores constraints from decisions you already made.
+It asks you to explain the same things every session.
+
+Neither option scales. Now multiply it across 5 projects and 3 agents, each configured differently. Every time you switch, you lose context.
 
 ## How Alcove solves this
 
-Alcove keeps all your private docs in **one shared repository**, organized by project. Any MCP-compatible agent accesses them the same way — whether you're in Claude Code, Cursor, Gemini CLI, or Codex.
+Alcove doesn't inject your docs. **Agents search for what they need, when they need it.**
 
 ```
 ~/projects/my-app $ claude "how is auth implemented?"
 
   → Alcove detects project: my-app
-  → Reads ~/documents/my-app/ARCHITECTURE.md
-  → Agent answers with actual project context
+  → BM25 search: "auth" → ARCHITECTURE.md (score: 0.94), DECISIONS.md (score: 0.71)
+  → Agent gets the 2 most relevant docs, not all 12
 ```
 
 ```
@@ -51,35 +64,24 @@ Alcove keeps all your private docs in **one shared repository**, organized by pr
 
   → Alcove detects project: my-api
   → Same doc structure, same access pattern
-  → Different project, same workflow
+  → Different project, zero reconfiguration
 ```
 
 **Switch agents anytime. Switch projects anytime. The document layer stays standardized.**
 
-## What it does
-
-- **One doc-repo, multiple projects** — private docs organized by project, managed in a single place
-- **One setup, any agent** — configure once, every MCP-compatible agent gets the same access
-- **Auto-detects your project** from CWD — no per-project config needed
-- **Scoped access** — each project only sees its own docs
-- **Smart search** — BM25 ranked search with auto-indexing; finds the most relevant docs first, falls back to grep when needed
-- **Cross-project search** — search across all projects at once with `scope: "global"` — use it as a personal knowledge base
-- **Private docs stay private** — sensitive docs (secrets map, internal decisions, tech debt) never touch your public repo
-- **Standardized doc structure** — `policy.toml` enforces consistent docs across all projects and teams
-- **Cross-repo audit** — finds internal docs misplaced in your project repo, suggests fixes
-- **Document validation** — checks for missing files, unfilled templates, required sections
-- **Works with 9+ agents** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Gemini CLI
-
 ## Why Alcove
+
+> **Why not just use `CLAUDE.md`?** Short conventions and agent behaviors belong there. Project documentation — architecture, decisions, runbooks, PRDs — doesn't scale in a context file. Alcove is not a replacement; it's the layer `CLAUDE.md` was never meant to be.
 
 | Without Alcove | With Alcove |
 |----------------|-------------|
+| Docs in `CLAUDE.md` bloat context on every run | BM25 search — agents pull only what they need |
 | Internal docs scattered across Notion, Google Docs, local files | One doc-repo, structured by project |
 | Each AI agent configured separately for doc access | One setup, all agents share the same access |
-| Switching projects means losing doc context | CWD auto-detection, instant project switch |
-| Agent searches return random matching lines | BM25 ranked search — best matches first, auto-indexed |
-| "Search all my notes about auth" — impossible | Global search across every project in one query |
-| Sensitive docs sitting in project repos or scattered locally | Private docs physically separated from project repos |
+| Switching projects means re-explaining context | CWD auto-detection, instant project switch |
+| Agent search returns random matching lines | Ranked results — best matches first, one result per file |
+| "Search all my notes about OAuth" — impossible | Global search across every project in one query |
+| Sensitive docs sitting in project repos | Private docs on your machine, never in public repos |
 | Doc structure differs per project and team member | `policy.toml` enforces standards across all projects |
 | No way to check if docs are complete | `validate` catches missing files, empty templates, missing sections |
 
@@ -96,10 +98,17 @@ cargo binstall alcove
 # Option 3: Build from source
 cargo install alcove
 
+# Option 4: Clone and build
+git clone https://github.com/epicsagas/alcove.git
+cd alcove
+make install
+
 alcove setup
 ```
 
-That's it. `setup` walks you through everything interactively:
+> **Note**: Pre-built binaries are available for Linux (x86\_64), macOS (Apple Silicon & Intel), and Windows.
+
+`setup` walks you through everything interactively:
 
 1. Where your docs live
 2. Which document categories to track
@@ -108,16 +117,7 @@ That's it. `setup` walks you through everything interactively:
 
 Re-run `alcove setup` anytime to change settings. It remembers your previous choices.
 
-## Install from source
-
-```bash
-git clone https://github.com/epicsagas/alcove.git
-cd alcove
-make install
-```
-
-> **Note**: Pre-built binaries are available for Linux (x86\_64), macOS (Apple Silicon & Intel), and Windows.
-> Use `cargo binstall alcove` ([cargo-binstall](https://github.com/cargo-bins/cargo-binstall)) to skip compilation.
+---
 
 ## How it works
 
@@ -148,20 +148,22 @@ flowchart LR
     MCP -- "scoped access" --> Docs
 ```
 
-Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent over stdio. Your agent calls tools like `get_doc_file("PRD.md")` and gets project-specific answers — regardless of which agent you're using.
+Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent over stdio. Your agent calls tools like `search_project_docs("auth flow")` and gets ranked, project-specific results — regardless of which agent you're using.
 
-## Document classification
+## What it does
 
-Alcove classifies docs into tiers:
-
-| Classification | Where it lives | Examples |
-|---------------|----------------|----------|
-| **doc-repo-required** | Alcove (private) | PRD, Architecture, Decisions, Conventions |
-| **doc-repo-supplementary** | Alcove (private) | Deployment, Onboarding, Testing, Runbook |
-| **reference** | Alcove `reports/` folder | Audit reports, benchmarks, analysis |
-| **project-repo** | Your GitHub repo (public) | README, CHANGELOG, CONTRIBUTING |
-
-The `audit` tool scans both your doc-repo and local project directory, then suggests actions — like generating a public README from your private PRD, or pulling misplaced reports back into alcove.
+- **On-demand doc retrieval** — agents search and retrieve; nothing is pre-loaded into context
+- **BM25 ranked search** — powered by [tantivy](https://github.com/quickwit-oss/tantivy); most relevant docs first, auto-indexed, falls back to grep
+- **One doc-repo, multiple projects** — private docs organized by project, managed in a single place
+- **One setup, any agent** — configure once, every MCP-compatible agent gets the same access
+- **Auto-detects your project** from CWD — no per-project config needed
+- **Scoped access** — each project only sees its own docs
+- **Cross-project search** — search across all projects at once with `scope: "global"`
+- **Private docs stay private** — docs never touch your public repo, runs entirely on your machine over stdio
+- **Standardized doc structure** — `policy.toml` enforces consistent docs across all projects and teams
+- **Cross-repo audit** — finds internal docs misplaced in your project repo, suggests fixes
+- **Document validation** — checks for missing files, unfilled templates, required sections
+- **Works with 9+ agents** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Gemini CLI
 
 ## MCP Tools
 
@@ -195,9 +197,6 @@ Alcove automatically picks the best search strategy. When the search index exist
 # Search the current project (auto-detected from CWD)
 alcove search "authentication flow"
 
-# Search across ALL projects — your personal knowledge base
-alcove search "OAuth token refresh" --scope global
-
 # Force grep mode if you want exact substring matching
 alcove search "FR-023" --mode grep
 ```
@@ -205,6 +204,18 @@ alcove search "FR-023" --mode grep
 The index builds automatically in the background when the MCP server starts, and rebuilds when it detects file changes. No cron jobs, no manual steps.
 
 **How it works for agents:** agents just call `search_project_docs` with a query. Alcove handles the rest — ranking, deduplication (one result per file), cross-project search, and fallback. The agent never needs to choose a search mode.
+
+### Global search
+
+Every architecture decision, every runbook, every project note — searchable across all your projects at once.
+
+```bash
+# Search across ALL projects
+alcove search "rate limiting patterns" --scope global
+alcove search "OAuth token refresh" --scope global
+```
+
+Agents can do the same with `scope: "global"` in `search_project_docs`. One query, every project.
 
 ## Project detection
 
@@ -243,6 +254,19 @@ name = "ARCHITECTURE.md"
 
 Policy files are resolved with priority: **project** (`<project>/.alcove/policy.toml`) > **team** (`DOCS_ROOT/.alcove/policy.toml`) > **built-in default** (from your `config.toml` core files). This ensures consistent doc quality across all your projects while allowing per-project overrides.
 
+## Document classification
+
+Alcove classifies docs into tiers:
+
+| Classification | Where it lives | Examples |
+|---------------|----------------|----------|
+| **doc-repo-required** | Alcove (private) | PRD, Architecture, Decisions, Conventions |
+| **doc-repo-supplementary** | Alcove (private) | Deployment, Onboarding, Testing, Runbook |
+| **reference** | Alcove `reports/` folder | Audit reports, benchmarks, analysis |
+| **project-repo** | Your GitHub repo (public) | README, CHANGELOG, CONTRIBUTING |
+
+The `audit` tool scans both your doc-repo and local project directory, then suggests actions — like generating a public README from your private PRD, or pulling misplaced reports back into Alcove.
+
 ## Configuration
 
 Config lives at `~/.config/alcove/config.toml`:
@@ -265,6 +289,16 @@ format = "mermaid"
 
 All of this is set interactively via `alcove setup`. You can also edit the file directly.
 
+File lists are fully customizable — add any filename to any category, or move files between categories to match your team's workflow:
+
+```toml
+[core]
+files = ["PRD.md", "ARCHITECTURE.md", "DECISIONS.md", "MY_SPEC.md"]  # added custom doc
+
+[public]
+files = ["README.md", "CHANGELOG.md", "PRD.md"]  # PRD exposed as public for this project
+```
+
 ## Supported agents
 
 | Agent | MCP | Skill |
@@ -278,6 +312,14 @@ All of this is set interactively via `alcove setup`. You can also edit the file 
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
 | Antigravity | `~/.gemini/antigravity/mcp_config.json` | — |
 | Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/skills/alcove/` |
+
+Agents with skill support activate Alcove automatically when you ask about project architecture, conventions, decisions, or status. They can also be invoked explicitly:
+
+```
+/alcove                          Summarize current project docs and status
+/alcove search auth flow         Search docs for a specific topic
+/alcove what conventions apply?  Ask a doc question directly
+```
 
 ## Supported languages
 
