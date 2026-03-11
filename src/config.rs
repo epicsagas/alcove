@@ -127,7 +127,7 @@ pub struct DocConfig {
 impl DocConfig {
     pub fn core_files(&self) -> Vec<String> {
         self.core.as_ref().map_or_else(
-            || DOC_REPO_REQUIRED.iter().map(|s| s.to_string()).collect(),
+            || DOC_REPO_REQUIRED.iter().map(std::string::ToString::to_string).collect(),
             |c| c.files.clone(),
         )
     }
@@ -137,7 +137,7 @@ impl DocConfig {
             || {
                 DOC_REPO_SUPPLEMENTARY
                     .iter()
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect()
             },
             |c| c.files.clone(),
@@ -146,7 +146,7 @@ impl DocConfig {
 
     pub fn public_files(&self) -> Vec<String> {
         self.public.as_ref().map_or_else(
-            || PROJECT_REPO_FILES.iter().map(|s| s.to_string()).collect(),
+            || PROJECT_REPO_FILES.iter().map(std::string::ToString::to_string).collect(),
             |c| c.files.clone(),
         )
     }

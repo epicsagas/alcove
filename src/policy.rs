@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::config::load_config;
 
@@ -159,7 +158,7 @@ pub struct ValidationResult {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum FileStatus {
     Pass,
     Warn,
@@ -188,7 +187,7 @@ pub fn validate(
     docs_root: &Path,
     project_name: &str,
     repo_path: Option<&Path>,
-) -> Result<(PolicyFile, Vec<ValidationResult>)> {
+) -> (PolicyFile, Vec<ValidationResult>) {
     let policy = load_policy(docs_root, project_name);
     let project_root = docs_root.join(project_name);
     let mut results = Vec::new();
@@ -198,7 +197,7 @@ pub fn validate(
         results.push(result);
     }
 
-    Ok((policy, results))
+    (policy, results)
 }
 
 fn validate_required_doc(
@@ -542,7 +541,7 @@ mod tests {
             name = "PRD.md"
         "###,
         );
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Fail);
         assert_eq!(results[0].reason.as_deref(), Some("file_not_found"));
     }
@@ -559,7 +558,7 @@ mod tests {
         let content = format!("# PRD\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Pass);
     }
 
@@ -575,7 +574,7 @@ mod tests {
         let content = format!("# ProjectName PRD\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Warn);
         assert_eq!(results[0].reason.as_deref(), Some("template_unfilled"));
     }
@@ -591,7 +590,7 @@ mod tests {
         );
         fs::write(tmp.path().join(&project).join("PRD.md"), "# PRD\n").unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Warn);
         assert_eq!(results[0].reason.as_deref(), Some("minimal_content"));
     }
@@ -611,7 +610,7 @@ mod tests {
         let content = format!("# Product\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRODUCT.md"), content).unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Pass);
     }
 
@@ -635,7 +634,7 @@ mod tests {
         let content = "# PRD\n\n## Overview\n\nSome overview text here.\n\n## Goals\n\nSome goals text here and more.\n\nExtra content to pass minimal check.";
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Pass);
         assert_eq!(results[0].sections.len(), 2);
     }
@@ -661,14 +660,12 @@ mod tests {
         );
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Fail);
-        assert!(
-            results[0]
-                .sections
-                .iter()
-                .any(|s| s.status == FileStatus::Fail)
-        );
+        assert!(results[0]
+            .sections
+            .iter()
+            .any(|s| s.status == FileStatus::Fail));
     }
 
     #[test]
@@ -690,7 +687,7 @@ mod tests {
         );
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         // 2 items < 3 required → warn
         let section = &results[0].sections[0];
         assert_eq!(section.status, FileStatus::Warn);
@@ -713,7 +710,7 @@ mod tests {
         let content = "# PRD\n\n## Features\n\n- Feature 1\n- Feature 2\n- Feature 3\n\nExtra content to be over 100 bytes easily here.";
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].sections[0].status, FileStatus::Pass);
     }
 
@@ -733,7 +730,7 @@ mod tests {
         let content = format!("# Changelog\n\n{}", "x".repeat(200));
         fs::write(repo.path().join("CHANGELOG.md"), content).unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, Some(repo.path())).unwrap();
+        let (_, results) = validate(tmp.path(), &project, Some(repo.path()));
         assert_eq!(results[0].status, FileStatus::Pass);
     }
 
@@ -748,7 +745,7 @@ mod tests {
         "###,
         );
         // No repo path provided
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Fail);
     }
 
@@ -921,15 +918,13 @@ mod tests {
 Extra content to ensure we are over 100 bytes threshold for minimal content check easily.";
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Pass);
         assert_eq!(results[0].sections.len(), 2);
-        assert!(
-            results[0]
-                .sections
-                .iter()
-                .all(|s| s.status == FileStatus::Pass)
-        );
+        assert!(results[0]
+            .sections
+            .iter()
+            .all(|s| s.status == FileStatus::Pass));
     }
 
     // -- validate: enforce = "strict" vs "relaxed" appears in JSON output --
@@ -947,7 +942,7 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
         let content = format!("# PRD\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
-        let (policy, results) = validate(tmp.path(), &project, None).unwrap();
+        let (policy, results) = validate(tmp.path(), &project, None);
         let source = policy_source(tmp.path(), &project);
         let json = validation_to_json(&policy, &results, source);
         assert_eq!(json["enforce"], "strict");
@@ -966,7 +961,7 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
         let content = format!("# PRD\n\n{}", "x".repeat(200));
         fs::write(tmp.path().join(&project).join("PRD.md"), content).unwrap();
 
-        let (policy, results) = validate(tmp.path(), &project, None).unwrap();
+        let (policy, results) = validate(tmp.path(), &project, None);
         let source = policy_source(tmp.path(), &project);
         let json = validation_to_json(&policy, &results, source);
         assert_eq!(json["enforce"], "relaxed");
@@ -1112,7 +1107,7 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
         );
         fs::write(tmp.path().join(&project).join("PRD.md"), "").unwrap();
 
-        let (_, results) = validate(tmp.path(), &project, None).unwrap();
+        let (_, results) = validate(tmp.path(), &project, None);
         // Empty file has 0 bytes < 100 → minimal_content warning
         assert_eq!(results[0].status, FileStatus::Warn);
         assert_eq!(results[0].reason.as_deref(), Some("minimal_content"));
@@ -1165,7 +1160,7 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
         let repo = TempDir::new().unwrap();
         fs::write(repo.path().join("README.md"), "# README\n\nProject readme with enough content to pass the 100 byte threshold for validation. Adding more text to be absolutely sure we exceed the limit.").unwrap();
 
-        let (_, results) = validate(tmp.path(), project, Some(repo.path())).unwrap();
+        let (_, results) = validate(tmp.path(), project, Some(repo.path()));
         assert_eq!(results[0].status, FileStatus::Pass);
     }
 
@@ -1185,7 +1180,7 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
         fs::write(project_dir.join(".alcove/policy.toml"), policy_toml).unwrap();
 
         // No repo path — file can't be found
-        let (_, results) = validate(tmp.path(), project, None).unwrap();
+        let (_, results) = validate(tmp.path(), project, None);
         assert_eq!(results[0].status, FileStatus::Fail);
         assert_eq!(results[0].reason.as_deref(), Some("file_not_found"));
     }

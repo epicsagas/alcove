@@ -19,6 +19,10 @@ const NGRAM_TOKENIZER: &str = "cjk_ngram";
 // Index lock — prevents concurrent build/search races per docs_root
 // ---------------------------------------------------------------------------
 
+/// Maximum age (in seconds) for a lock file before it is considered stale.
+/// If the lock holder crashes, the lock will be auto-cleared after this duration.
+const LOCK_STALE_SECS: u64 = 600; // 10 minutes
+
 fn lock_file(docs_root: &Path) -> PathBuf {
     docs_root.join(".alcove").join(".index_lock")
 }
@@ -28,7 +32,16 @@ fn try_acquire_lock(docs_root: &Path) -> bool {
     if let Some(parent) = lock_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    std::fs::File::create_new(&lock_path).is_ok()
+    // If a stale lock exists, remove it first
+    if lock_path.exists() && is_lock_stale(&lock_path) {
+        let _ = std::fs::remove_file(&lock_path);
+    }
+    if std::fs::File::create_new(&lock_path).is_ok() {
+        // Write PID so we can detect stale locks from dead processes
+        let _ = std::fs::write(&lock_path, std::process::id().to_string());
+        return true;
+    }
+    false
 }
 
 fn release_lock(docs_root: &Path) {
@@ -36,7 +49,52 @@ fn release_lock(docs_root: &Path) {
 }
 
 fn is_locked(docs_root: &Path) -> bool {
-    lock_file(docs_root).exists()
+    let path = lock_file(docs_root);
+    if !path.exists() {
+        return false;
+    }
+    // Treat stale locks as not locked
+    if is_lock_stale(&path) {
+        let _ = std::fs::remove_file(&path);
+        return false;
+    }
+    true
+}
+
+/// A lock is stale if it is older than `LOCK_STALE_SECS` or its PID is no longer running.
+fn is_lock_stale(lock_path: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(lock_path) else {
+        return false;
+    };
+
+    // Check age
+    if let Ok(modified) = meta.modified()
+        && let Ok(elapsed) = modified.elapsed()
+        && elapsed.as_secs() > LOCK_STALE_SECS
+    {
+        return true;
+    }
+
+    // Check if PID is still alive (Unix: kill -0)
+    #[cfg(unix)]
+    {
+        if let Ok(content) = std::fs::read_to_string(lock_path)
+            && let Ok(pid) = content.trim().parse::<u32>()
+        {
+            let status = std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+            if let Ok(s) = status
+                && !s.success()
+            {
+                return true; // Process doesn't exist
+            }
+        }
+    }
+
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +254,7 @@ pub fn index_exists(docs_root: &Path) -> bool {
 }
 
 /// Return detailed change report: added, modified, deleted files since last index build.
-pub fn check_doc_changes(docs_root: &Path) -> Result<JsonValue> {
+pub fn check_doc_changes(docs_root: &Path) -> JsonValue {
     let meta = IndexMeta::load(docs_root);
     let has_index = meta_path(docs_root).exists();
 
@@ -220,7 +278,7 @@ pub fn check_doc_changes(docs_root: &Path) -> Result<JsonValue> {
         }
         for walk_entry in WalkDir::new(&path)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
         {
             let file_path = walk_entry.path();
@@ -249,7 +307,7 @@ pub fn check_doc_changes(docs_root: &Path) -> Result<JsonValue> {
 
     let is_stale = !added.is_empty() || !modified.is_empty() || !deleted.is_empty();
 
-    Ok(json!({
+    json!({
         "index_exists": has_index,
         "is_stale": is_stale,
         "added": added,
@@ -257,7 +315,7 @@ pub fn check_doc_changes(docs_root: &Path) -> Result<JsonValue> {
         "deleted": deleted,
         "unchanged_count": unchanged,
         "total_indexed": meta.files.len(),
-    }))
+    })
 }
 
 /// Check if the index is stale (any doc file newer than the index meta, or deleted).
@@ -290,7 +348,7 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
         }
         for walk_entry in WalkDir::new(&path)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.file_type().is_file() && crate::config::is_doc_file(e.path()))
         {
             let file_path = walk_entry.path();
@@ -387,7 +445,7 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
 
         for walk_entry in WalkDir::new(&path)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
         {
             let file_path = walk_entry.path().to_path_buf();
@@ -451,7 +509,7 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
 
             for walk_entry in WalkDir::new(&path)
                 .into_iter()
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
             {
                 let file_path = walk_entry.path();
@@ -1073,7 +1131,7 @@ mod tests {
     #[test]
     fn build_index_lock_prevents_concurrent() {
         let tmp = TempDir::new().unwrap();
-        let lock_path = lock_file(tmp.path());
+        let _lock_path = lock_file(tmp.path());
         
         assert!(!is_locked(tmp.path()));
         
@@ -1105,7 +1163,7 @@ mod tests {
     #[test]
     fn check_doc_changes_no_index() {
         let tmp = setup_indexed_root();
-        let result = check_doc_changes(tmp.path()).unwrap();
+        let result = check_doc_changes(tmp.path());
         assert!(!result["index_exists"].as_bool().unwrap());
         assert!(result["is_stale"].as_bool().unwrap());
         // All files should be "added" since no index exists
@@ -1118,7 +1176,7 @@ mod tests {
     fn check_doc_changes_fresh_index() {
         let tmp = setup_indexed_root();
         build_index_unlocked(tmp.path()).unwrap();
-        let result = check_doc_changes(tmp.path()).unwrap();
+        let result = check_doc_changes(tmp.path());
         assert!(result["index_exists"].as_bool().unwrap());
         assert!(!result["is_stale"].as_bool().unwrap());
         assert!(result["added"].as_array().unwrap().is_empty());
@@ -1132,7 +1190,7 @@ mod tests {
         let tmp = setup_indexed_root();
         build_index_unlocked(tmp.path()).unwrap();
         fs::write(tmp.path().join("backend/NEW.md"), "# New").unwrap();
-        let result = check_doc_changes(tmp.path()).unwrap();
+        let result = check_doc_changes(tmp.path());
         assert!(result["is_stale"].as_bool().unwrap());
         let added: Vec<&str> = result["added"]
             .as_array()
@@ -1148,7 +1206,7 @@ mod tests {
         let tmp = setup_indexed_root();
         build_index_unlocked(tmp.path()).unwrap();
         fs::remove_file(tmp.path().join("backend/PRD.md")).unwrap();
-        let result = check_doc_changes(tmp.path()).unwrap();
+        let result = check_doc_changes(tmp.path());
         assert!(result["is_stale"].as_bool().unwrap());
         let deleted: Vec<&str> = result["deleted"]
             .as_array()
@@ -1165,7 +1223,7 @@ mod tests {
         build_index_unlocked(tmp.path()).unwrap();
         std::thread::sleep(std::time::Duration::from_secs(1));
         fs::write(tmp.path().join("backend/PRD.md"), "# Updated PRD").unwrap();
-        let result = check_doc_changes(tmp.path()).unwrap();
+        let result = check_doc_changes(tmp.path());
         assert!(result["is_stale"].as_bool().unwrap());
         let modified: Vec<&str> = result["modified"]
             .as_array()

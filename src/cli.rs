@@ -398,21 +398,21 @@ fn select_categories() -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
     let cfg = load_fresh_config();
     let existing: [Vec<String>; 3] = [
         cfg.as_ref().map_or_else(
-            || DOC_REPO_REQUIRED.iter().map(|s| s.to_string()).collect(),
-            |c| c.core_files(),
+            || DOC_REPO_REQUIRED.iter().map(std::string::ToString::to_string).collect(),
+            super::config::DocConfig::core_files,
         ),
         cfg.as_ref().map_or_else(
             || {
                 DOC_REPO_SUPPLEMENTARY
                     .iter()
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect()
             },
-            |c| c.team_files(),
+            super::config::DocConfig::team_files,
         ),
         cfg.as_ref().map_or_else(
-            || PROJECT_REPO_FILES.iter().map(|s| s.to_string()).collect(),
-            |c| c.public_files(),
+            || PROJECT_REPO_FILES.iter().map(std::string::ToString::to_string).collect(),
+            super::config::DocConfig::public_files,
         ),
     ];
 
@@ -689,7 +689,7 @@ pub fn cmd_validate(format: &str, exit_code: bool) -> Result<()> {
 
     let repo_path = resolved.repo_path.as_deref();
     let source = policy::policy_source(&docs_root, &resolved.name);
-    let (pol, results) = policy::validate(&docs_root, &resolved.name, repo_path)?;
+    let (pol, results) = policy::validate(&docs_root, &resolved.name, repo_path);
 
     if format == "json" {
         let json = policy::validation_to_json(&pol, &results, source);
@@ -898,7 +898,7 @@ pub fn cmd_search(query: &str, scope: &str, mode: &str, limit: usize) -> Result<
         let file = m.get("file").and_then(|v| v.as_str()).unwrap_or("?");
         let line = m.get("line").or(m.get("line_start"));
         let snippet = m.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
-        let score = m.get("score").and_then(|v| v.as_f64());
+        let score = m.get("score").and_then(serde_json::Value::as_f64);
 
         let location = if let Some(proj) = project {
             format!("{}:{}", style(proj).green(), style(file).cyan())
@@ -907,7 +907,7 @@ pub fn cmd_search(query: &str, scope: &str, mode: &str, limit: usize) -> Result<
         };
 
         let line_info = line
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|l| format!(":{l}"))
             .unwrap_or_default();
 

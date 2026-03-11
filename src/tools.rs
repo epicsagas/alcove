@@ -39,7 +39,7 @@ pub fn resolve_project(docs_root: &Path) -> Option<ResolvedProject> {
     if let Ok(cwd) = env::current_dir() {
         let available: Vec<String> = std::fs::read_dir(docs_root)
             .ok()?
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.path().is_dir())
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
@@ -100,11 +100,11 @@ fn detect_repo_path(project_name: &str) -> Option<PathBuf> {
 // ---------------------------------------------------------------------------
 
 pub fn tool_check_doc_changes(docs_root: &Path, args: Value) -> Result<Value> {
-    let mut result = crate::index::check_doc_changes(docs_root)?;
+    let mut result = crate::index::check_doc_changes(docs_root);
 
     let auto_rebuild = args
         .get("auto_rebuild")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
     if auto_rebuild && result["is_stale"].as_bool().unwrap_or(false) {
@@ -553,6 +553,144 @@ struct InitProjectArgs {
     files: Option<Vec<String>>,
 }
 
+/// Create user-facing docs (README, CHANGELOG, QUICKSTART) in the project repository.
+fn create_repo_docs(
+    name: &str,
+    project_path: &Option<String>,
+    file_filter: &Option<Vec<String>>,
+    overwrite: bool,
+) -> Result<(Vec<String>, Vec<String>, String)> {
+    let mut repo_created = Vec::new();
+    let mut repo_skipped = Vec::new();
+    let mut repo_path_used = String::new();
+
+    let Some(project_path) = project_path else {
+        return Ok((repo_created, repo_skipped, repo_path_used));
+    };
+
+    let project_dir = PathBuf::from(project_path);
+    if !project_dir.exists() || !project_dir.is_dir() {
+        anyhow::bail!("project_path does not exist or is not a directory: {project_path}");
+    }
+
+    repo_path_used = project_path.clone();
+
+    let mut create_file = |filename: &str, content: String| -> Result<()> {
+        if let Some(filter) = file_filter
+            && !filter.iter().any(|f| f == filename)
+        {
+            return Ok(());
+        }
+        let dest = project_dir.join(filename);
+        if dest.exists() && !overwrite {
+            repo_skipped.push(filename.to_string());
+        } else {
+            std::fs::write(&dest, content)?;
+            repo_created.push(filename.to_string());
+        }
+        Ok(())
+    };
+
+    create_file(
+        "README.md",
+        format!(
+            r"# {name}
+
+> TODO: Brief project description
+
+## Quick Start
+
+```bash
+# TODO: Quick start steps
+```
+
+## Installation
+
+```bash
+# TODO: Installation steps
+```
+
+## Usage
+
+```bash
+# TODO: Usage examples
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+## License
+
+TODO: Choose a license
+",
+        ),
+    )?;
+
+    create_file(
+        "CHANGELOG.md",
+        format!(
+            r"# Changelog
+
+All notable changes to {name} will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- Initial project setup
+",
+        ),
+    )?;
+
+    create_file(
+        "QUICKSTART.md",
+        format!(
+            r"# {name} — Quick Start
+
+Get up and running in under 5 minutes.
+
+## Prerequisites
+
+- TODO: List required tools and versions
+
+## Steps
+
+```bash
+# 1. Clone the repository
+git clone <repo-url>
+cd {name}
+
+# 2. Install dependencies
+# TODO: install command
+
+# 3. Configure environment
+# TODO: env setup
+
+# 4. Run
+# TODO: run command
+```
+
+## Verify
+
+```bash
+# TODO: verification command
+```
+
+## Next Steps
+
+- Read the full [README](README.md) for detailed usage
+- Check [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
+",
+        ),
+    )?;
+
+    Ok((repo_created, repo_skipped, repo_path_used))
+}
+
 pub fn tool_init_project(docs_root: &Path, args_value: Value) -> Result<Value> {
     let args: InitProjectArgs = serde_json::from_value(args_value)
         .context("init_project requires { project_name, project_path?, overwrite? }")?;
@@ -635,131 +773,8 @@ pub fn tool_init_project(docs_root: &Path, args_value: Value) -> Result<Value> {
     }
 
     // External: Create user-facing docs in project repository
-    let mut repo_created = Vec::new();
-    let mut repo_skipped = Vec::new();
-    let mut repo_path_used = String::new();
-
-    if let Some(ref project_path) = args.project_path {
-        let project_dir = PathBuf::from(project_path);
-        if !project_dir.exists() || !project_dir.is_dir() {
-            anyhow::bail!("project_path does not exist or is not a directory: {project_path}");
-        }
-
-        repo_path_used = project_path.clone();
-
-        let mut create_repo_file = |filename: &str, content: String| -> Result<()> {
-            if let Some(ref filter) = file_filter
-                && !filter.iter().any(|f| f == filename)
-            {
-                return Ok(());
-            }
-            let dest = project_dir.join(filename);
-            if dest.exists() && !overwrite {
-                repo_skipped.push(filename.to_string());
-            } else {
-                std::fs::write(&dest, content)?;
-                repo_created.push(filename.to_string());
-            }
-            Ok(())
-        };
-
-        create_repo_file(
-            "README.md",
-            format!(
-                r#"# {name}
-
-> TODO: Brief project description
-
-## Quick Start
-
-```bash
-# TODO: Quick start steps
-```
-
-## Installation
-
-```bash
-# TODO: Installation steps
-```
-
-## Usage
-
-```bash
-# TODO: Usage examples
-```
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
-
-## License
-
-TODO: Choose a license
-"#,
-            ),
-        )?;
-
-        create_repo_file(
-            "CHANGELOG.md",
-            format!(
-                r#"# Changelog
-
-All notable changes to {name} will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Added
-
-- Initial project setup
-"#,
-            ),
-        )?;
-
-        create_repo_file(
-            "QUICKSTART.md",
-            format!(
-                r#"# {name} — Quick Start
-
-Get up and running in under 5 minutes.
-
-## Prerequisites
-
-- TODO: List required tools and versions
-
-## Steps
-
-```bash
-# 1. Clone the repository
-git clone <repo-url>
-cd {name}
-
-# 2. Install dependencies
-# TODO: install command
-
-# 3. Configure environment
-# TODO: env setup
-
-# 4. Run
-# TODO: run command
-```
-
-## Verify
-
-```bash
-# TODO: verification command
-```
-
-## Next Steps
-
-- Read the full [README](README.md) for detailed usage
-- Check [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
-"#,
-            ),
-        )?;
-    }
+    let (repo_created, repo_skipped, repo_path_used) =
+        create_repo_docs(name, &args.project_path, &file_filter, overwrite)?;
 
     Ok(json!({
         "project_name": name,
@@ -782,6 +797,68 @@ cd {name}
             format!("Edit {name}/SECRETS_MAP.md — map environment variables"),
         ]
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for audit
+// ---------------------------------------------------------------------------
+
+/// Scan a project repository (root + docs/) for documentation files.
+fn scan_repo_docs(repo_path: Option<&Path>) -> (Vec<Value>, String) {
+    let mut repo_docs = Vec::new();
+    let mut repo_path_str = String::new();
+
+    let Some(rp) = repo_path else {
+        return (repo_docs, repo_path_str);
+    };
+
+    repo_path_str = rp.to_string_lossy().to_string();
+
+    for entry in std::fs::read_dir(rp).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_file() && is_doc_file(&path) {
+            let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            let rel = filename.to_string();
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let tier = classify_tier(&rel);
+            repo_docs.push(json!({
+                "path": rel,
+                "filename": filename,
+                "size_bytes": size,
+                "tier": tier,
+            }));
+        }
+    }
+
+    let docs_dir = rp.join("docs");
+    if docs_dir.is_dir() {
+        for entry in WalkDir::new(&docs_dir)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            if !is_doc_file(path) {
+                continue;
+            }
+            let rel = path
+                .strip_prefix(rp)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string();
+            let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            let size = entry.metadata().ok().map(|m| m.len()).unwrap_or(0);
+            let tier = classify_tier(&rel);
+            repo_docs.push(json!({
+                "path": rel,
+                "filename": filename,
+                "size_bytes": size,
+                "tier": tier,
+            }));
+        }
+    }
+
+    (repo_docs, repo_path_str)
 }
 
 // ---------------------------------------------------------------------------
@@ -881,56 +958,7 @@ pub fn tool_audit(
     }
 
     // Scan project repository
-    let mut repo_docs = Vec::new();
-    let mut repo_path_str = String::new();
-
-    if let Some(rp) = repo_path {
-        repo_path_str = rp.to_string_lossy().to_string();
-
-        for entry in std::fs::read_dir(rp).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if path.is_file() && is_doc_file(&path) {
-                let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
-                let rel = filename.to_string();
-                let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                let tier = classify_tier(&rel);
-                repo_docs.push(json!({
-                    "path": rel,
-                    "filename": filename,
-                    "size_bytes": size,
-                    "tier": tier,
-                }));
-            }
-        }
-
-        let docs_dir = rp.join("docs");
-        if docs_dir.is_dir() {
-            for entry in WalkDir::new(&docs_dir)
-                .into_iter()
-                .filter_map(Result::ok)
-                .filter(|e| e.file_type().is_file())
-            {
-                let path = entry.path();
-                if !is_doc_file(path) {
-                    continue;
-                }
-                let rel = path
-                    .strip_prefix(rp)
-                    .unwrap_or(path)
-                    .to_string_lossy()
-                    .to_string();
-                let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
-                let size = entry.metadata().ok().map(|m| m.len()).unwrap_or(0);
-                let tier = classify_tier(&rel);
-                repo_docs.push(json!({
-                    "path": rel,
-                    "filename": filename,
-                    "size_bytes": size,
-                    "tier": tier,
-                }));
-            }
-        }
-    }
+    let (repo_docs, repo_path_str) = scan_repo_docs(repo_path);
 
     let missing_files: Vec<String> = tier1_status
         .iter()
@@ -1023,7 +1051,7 @@ pub fn tool_audit(
                     .iter()
                     .any(|r| r.to_lowercase() == f.to_lowercase())
             })
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect();
         if !missing_public.is_empty() {
             suggested_actions.push(json!({

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::config::load_config;
 use crate::tools;
@@ -366,8 +366,9 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         let limit = call
             .arguments
             .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(20) as usize;
+            .and_then(serde_json::Value::as_u64)
+            .map(|v| usize::try_from(v).unwrap_or(usize::MAX))
+            .unwrap_or(20);
         let query = call
             .arguments
             .get("query")
@@ -422,7 +423,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             let available: Vec<String> = std::fs::read_dir(&docs_root)
                 .ok()
                 .map(|rd| {
-                    rd.filter_map(|e| e.ok())
+                    rd.filter_map(std::result::Result::ok)
                         .filter(|e| e.path().is_dir())
                         .filter_map(|e| {
                             let name = e.file_name().to_string_lossy().to_string();
@@ -463,10 +464,8 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         "audit_project" => tools::tool_audit(&project_root, &resolved.name, repo_path),
         "validate_docs" => {
             let source = crate::policy::policy_source(&docs_root, &resolved.name);
-            match crate::policy::validate(&docs_root, &resolved.name, repo_path) {
-                Ok((pol, results)) => Ok(crate::policy::validation_to_json(&pol, &results, source)),
-                Err(e) => Err(e),
-            }
+            let (pol, results) = crate::policy::validate(&docs_root, &resolved.name, repo_path);
+            Ok(crate::policy::validation_to_json(&pol, &results, source))
         }
         other => Err(anyhow::anyhow!("Unknown tool: {other}")),
     };
