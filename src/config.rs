@@ -108,7 +108,7 @@ impl Default for IndexConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct DocConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docs_root: Option<String>,
@@ -128,19 +128,6 @@ pub struct DocConfig {
     pub extra_extensions: Option<Vec<String>>,
 }
 
-impl Default for DocConfig {
-    fn default() -> Self {
-        Self {
-            docs_root: None,
-            core: None,
-            team: None,
-            public: None,
-            diagram: None,
-            index: None,
-            extra_extensions: None,
-        }
-    }
-}
 
 impl DocConfig {
     /// Return a new config where `self` values take precedence and `base` fills
