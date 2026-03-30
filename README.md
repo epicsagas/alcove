@@ -145,6 +145,10 @@ Re-run `alcove setup` anytime to change settings. It remembers your previous cho
 
 ---
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/epicsagas-alcove).
+
 ## How it works
 
 ```mermaid
