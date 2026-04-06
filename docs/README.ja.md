@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://glama.ai/mcp/servers/epicsagas/alcove"><img src="https://glama.ai/mcp/servers/epicsagas/alcove/badges/score.svg" height="20" alt="Glama MCP Score" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/v/alcove.svg" alt="crates.io" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/d/alcove.svg" alt="Downloads" /></a>
   <a href="../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
@@ -326,6 +327,12 @@ cargo install alcove
 alcove uninstall          # スキルと設定を削除
 cargo uninstall alcove    # バイナリを削除
 ```
+
+## エコシステム
+
+### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
+
+Alcoveは**obsidian-forge**と自然に連携できます。obsidian-forgeはObsidianボルトのジェネレーターかつ自動化デーモンです。obsidian-forgeで知識グラフを構築・強化した後、alcoveの`DOCS_ROOT`をそのボルトに向けることで、AIエージェントはコンテキストを無駄にせずに個人ナレッジベースをランク検索で活用できます。
 
 ## コントリビュート
 

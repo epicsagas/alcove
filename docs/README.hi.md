@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://glama.ai/mcp/servers/epicsagas/alcove"><img src="https://glama.ai/mcp/servers/epicsagas/alcove/badges/score.svg" height="20" alt="Glama MCP Score" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/v/alcove.svg" alt="crates.io" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/d/alcove.svg" alt="Downloads" /></a>
   <a href="../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
@@ -326,6 +327,12 @@ cargo install alcove
 alcove uninstall          # स्किल्स और कॉन्फ़िग हटाएं
 cargo uninstall alcove    # बाइनरी हटाएं
 ```
+
+## इकोसिस्टम
+
+### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
+
+Alcove, **obsidian-forge** के साथ स्वाभाविक रूप से काम करता है — यह एक Obsidian वॉल्ट जनरेटर और ऑटोमेशन डेमॉन है। obsidian-forge से अपना नॉलेज ग्राफ बनाएं और मजबूत करें, फिर alcove का `DOCS_ROOT` उस वॉल्ट पर सेट करें — आपके AI एजेंट्स को बिना कॉन्टेक्स्ट बर्बाद किए पूरे पर्सनल नॉलेज बेस पर रैंक्ड सर्च मिलेगी।
 
 ## योगदान
 

@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://glama.ai/mcp/servers/epicsagas/alcove"><img src="https://glama.ai/mcp/servers/epicsagas/alcove/badges/score.svg" height="20" alt="Glama MCP Score" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/v/alcove.svg" alt="crates.io" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/d/alcove.svg" alt="Downloads" /></a>
   <a href="../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
@@ -326,6 +327,12 @@ cargo install alcove
 alcove uninstall          # Skills & Konfiguration entfernen
 cargo uninstall alcove    # Binary entfernen
 ```
+
+## Ökosystem
+
+### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
+
+Alcove lässt sich nahtlos mit **obsidian-forge** kombinieren — einem Obsidian-Vault-Generator und Automatisierungs-Daemon. Baue und stärke deinen Wissensgraphen in Obsidian mit obsidian-forge, zeige dann `DOCS_ROOT` von alcove auf den Vault, und deine KI-Agenten erhalten kontextschonenden Ranked-Search-Zugriff auf deine gesamte persönliche Wissensbasis.
 
 ## Mitwirken
 

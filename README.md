@@ -392,6 +392,12 @@ alcove uninstall          # remove skills & config
 cargo uninstall alcove    # remove binary
 ```
 
+## Ecosystem
+
+### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
+
+Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and automation daemon. Use obsidian-forge to build and strengthen your knowledge graph in Obsidian, then point alcove's `DOCS_ROOT` at the vault — your AI agents get ranked, scoped search over your entire personal knowledge base without any context bloat.
+
 ## Contributing
 
 Bug reports, feature requests, and pull requests are welcome. Please open an issue on [GitHub](https://github.com/epicsagas/alcove/issues) to start a discussion.

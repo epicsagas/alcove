@@ -211,12 +211,17 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
             description: concat!(
                 "List all projects that have documentation stored in the alcove doc-repo.\n",
                 "\n",
-                "Use this tool when the user asks which projects are available, wants to switch project context, ",
-                "or before using scope=\"global\" in search_project_docs to understand what projects exist. ",
-                "It is read-only and has no side effects.\n",
+                "Use this tool when:\n",
+                "- The user asks which projects are available or tracked in alcove\n",
+                "- You need to verify a project exists before calling get_project_docs_overview or search_project_docs\n",
+                "- The user wants to switch project context or compare projects\n",
+                "- Before using scope=\"global\" in search_project_docs to understand what will be searched\n",
                 "\n",
-                "Returns project names derived from subdirectory names in the alcove doc-repo. ",
-                "Returns an empty list if no projects are initialized yet."
+                "It is read-only and has no side effects. Does not require any parameters.\n",
+                "\n",
+                "Returns an array of project names derived from subdirectory names in the alcove doc-repo. ",
+                "Returns an empty array if no projects have been initialized yet — use init_project to create one. ",
+                "Project names are case-sensitive and match the directory names exactly."
             ).into(),
             input_schema: json!({
                 "type": "object",
