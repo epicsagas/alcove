@@ -9,6 +9,9 @@ mod tools;
 #[cfg(feature = "alcove-full")]
 mod vector;
 
+#[cfg(feature = "alcove-server")]
+mod server;
+
 use std::io::{self, BufRead, Write as _};
 
 use anyhow::Result;
@@ -93,6 +96,16 @@ enum Commands {
         #[command(subcommand)]
         subcmd: ModelCommands,
     },
+    /// Start HTTP RAG server for external access
+    #[cfg(feature = "alcove-server")]
+    Serve {
+        /// Port to listen on
+        #[arg(long, default_value = "8080")]
+        port: u16,
+        /// Bearer token for authentication (optional)
+        #[arg(long)]
+        token: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -142,6 +155,25 @@ fn main() -> Result<()> {
         }) => cli::cmd_search(&query, &scope, &mode, limit),
         #[cfg(feature = "alcove-full")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
+        #[cfg(feature = "alcove-server")]
+        Some(Commands::Serve { port, token }) => {
+            let docs_root = config::load_config()
+                .docs_root()
+                .ok_or_else(|| anyhow::anyhow!("docs_root not configured. Run 'alcove setup' first."))?;
+            
+            println!("{}", console::style("Starting Alcove RAG server...").bold());
+            println!(
+                "  {} Docs root: {}",
+                console::style("→").dim(),
+                docs_root.display()
+            );
+            println!();
+
+            // Create tokio runtime for async server
+            tokio::runtime::Runtime::new()
+                .expect("Failed to create tokio runtime")
+                .block_on(server::run_server(docs_root, port, token))
+        }
     }
 }
 

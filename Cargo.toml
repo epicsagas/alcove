@@ -43,9 +43,16 @@ tantivy = "0.25"
 fastembed = { version = "5", optional = true }
 rusqlite = { version = "0.34", optional = true }
 
+# HTTP server dependencies (alcove-server feature)
+axum = { version = "0.8", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
+tower-http = { version = "0.6", features = ["cors"], optional = true }
+
 [features]
 default = []
 alcove-full = ["fastembed", "rusqlite"]
+alcove-server = ["axum", "tokio", "tower-http"]
+full = ["alcove-full", "alcove-server"]
 
 [dev-dependencies]
 tempfile = "3.26.0"
