@@ -112,6 +112,7 @@ impl Default for IndexConfig {
 // Embedding config (alcove-full feature)
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "alcove-full")]
 fn default_embedding_model() -> String {
     "MultilingualE5Small".into()
 }
@@ -127,16 +128,19 @@ fn default_embedding_enabled() -> bool {
     }
 }
 
+#[cfg(feature = "alcove-full")]
 fn default_embedding_auto_download() -> bool {
     true
 }
 
+#[cfg(feature = "alcove-full")]
 fn default_embedding_cache_dir() -> String {
     dirs::cache_dir()
         .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
         .unwrap_or_else(|| "~/.cache/alcove/models".into())
 }
 
+#[cfg(feature = "alcove-full")]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EmbeddingConfig {
     /// Model name (e.g., "MultilingualE5Small", "SnowflakeArcticEmbedXS")
@@ -153,6 +157,7 @@ pub struct EmbeddingConfig {
     pub enabled: bool,
 }
 
+#[cfg(feature = "alcove-full")]
 impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
@@ -164,6 +169,7 @@ impl Default for EmbeddingConfig {
     }
 }
 
+#[cfg(feature = "alcove-full")]
 impl EmbeddingConfig {
     /// Get the model name as a string
     pub fn model_name(&self) -> &str {
@@ -190,6 +196,7 @@ pub struct DocConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra_extensions: Option<Vec<String>>,
     /// Embedding configuration for hybrid search (alcove-full feature)
+    #[cfg(feature = "alcove-full")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<EmbeddingConfig>,
 }
@@ -207,6 +214,7 @@ impl DocConfig {
             diagram: self.diagram.clone().or_else(|| base.diagram.clone()),
             index: self.index.clone().or_else(|| base.index.clone()),
             extra_extensions: self.extra_extensions.clone().or_else(|| base.extra_extensions.clone()),
+            #[cfg(feature = "alcove-full")]
             embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
         }
     }
@@ -281,11 +289,13 @@ impl DocConfig {
     }
 
     /// Get embedding configuration as TOML struct
+    #[cfg(feature = "alcove-full")]
     pub fn embedding_config(&self) -> &Option<EmbeddingConfig> {
         &self.embedding
     }
 
     /// Get embedding configuration with defaults applied
+    #[cfg(feature = "alcove-full")]
     pub fn embedding_config_with_defaults(&self) -> EmbeddingConfig {
         self.embedding.clone().unwrap_or_default()
     }
@@ -326,6 +336,7 @@ pub fn load_config() -> &'static DocConfig {
             diagram: None,
             index: None,
             extra_extensions: None,
+            #[cfg(feature = "alcove-full")]
             embedding: None,
         }
     })

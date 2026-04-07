@@ -14,6 +14,7 @@ use anyhow::Result;
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 
 /// Model state for graceful degradation
+#[cfg(feature = "alcove-full")]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModelState {
     /// Model not downloaded yet
@@ -28,12 +29,14 @@ pub enum ModelState {
     Failed(String),
 }
 
+#[cfg(feature = "alcove-full")]
 impl Default for ModelState {
     fn default() -> Self {
         Self::NotDownloaded
     }
 }
 
+#[cfg(feature = "alcove-full")]
 impl std::fmt::Display for ModelState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -397,58 +400,11 @@ impl EmbeddingService {
 }
 
 // ---------------------------------------------------------------------------
-// Stub implementation (non-alcove-full)
-// ---------------------------------------------------------------------------
-
-#[cfg(not(feature = "alcove-full"))]
-pub struct EmbeddingService {
-    config: EmbeddingConfig,
-}
-
-#[cfg(not(feature = "alcove-full"))]
-impl EmbeddingService {
-    pub fn new(config: EmbeddingConfig) -> Self {
-        Self { config }
-    }
-
-    pub fn state(&self) -> ModelState {
-        ModelState::Failed("alcove-full feature not enabled".to_string())
-    }
-
-    pub fn dimension(&self) -> usize {
-        self.config.model.dimension()
-    }
-
-    pub fn dimension_changed(&self) -> bool {
-        false
-    }
-
-    pub fn ensure_model(&self) -> Result<(), String> {
-        Err("alcove-full feature not enabled".to_string())
-    }
-
-    pub fn embed(&self, _texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
-        Err("alcove-full feature not enabled".to_string())
-    }
-
-    pub fn remove_cache(&self) -> Result<(), String> {
-        Err("alcove-full feature not enabled".to_string())
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        false
-    }
-
-    pub fn model_name(&self) -> &'static str {
-        self.config.model.to_str()
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[cfg(feature = "alcove-full")]
 mod tests {
     use super::*;
 

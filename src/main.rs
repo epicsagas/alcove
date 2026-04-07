@@ -5,6 +5,8 @@ mod index;
 mod mcp;
 mod policy;
 mod tools;
+
+#[cfg(feature = "alcove-full")]
 mod vector;
 
 use std::io::{self, BufRead, Write as _};
@@ -85,7 +87,8 @@ enum Commands {
         #[arg(long, default_value = "20")]
         limit: usize,
     },
-    /// Manage embedding models for hybrid search (alcove-full feature)
+    /// Manage embedding models for hybrid search
+    #[cfg(feature = "alcove-full")]
     Model {
         #[command(subcommand)]
         subcmd: ModelCommands,
@@ -93,6 +96,7 @@ enum Commands {
 }
 
 #[derive(Subcommand)]
+#[cfg(feature = "alcove-full")]
 enum ModelCommands {
     /// List available embedding models
     List,
@@ -136,6 +140,7 @@ fn main() -> Result<()> {
             mode,
             limit,
         }) => cli::cmd_search(&query, &scope, &mode, limit),
+        #[cfg(feature = "alcove-full")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
     }
 }

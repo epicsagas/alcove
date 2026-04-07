@@ -353,6 +353,7 @@ fn select_agents(prompt: &str) -> Result<Vec<usize>> {
 // ---------------------------------------------------------------------------
 
 /// Embedding model options for setup wizard
+#[cfg(feature = "alcove-full")]
 const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
     ("MultilingualE5Small", "Default, balanced (100+ langs, ~235MB)", 384, 235),
     ("SnowflakeArcticEmbedXS", "Smallest, fastest (~30MB)", 384, 30),
@@ -363,6 +364,7 @@ const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
 ];
 
 /// Interactive embedding model selection
+#[cfg(feature = "alcove-full")]
 fn setup_embedding() -> Result<Option<crate::config::EmbeddingConfig>> {
     println!();
     println!(
@@ -622,9 +624,11 @@ pub fn cmd_setup() -> Result<()> {
     );
 
     // 4. Embedding model (alcove-full feature)
+    #[cfg(feature = "alcove-full")]
     let embedding_config = setup_embedding()?;
 
     // 5. Save config
+    #[cfg(feature = "alcove-full")]
     save_full_config(
         &docs_root,
         diagram_format,
@@ -632,6 +636,15 @@ pub fn cmd_setup() -> Result<()> {
         &team_files,
         &public_files,
         embedding_config.as_ref(),
+    )?;
+
+    #[cfg(not(feature = "alcove-full"))]
+    save_full_config(
+        &docs_root,
+        diagram_format,
+        &core_files,
+        &team_files,
+        &public_files,
     )?;
 
     // 6. Agent setup
@@ -1351,6 +1364,7 @@ fn save_full_config(
     core_files: &[String],
     team_files: &[String],
     public_files: &[String],
+    #[cfg(feature = "alcove-full")]
     embedding_config: Option<&crate::config::EmbeddingConfig>,
 ) -> Result<()> {
     let cfg_path = config_path();
@@ -1361,6 +1375,7 @@ fn save_full_config(
         core_files,
         team_files,
         public_files,
+        #[cfg(feature = "alcove-full")]
         embedding_config,
     )?;
     println!(
@@ -1378,6 +1393,7 @@ fn save_full_config_to(
     core_files: &[String],
     team_files: &[String],
     public_files: &[String],
+    #[cfg(feature = "alcove-full")]
     embedding_config: Option<&crate::config::EmbeddingConfig>,
 ) -> Result<()> {
     fs::create_dir_all(cfg_path.parent().unwrap())?;
@@ -1400,6 +1416,7 @@ fn save_full_config_to(
     );
 
     // Add embedding section if configured
+    #[cfg(feature = "alcove-full")]
     if let Some(cfg) = embedding_config {
         if cfg.enabled {
             content.push_str(&format!(
@@ -1825,8 +1842,8 @@ mod tests {
 // Model subcommand (alcove-full feature)
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "alcove-full")]
 pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
-    use crate::embedding::EmbeddingModelChoice;
     use crate::ModelCommands;
 
     match subcmd {
@@ -1838,6 +1855,7 @@ pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
     }
 }
 
+#[cfg(feature = "alcove-full")]
 fn cmd_model_list() -> Result<()> {
     use crate::embedding::EmbeddingModelChoice;
     
@@ -1889,6 +1907,7 @@ fn cmd_model_list() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "alcove-full")]
 fn cmd_model_download() -> Result<()> {
     #[cfg(feature = "alcove-full")]
     {
@@ -1938,59 +1957,49 @@ fn cmd_model_download() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "alcove-full")]
 fn cmd_model_remove() -> Result<()> {
-    #[cfg(feature = "alcove-full")]
-    {
-        let cfg = load_config().embedding_config_with_defaults();
-        let cache_dir = std::path::PathBuf::from(
-            cfg.cache_dir.starts_with('~')
-                .then(|| std::env::var("HOME").ok())
-                .flatten()
-                .map(|h| cfg.cache_dir.replacen('~', &h, 1))
-                .unwrap_or_else(|| cfg.cache_dir.clone())
-        );
+    let cfg = load_config().embedding_config_with_defaults();
+    let cache_dir = std::path::PathBuf::from(
+        cfg.cache_dir.starts_with('~')
+            .then(|| std::env::var("HOME").ok())
+            .flatten()
+            .map(|h| cfg.cache_dir.replacen('~', &h, 1))
+            .unwrap_or_else(|| cfg.cache_dir.clone())
+    );
 
-        let model_dir = cache_dir.join(&cfg.model);
+    let model_dir = cache_dir.join(&cfg.model);
 
-        if model_dir.exists() {
-            // Calculate size before removal
-            let size_mb: u64 = walkdir::WalkDir::new(&model_dir)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file())
-                .filter_map(|e| e.metadata().ok())
-                .map(|m| m.len())
-                .sum::<u64>()
-                / 1_000_000;
+    if model_dir.exists() {
+        // Calculate size before removal
+        let size_mb: u64 = walkdir::WalkDir::new(&model_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter_map(|e| e.metadata().ok())
+            .map(|m| m.len())
+            .sum::<u64>()
+            / 1_000_000;
 
-            fs::remove_dir_all(&model_dir)?;
-            println!(
-                "{} Removed model cache: {} (freed ~{}MB)",
-                style("✓").green(),
-                style(&cfg.model).cyan(),
-                size_mb
-            );
-        } else {
-            println!(
-                "{} No cached model found at: {}",
-                style("!").yellow(),
-                model_dir.display()
-            );
-        }
-    }
-
-    #[cfg(not(feature = "alcove-full"))]
-    {
+        fs::remove_dir_all(&model_dir)?;
         println!(
-            "{} The 'alcove-full' feature is required for embedding support.",
-            style("✗").red()
+            "{} Removed model cache: {} (freed ~{}MB)",
+            style("✓").green(),
+            style(&cfg.model).cyan(),
+            size_mb
         );
-        println!("Install with: cargo install alcove --features alcove-full");
+    } else {
+        println!(
+            "{} No cached model found at: {}",
+            style("!").yellow(),
+            model_dir.display()
+        );
     }
 
     Ok(())
 }
 
+#[cfg(feature = "alcove-full")]
 fn cmd_model_set(model_name: &str) -> Result<()> {
     use crate::embedding::EmbeddingModelChoice;
     
@@ -2049,6 +2058,7 @@ fn cmd_model_set(model_name: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "alcove-full")]
 fn cmd_model_status() -> Result<()> {
     let cfg = load_config();
     let emb_cfg = cfg.embedding_config_with_defaults();

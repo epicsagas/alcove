@@ -905,28 +905,6 @@ pub fn search_hybrid(
     }))
 }
 
-/// Hybrid search stub for non-alcove-full builds
-#[cfg(not(feature = "alcove-full"))]
-pub fn search_hybrid(
-    docs_root: &Path,
-    query: &str,
-    _embedding_service: &crate::embedding::EmbeddingService,
-    limit: usize,
-    project_filter: Option<&str>,
-) -> Result<JsonValue> {
-    // Fall back to BM25-only
-    let bm25_json = search_indexed(docs_root, query, limit, project_filter)?;
-    
-    Ok(json!({
-        "query": query,
-        "scope": if project_filter.is_some() { "project" } else { "global" },
-        "mode": "bm25-only",
-        "embedding_status": "alcove-full feature not enabled",
-        "matches": bm25_json["matches"],
-        "truncated": bm25_json["truncated"],
-    }))
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

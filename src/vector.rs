@@ -11,6 +11,7 @@ use anyhow::Result;
 use rusqlite::{Connection, params};
 
 /// Vector store metadata
+#[cfg(feature = "alcove-full")]
 #[derive(Debug, Clone)]
 pub struct VectorMeta {
     /// Model name used for embeddings
@@ -22,6 +23,7 @@ pub struct VectorMeta {
 }
 
 /// Search result with similarity score
+#[cfg(feature = "alcove-full")]
 #[derive(Debug, Clone)]
 pub struct VectorResult {
     /// Project name
@@ -250,50 +252,11 @@ impl VectorStore {
 }
 
 // ---------------------------------------------------------------------------
-// Stub implementation (non-alcove-full)
-// ---------------------------------------------------------------------------
-
-#[cfg(not(feature = "alcove-full"))]
-pub struct VectorStore;
-
-#[cfg(not(feature = "alcove-full"))]
-impl VectorStore {
-    pub fn open(_path: &Path, _model: &str, _dimension: usize) -> Result<Self, &'static str> {
-        Err("alcove-full feature not enabled")
-    }
-
-    pub fn upsert(
-        &self,
-        _project: &str,
-        _file: &str,
-        _chunk_id: u64,
-        _embedding: &[f32],
-    ) -> Result<(), &'static str> {
-        Err("alcove-full feature not enabled")
-    }
-
-    pub fn search(&self, _query: &[f32], _limit: usize) -> Result<Vec<VectorResult>, &'static str> {
-        Err("alcove-full feature not enabled")
-    }
-
-    pub fn meta(&self) -> Result<VectorMeta, &'static str> {
-        Err("alcove-full feature not enabled")
-    }
-
-    pub fn is_empty(&self) -> bool {
-        true
-    }
-
-    pub fn clear(&self) -> Result<(), &'static str> {
-        Err("alcove-full feature not enabled")
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
 
 /// Compute cosine similarity between two vectors
+#[cfg(feature = "alcove-full")]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
@@ -314,6 +277,7 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 ///
 /// RRF score = sum(1 / (k + rank_i)) for each ranking list
 /// Default k = 60 (commonly used value)
+#[cfg(feature = "alcove-full")]
 pub fn reciprocal_rank_fusion(
     bm25_results: &[(String, String, u64, f32)], // (project, file, chunk_id, score)
     vector_results: &[VectorResult],
