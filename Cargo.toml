@@ -39,5 +39,13 @@ rust-i18n = "3.1.5"
 sys-locale = "0.3.2"
 tantivy = "0.25"
 
+# alcove-full feature dependencies (lazy embedding + vector search)
+fastembed = { version = "5", optional = true }
+rusqlite = { version = "0.34", optional = true }
+
+[features]
+default = []
+alcove-full = ["fastembed", "rusqlite"]
+
 [dev-dependencies]
 tempfile = "3.26.0"
