@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod embedding;
 mod index;
 mod mcp;
 mod policy;
@@ -83,6 +84,28 @@ enum Commands {
         #[arg(long, default_value = "20")]
         limit: usize,
     },
+    /// Manage embedding models for hybrid search (alcove-full feature)
+    Model {
+        #[command(subcommand)]
+        subcmd: ModelCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ModelCommands {
+    /// List available embedding models
+    List,
+    /// Download the configured embedding model
+    Download,
+    /// Remove cached embedding model to free disk space
+    Remove,
+    /// Set the embedding model (updates config.toml)
+    Set {
+        /// Model name (e.g., MultilingualE5Small, SnowflakeArcticEmbedXS)
+        model: String,
+    },
+    /// Show current model status
+    Status,
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +135,7 @@ fn main() -> Result<()> {
             mode,
             limit,
         }) => cli::cmd_search(&query, &scope, &mode, limit),
+        Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
     }
 }
 

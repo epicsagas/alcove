@@ -108,6 +108,69 @@ impl Default for IndexConfig {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Embedding config (alcove-full feature)
+// ---------------------------------------------------------------------------
+
+fn default_embedding_model() -> String {
+    "MultilingualE5Small".into()
+}
+
+fn default_embedding_enabled() -> bool {
+    #[cfg(feature = "alcove-full")]
+    {
+        true
+    }
+    #[cfg(not(feature = "alcove-full"))]
+    {
+        false
+    }
+}
+
+fn default_embedding_auto_download() -> bool {
+    true
+}
+
+fn default_embedding_cache_dir() -> String {
+    dirs::cache_dir()
+        .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
+        .unwrap_or_else(|| "~/.cache/alcove/models".into())
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EmbeddingConfig {
+    /// Model name (e.g., "MultilingualE5Small", "SnowflakeArcticEmbedXS")
+    #[serde(default = "default_embedding_model")]
+    pub model: String,
+    /// Auto-download model on first search
+    #[serde(default = "default_embedding_auto_download")]
+    pub auto_download: bool,
+    /// Model cache directory
+    #[serde(default = "default_embedding_cache_dir")]
+    pub cache_dir: String,
+    /// Enable embedding (false = BM25 only)
+    #[serde(default = "default_embedding_enabled")]
+    pub enabled: bool,
+}
+
+impl Default for EmbeddingConfig {
+    fn default() -> Self {
+        Self {
+            model: default_embedding_model(),
+            auto_download: default_embedding_auto_download(),
+            cache_dir: default_embedding_cache_dir(),
+            enabled: default_embedding_enabled(),
+        }
+    }
+}
+
+impl EmbeddingConfig {
+    /// Get the model name as a string
+    pub fn model_name(&self) -> &str {
+        &self.model
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct DocConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -126,6 +189,9 @@ pub struct DocConfig {
     /// Example: `extra_extensions = ["yaml", "json"]`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra_extensions: Option<Vec<String>>,
+    /// Embedding configuration for hybrid search (alcove-full feature)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<EmbeddingConfig>,
 }
 
 
@@ -141,6 +207,7 @@ impl DocConfig {
             diagram: self.diagram.clone().or_else(|| base.diagram.clone()),
             index: self.index.clone().or_else(|| base.index.clone()),
             extra_extensions: self.extra_extensions.clone().or_else(|| base.extra_extensions.clone()),
+            embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
         }
     }
 
@@ -212,6 +279,16 @@ impl DocConfig {
             .iter()
             .any(|e| e.trim_start_matches('.').to_lowercase() == ext)
     }
+
+    /// Get embedding configuration as TOML struct
+    pub fn embedding_config(&self) -> &Option<EmbeddingConfig> {
+        &self.embedding
+    }
+
+    /// Get embedding configuration with defaults applied
+    pub fn embedding_config_with_defaults(&self) -> EmbeddingConfig {
+        self.embedding.clone().unwrap_or_default()
+    }
 }
 
 /// Default docs root: `~/.config/alcove/docs`
@@ -249,6 +326,7 @@ pub fn load_config() -> &'static DocConfig {
             diagram: None,
             index: None,
             extra_extensions: None,
+            embedding: None,
         }
     })
 }

@@ -1672,3 +1672,298 @@ mod tests {
         assert!(content.contains("format = \"mermaid\""));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Model subcommand (alcove-full feature)
+// ---------------------------------------------------------------------------
+
+pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
+    use crate::embedding::EmbeddingModelChoice;
+    use crate::ModelCommands;
+
+    match subcmd {
+        ModelCommands::List => cmd_model_list(),
+        ModelCommands::Download => cmd_model_download(),
+        ModelCommands::Remove => cmd_model_remove(),
+        ModelCommands::Set { model } => cmd_model_set(&model),
+        ModelCommands::Status => cmd_model_status(),
+    }
+}
+
+fn cmd_model_list() -> Result<()> {
+    use crate::embedding::EmbeddingModelChoice;
+    
+    println!("{}", style("Available embedding models:").bold());
+    println!();
+    println!(
+        "{:<30} {:<8} {:<10} {}",
+        style("Model").bold(),
+        style("Dim").bold(),
+        style("Size").bold(),
+        style("Description").bold()
+    );
+    println!("{}", "-".repeat(80));
+
+    let current = load_config()
+        .embedding
+        .as_ref()
+        .map(|e| e.model.as_str())
+        .unwrap_or("MultilingualE5Small");
+
+    for model in EmbeddingModelChoice::all() {
+        let marker = if model.to_str() == current { " [current]" } else { "" };
+        let desc = match model {
+            EmbeddingModelChoice::SnowflakeArcticEmbedXS => "Mobile/low-spec, fastest",
+            EmbeddingModelChoice::SnowflakeArcticEmbedXSQ => "Quantized XS, smallest",
+            EmbeddingModelChoice::MultilingualE5Small => "Default, balanced (100+ langs)",
+            EmbeddingModelChoice::SnowflakeArcticEmbedS => "Quality/size balance",
+            EmbeddingModelChoice::SnowflakeArcticEmbedSQ => "Quantized S",
+            EmbeddingModelChoice::MultilingualE5Base => "Large scale docs",
+            EmbeddingModelChoice::SnowflakeArcticEmbedM => "Medium, 768d",
+            EmbeddingModelChoice::SnowflakeArcticEmbedMQ => "Quantized M",
+            EmbeddingModelChoice::MultilingualE5Large => "Best quality, heavy",
+            EmbeddingModelChoice::BGEM3 => "Dense+Sparse+ColBERT",
+        };
+        println!(
+            "{:<30} {:<8} {:<10} {}{}",
+            model.to_str(),
+            model.dimension(),
+            format!("~{}MB", model.size_mb()),
+            desc,
+            style(marker).cyan()
+        );
+    }
+
+    println!();
+    println!("Change model: alcove model set <ModelName>");
+    println!("Check status: alcove model status");
+
+    Ok(())
+}
+
+fn cmd_model_download() -> Result<()> {
+    #[cfg(feature = "alcove-full")]
+    {
+        let cfg = load_config().embedding_config_with_defaults();
+        let service = EmbeddingService::new(crate::embedding::EmbeddingConfig {
+            model: crate::embedding::EmbeddingModelChoice::from_str(&cfg.model).unwrap_or_default(),
+            auto_download: true,
+            cache_dir: std::path::PathBuf::from(
+                cfg.cache_dir.starts_with('~')
+                    .then(|| std::env::var("HOME").ok())
+                    .flatten()
+                    .map(|h| cfg.cache_dir.replacen('~', &h, 1))
+                    .unwrap_or_else(|| cfg.cache_dir.clone())
+            ),
+            enabled: true,
+        });
+
+        println!(
+            "{} Downloading embedding model: {}",
+            style("⏳").yellow(),
+            style(&cfg.model).cyan()
+        );
+        println!("This may take a few minutes on first run...");
+        println!();
+
+        service.ensure_model().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        println!(
+            "{} Model downloaded and ready: {}",
+            style("✓").green(),
+            style(&cfg.model).cyan()
+        );
+        println!("Cache location: {}", cfg.cache_dir);
+    }
+
+    #[cfg(not(feature = "alcove-full"))]
+    {
+        println!(
+            "{} The 'alcove-full' feature is required for embedding support.",
+            style("✗").red()
+        );
+        println!("Install with: cargo install alcove --features alcove-full");
+    }
+
+    Ok(())
+}
+
+fn cmd_model_remove() -> Result<()> {
+    #[cfg(feature = "alcove-full")]
+    {
+        let cfg = load_config().embedding_config_with_defaults();
+        let cache_dir = std::path::PathBuf::from(
+            cfg.cache_dir.starts_with('~')
+                .then(|| std::env::var("HOME").ok())
+                .flatten()
+                .map(|h| cfg.cache_dir.replacen('~', &h, 1))
+                .unwrap_or_else(|| cfg.cache_dir.clone())
+        );
+
+        let model_dir = cache_dir.join(&cfg.model);
+
+        if model_dir.exists() {
+            let size_mb = fs_extra::dir::get_size(&model_dir)
+                .map(|s| s / 1_000_000)
+                .unwrap_or(0);
+
+            fs::remove_dir_all(&model_dir)?;
+            println!(
+                "{} Removed model cache: {} (freed ~{}MB)",
+                style("✓").green(),
+                style(&cfg.model).cyan(),
+                size_mb
+            );
+        } else {
+            println!(
+                "{} No cached model found at: {}",
+                style("!").yellow(),
+                model_dir.display()
+            );
+        }
+    }
+
+    #[cfg(not(feature = "alcove-full"))]
+    {
+        println!(
+            "{} The 'alcove-full' feature is required for embedding support.",
+            style("✗").red()
+        );
+        println!("Install with: cargo install alcove --features alcove-full");
+    }
+
+    Ok(())
+}
+
+fn cmd_model_set(model_name: &str) -> Result<()> {
+    use crate::embedding::EmbeddingModelChoice;
+    
+    // Validate model name
+    let model = EmbeddingModelChoice::from_str(model_name)
+        .ok_or_else(|| anyhow::anyhow!("Unknown model: {}. Run 'alcove model list' to see available models.", model_name))?;
+
+    // Read current config
+    let config_file = config_path();
+    let mut content = if config_file.exists() {
+        fs::read_to_string(&config_file)?
+    } else {
+        String::new()
+    };
+
+    // Update or add [embedding] section
+    let embedding_section = format!(
+        "[embedding]\nmodel = \"{}\"\nauto_download = true\n",
+        model_name
+    );
+
+    if content.contains("[embedding]") {
+        // Replace existing embedding section
+        let start = content.find("[embedding]").unwrap();
+        let end = content[start..]
+            .find("\n[")
+            .map(|i| start + i)
+            .unwrap_or(content.len());
+        
+        // Find the actual end of the embedding section (before next section or EOF)
+        let section_end = content[start..].find("\n\n[").map(|i| start + i).unwrap_or(end);
+        
+        content = format!("{}{}{}", &content[..start], embedding_section.trim_end(), &content[section_end..]);
+    } else {
+        // Add new embedding section
+        if !content.ends_with('\n') && !content.is_empty() {
+            content.push('\n');
+        }
+        content.push('\n');
+        content.push_str(&embedding_section);
+    }
+
+    fs::write(&config_file, content)?;
+
+    println!(
+        "{} Model set to: {} ({}d, ~{}MB)",
+        style("✓").green(),
+        style(model_name).cyan(),
+        model.dimension(),
+        model.size_mb()
+    );
+    println!();
+    println!("Run 'alcove model download' to download the model.");
+    println!("Run 'alcove index' to rebuild the vector index with the new model.");
+
+    Ok(())
+}
+
+fn cmd_model_status() -> Result<()> {
+    let cfg = load_config();
+    let emb_cfg = cfg.embedding_config_with_defaults();
+
+    println!("{}", style("Embedding Model Status").bold());
+    println!("{}", "-".repeat(40));
+    println!(
+        "{:<20} {}",
+        style("Configured model:").dim(),
+        style(&emb_cfg.model).cyan()
+    );
+    println!(
+        "{:<20} {}d",
+        style("Dimension:").dim(),
+        crate::embedding::EmbeddingModelChoice::from_str(&emb_cfg.model)
+            .map(|m| m.dimension())
+            .unwrap_or(384)
+    );
+    println!(
+        "{:<20} ~{}MB",
+        style("Size:").dim(),
+        crate::embedding::EmbeddingModelChoice::from_str(&emb_cfg.model)
+            .map(|m| m.size_mb())
+            .unwrap_or(235)
+    );
+    println!(
+        "{:<20} {}",
+        style("Auto-download:").dim(),
+        emb_cfg.auto_download
+    );
+    println!(
+        "{:<20} {}",
+        style("Cache dir:").dim(),
+        emb_cfg.cache_dir
+    );
+
+    #[cfg(feature = "alcove-full")]
+    {
+        let cache_path = std::path::PathBuf::from(
+            emb_cfg.cache_dir.starts_with('~')
+                .then(|| std::env::var("HOME").ok())
+                .flatten()
+                .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
+                .unwrap_or_else(|| emb_cfg.cache_dir.clone())
+        );
+        let model_dir = cache_path.join(&emb_cfg.model);
+
+        println!();
+        if model_dir.exists() {
+            println!(
+                "{} Model cached: {}",
+                style("✓").green(),
+                model_dir.display()
+            );
+        } else {
+            println!(
+                "{} Model not cached. Run 'alcove model download' to download.",
+                style("⏳").yellow()
+            );
+        }
+    }
+
+    #[cfg(not(feature = "alcove-full"))]
+    {
+        println!();
+        println!(
+            "{} alcove-full feature not enabled",
+            style("⚠").yellow()
+        );
+        println!("Vector search requires: cargo install alcove --features alcove-full");
+    }
+
+    Ok(())
+}
