@@ -955,6 +955,50 @@ pub fn cmd_index() -> Result<()> {
         result["index_path"].as_str().unwrap_or("unknown"),
     );
 
+    // Show vector indexing status
+    let vector_status = result["vector_status"].as_str().unwrap_or("disabled");
+    match vector_status {
+        "ok" => {
+            let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
+            let errors = result["vector_errors"].as_u64().unwrap_or(0);
+            let model = result["embedding_model"].as_str().unwrap_or("unknown");
+            println!(
+                "  {} {} vector(s) indexed ({})",
+                style("✓").green(),
+                vectors,
+                style(model).cyan()
+            );
+            if errors > 0 {
+                println!(
+                    "  {} {} vector error(s)",
+                    style("!").yellow(),
+                    errors
+                );
+            }
+        }
+        "model_not_ready" => {
+            let status = result["embedding_status"].as_str().unwrap_or("unknown");
+            println!(
+                "  {} Vector index skipped (model: {})",
+                style("⏳").yellow(),
+                style(status).yellow()
+            );
+            println!("  {} Run 'alcove model download' to enable hybrid search", style("→").dim());
+        }
+        "failed" => {
+            let error = result["vector_error"].as_str().unwrap_or("unknown error");
+            println!(
+                "  {} Vector index failed: {}",
+                style("✗").red(),
+                error
+            );
+        }
+        "disabled" => {
+            // No message - embedding is disabled
+        }
+        _ => {}
+    }
+
     Ok(())
 }
 

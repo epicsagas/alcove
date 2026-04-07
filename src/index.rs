@@ -581,12 +581,148 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
     meta.files = current_files;
     meta.save(docs_root)?;
 
+    // ---------------------------------------------------------------------------
+    // Vector indexing (alcove-full feature)
+    // ---------------------------------------------------------------------------
+
+    #[cfg(feature = "alcove-full")]
+    {
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService, EmbeddingConfig as EmbConfig};
+        use crate::vector::VectorStore;
+        use crate::config::load_config;
+
+        let cfg = load_config();
+        let emb_cfg = cfg.embedding_config_with_defaults();
+
+        if emb_cfg.enabled {
+            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+            let cache_dir = std::path::PathBuf::from(
+                emb_cfg.cache_dir.starts_with('~')
+                    .then(|| std::env::var("HOME").ok())
+                    .flatten()
+                    .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
+                    .unwrap_or_else(|| emb_cfg.cache_dir.clone())
+            );
+
+            let service = EmbeddingService::new(EmbConfig {
+                model,
+                auto_download: emb_cfg.auto_download,
+                cache_dir: cache_dir.clone(),
+                enabled: true,
+            });
+
+            // Check if model is ready
+            if service.state() == crate::embedding::ModelState::Ready {
+                let vector_path = docs_root.join(".alcove").join("vectors.db");
+                let store = match VectorStore::open(&vector_path, service.model_name(), service.dimension()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("[alcove] Failed to open vector store: {}", e);
+                        return Ok(json!({
+                            "status": "ok",
+                            "projects": project_count,
+                            "indexed": indexed_count,
+                            "skipped": skipped_count,
+                            "index_path": dir.to_string_lossy(),
+                            "vector_status": "failed",
+                            "vector_error": e.to_string(),
+                        }));
+                    }
+                };
+
+                let mut vector_count = 0u64;
+                let mut vector_errors = 0u64;
+
+                // Collect all chunks for embedding
+                for entry in std::fs::read_dir(docs_root)?.flatten() {
+                    let path = entry.path();
+                    if !path.is_dir() {
+                        continue;
+                    }
+                    let project_name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    if project_name.starts_with('.') || project_name.starts_with('_') 
+                        || project_name == "mcp" || project_name == "skills" 
+                        || project_name == ".alcove" {
+                        continue;
+                    }
+
+                    let proj_cfg = effective_config(&path);
+                    for walk_entry in WalkDir::new(&path)
+                        .into_iter()
+                        .filter_map(std::result::Result::ok)
+                        .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path()))
+                    {
+                        let file_path = walk_entry.path();
+                        let content = match std::fs::read_to_string(file_path) {
+                            Ok(c) => c,
+                            Err(_) => continue,
+                        };
+                        let rel = file_path
+                            .strip_prefix(&path)
+                            .unwrap_or(file_path)
+                            .to_string_lossy()
+                            .to_string();
+
+                        let chunks = chunk_content(&content);
+                        let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
+
+                        // Batch embed all chunks in the file
+                        match service.embed(&texts) {
+                            Ok(embeddings) => {
+                                for (chunk_idx, embedding) in embeddings.into_iter().enumerate() {
+                                    if let Err(e) = store.upsert(&project_name, &rel, chunk_idx as u64, &embedding) {
+                                        eprintln!("[alcove] Failed to upsert vector: {}", e);
+                                        vector_errors += 1;
+                                    } else {
+                                        vector_count += 1;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[alcove] Failed to embed {}: {}", rel, e);
+                                vector_errors += 1;
+                            }
+                        }
+                    }
+                }
+
+                return Ok(json!({
+                    "status": "ok",
+                    "projects": project_count,
+                    "indexed": indexed_count,
+                    "skipped": skipped_count,
+                    "index_path": dir.to_string_lossy(),
+                    "vector_status": "ok",
+                    "vectors_indexed": vector_count,
+                    "vector_errors": vector_errors,
+                    "embedding_model": service.model_name(),
+                }));
+            } else {
+                // Model not ready, return BM25-only status
+                return Ok(json!({
+                    "status": "ok",
+                    "projects": project_count,
+                    "indexed": indexed_count,
+                    "skipped": skipped_count,
+                    "index_path": dir.to_string_lossy(),
+                    "vector_status": "model_not_ready",
+                    "embedding_status": service.state().to_string(),
+                }));
+            }
+        }
+    }
+
     Ok(json!({
         "status": "ok",
         "projects": project_count,
         "indexed": indexed_count,
         "skipped": skipped_count,
         "index_path": dir.to_string_lossy(),
+        "vector_status": "disabled",
     }))
 }
 
