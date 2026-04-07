@@ -115,7 +115,7 @@ impl EmbeddingModelChoice {
     }
 
     /// Parse from string (for config file)
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "MultilingualE5Small" => Some(Self::MultilingualE5Small),
             "MultilingualE5Base" => Some(Self::MultilingualE5Base),
@@ -132,7 +132,7 @@ impl EmbeddingModelChoice {
     }
 
     /// Convert to string (for config file)
-    pub fn to_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::MultilingualE5Small => "MultilingualE5Small",
             Self::MultilingualE5Base => "MultilingualE5Base",
@@ -166,7 +166,7 @@ impl EmbeddingModelChoice {
 
 impl std::fmt::Display for EmbeddingModelChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_str())
+        write!(f, "{}", (*self).as_str())
     }
 }
 
@@ -419,11 +419,11 @@ mod tests {
     #[test]
     fn test_model_choice_parse() {
         assert_eq!(
-            EmbeddingModelChoice::from_str("MultilingualE5Small"),
+            EmbeddingModelChoice::parse("MultilingualE5Small"),
             Some(EmbeddingModelChoice::MultilingualE5Small)
         );
         assert_eq!(
-            EmbeddingModelChoice::from_str("InvalidModel"),
+            EmbeddingModelChoice::parse("InvalidModel"),
             None
         );
     }
