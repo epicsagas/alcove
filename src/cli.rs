@@ -349,6 +349,113 @@ fn select_agents(prompt: &str) -> Result<Vec<usize>> {
 }
 
 // ---------------------------------------------------------------------------
+// Embedding model selection
+// ---------------------------------------------------------------------------
+
+/// Embedding model options for setup wizard
+const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
+    ("MultilingualE5Small", "Default, balanced (100+ langs, ~235MB)", 384, 235),
+    ("SnowflakeArcticEmbedXS", "Smallest, fastest (~30MB)", 384, 30),
+    ("SnowflakeArcticEmbedXSQ", "Quantized, minimal disk (~15MB)", 384, 15),
+    ("SnowflakeArcticEmbedS", "Quality/size balance (~130MB)", 384, 130),
+    ("MultilingualE5Base", "Large scale docs (~555MB)", 768, 555),
+    ("disabled", "Disable embedding (BM25 only)", 0, 0),
+];
+
+/// Interactive embedding model selection
+fn setup_embedding() -> Result<Option<crate::config::EmbeddingConfig>> {
+    println!();
+    println!(
+        "{}",
+        style("── Embedding Model (Hybrid Search) ──").bold()
+    );
+
+    #[cfg(feature = "alcove-full")]
+    {
+        // Check current config
+        let current_model = load_config()
+            .embedding
+            .as_ref()
+            .map(|e| e.model.as_str())
+            .unwrap_or("MultilingualE5Small");
+
+        let labels: Vec<String> = EMBEDDING_OPTIONS
+            .iter()
+            .map(|(name, desc, dim, size)| {
+                let marker = if *name == current_model { " [current]" } else { "" };
+                if *size == 0 {
+                    format!("{} — {}{}", name, desc, marker)
+                } else {
+                    format!("{} — {} ({}d){}", name, desc, dim, marker)
+                }
+            })
+            .collect();
+
+        let default_idx = EMBEDDING_OPTIONS
+            .iter()
+            .position(|(name, _, _, _)| *name == current_model)
+            .unwrap_or(0);
+
+        let idx = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Select embedding model for hybrid search")
+            .items(&labels)
+            .default(default_idx)
+            .interact()?;
+
+        let (model_name, _, _, _) = EMBEDDING_OPTIONS[idx];
+
+        if model_name == "disabled" {
+            println!(
+                "  {} Embedding disabled. Search will use BM25 only.",
+                style("✓").green()
+            );
+            return Ok(Some(crate::config::EmbeddingConfig {
+                model: "disabled".to_string(),
+                auto_download: false,
+                cache_dir: String::new(),
+                enabled: false,
+            }));
+        }
+
+        // Ask about auto-download
+        let auto_download = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Download model automatically on first search?")
+            .items(&["Yes (recommended)", "No — manual download only"])
+            .default(0)
+            .interact()? == 0;
+
+        // Determine cache directory
+        let cache_dir = dirs::cache_dir()
+            .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
+            .unwrap_or_else(|| "~/.cache/alcove/models".to_string());
+
+        println!(
+            "  {} Model: {} (will download on first search)",
+            style("✓").green(),
+            model_name
+        );
+
+        Ok(Some(crate::config::EmbeddingConfig {
+            model: model_name.to_string(),
+            auto_download,
+            cache_dir,
+            enabled: true,
+        }))
+    }
+
+    #[cfg(not(feature = "alcove-full"))]
+    {
+        println!(
+            "  {} alcove-full feature not enabled",
+            style("ℹ").yellow()
+        );
+        println!("  Embedding requires: cargo install alcove --features alcove-full");
+        println!("  Search will use BM25 only.");
+        Ok(None)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Diagram format selection
 // ---------------------------------------------------------------------------
 
@@ -514,16 +621,20 @@ pub fn cmd_setup() -> Result<()> {
         t!("setup.diagram_set", format = diagram_format)
     );
 
-    // 4. Save config
+    // 4. Embedding model (alcove-full feature)
+    let embedding_config = setup_embedding()?;
+
+    // 5. Save config
     save_full_config(
         &docs_root,
         diagram_format,
         &core_files,
         &team_files,
         &public_files,
+        embedding_config.as_ref(),
     )?;
 
-    // 4. Agent setup
+    // 6. Agent setup
     println!();
     println!("{}", style(format!("── {} ──", t!("setup.agents"))).bold());
     let selected = select_agents(&t!("setup.agents_prompt"))?;
@@ -584,6 +695,25 @@ pub fn cmd_setup() -> Result<()> {
     println!("  {}", t!("setup.binary", path = binary_path().display()));
     println!("  {}", t!("setup.config", path = config_path().display()));
     println!("  {}", t!("setup.docs", path = docs_root.display()));
+    
+    // Show embedding status
+    #[cfg(feature = "alcove-full")]
+    {
+        if let Some(ref cfg) = embedding_config {
+            println!("  Embedding: {} ({}d, ~{}MB)", cfg.model, 
+                crate::embedding::EmbeddingModelChoice::from_str(&cfg.model)
+                    .map(|m| m.dimension())
+                    .unwrap_or(384),
+                crate::embedding::EmbeddingModelChoice::from_str(&cfg.model)
+                    .map(|m| m.size_mb())
+                    .unwrap_or(235));
+        }
+    }
+    #[cfg(not(feature = "alcove-full"))]
+    {
+        println!("  Embedding: disabled (install with --features alcove-full)");
+    }
+    
     println!();
     println!("  {}", style(t!("setup.hint_update").to_string()).dim());
     println!("  {}", style(t!("setup.hint_uninstall").to_string()).dim());
@@ -1221,6 +1351,7 @@ fn save_full_config(
     core_files: &[String],
     team_files: &[String],
     public_files: &[String],
+    embedding_config: Option<&crate::config::EmbeddingConfig>,
 ) -> Result<()> {
     let cfg_path = config_path();
     save_full_config_to(
@@ -1230,6 +1361,7 @@ fn save_full_config(
         core_files,
         team_files,
         public_files,
+        embedding_config,
     )?;
     println!(
         "  {} {}",
@@ -1246,6 +1378,7 @@ fn save_full_config_to(
     core_files: &[String],
     team_files: &[String],
     public_files: &[String],
+    embedding_config: Option<&crate::config::EmbeddingConfig>,
 ) -> Result<()> {
     fs::create_dir_all(cfg_path.parent().unwrap())?;
 
@@ -1257,7 +1390,7 @@ fn save_full_config_to(
             .join(", ")
     };
 
-    let content = format!(
+    let mut content = format!(
         "docs_root = \"{}\"\n\n[core]\nfiles = [{}]\n\n[team]\nfiles = [{}]\n\n[public]\nfiles = [{}]\n\n[diagram]\nformat = \"{}\"\n",
         docs_root.display(),
         fmt_list(core_files),
@@ -1265,6 +1398,21 @@ fn save_full_config_to(
         fmt_list(public_files),
         diagram_format,
     );
+
+    // Add embedding section if configured
+    if let Some(cfg) = embedding_config {
+        if cfg.enabled {
+            content.push_str(&format!(
+                "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\ncache_dir = \"{}\"\nenabled = true\n",
+                cfg.model,
+                cfg.auto_download,
+                cfg.cache_dir
+            ));
+        } else {
+            content.push_str("\n[embedding]\nenabled = false\n");
+        }
+    }
+
     fs::write(cfg_path, content)?;
     Ok(())
 }
@@ -1656,7 +1804,7 @@ mod tests {
         let team = vec!["ENV_SETUP.md".to_string()];
         let public = vec!["README.md".to_string()];
 
-        let result = save_full_config_to(&cfg, &docs, "mermaid", &core, &team, &public);
+        let result = save_full_config_to(&cfg, &docs, "mermaid", &core, &team, &public, None);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
