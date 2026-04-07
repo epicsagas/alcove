@@ -5,6 +5,7 @@ mod index;
 mod mcp;
 mod policy;
 mod tools;
+mod vector;
 
 use std::io::{self, BufRead, Write as _};
 

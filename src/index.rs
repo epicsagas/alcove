@@ -745,6 +745,186 @@ pub fn search_indexed(
 }
 
 // ---------------------------------------------------------------------------
+// Hybrid Search (BM25 + Vector)
+// ---------------------------------------------------------------------------
+
+/// Perform hybrid search combining BM25 and vector similarity
+/// Returns results ranked by Reciprocal Rank Fusion (RRF)
+#[cfg(feature = "alcove-full")]
+pub fn search_hybrid(
+    docs_root: &Path,
+    query: &str,
+    embedding_service: &crate::embedding::EmbeddingService,
+    limit: usize,
+    project_filter: Option<&str>,
+) -> Result<JsonValue> {
+    use crate::vector::{reciprocal_rank_fusion, VectorResult, VectorStore};
+
+    // 1. Ensure index is fresh
+    ensure_index_fresh(docs_root)?;
+
+    // 2. Check embedding model state
+    let model_state = embedding_service.state();
+    let model_ready = model_state == crate::embedding::ModelState::Ready;
+
+    // 3. Get BM25 results first (always available)
+    let bm25_json = search_indexed(docs_root, query, limit * 2, project_filter)?;
+
+    let bm25_results: Vec<(String, String, u64, f32)> = bm25_json["matches"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| {
+                    Some((
+                        m["project"].as_str()?.to_string(),
+                        m["file"].as_str()?.to_string(),
+                        m["line_start"].as_u64()?,
+                        m["score"].as_f64()? as f32,
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // 4. If model not ready, return BM25-only with status
+    if !model_ready {
+        return Ok(json!({
+            "query": query,
+            "scope": if project_filter.is_some() { "project" } else { "global" },
+            "mode": "bm25-only",
+            "embedding_status": model_state.to_string(),
+            "matches": bm25_json["matches"],
+            "truncated": bm25_json["truncated"],
+        }));
+    }
+
+    // 5. Generate query embedding
+    let query_embedding = match embedding_service.embed(&[query]) {
+        Ok(emb) => emb.into_iter().next().unwrap_or_default(),
+        Err(e) => {
+            return Ok(json!({
+                "query": query,
+                "scope": if project_filter.is_some() { "project" } else { "global" },
+                "mode": "bm25-only",
+                "embedding_status": format!("failed: {}", e),
+                "matches": bm25_json["matches"],
+                "truncated": bm25_json["truncated"],
+            }));
+        }
+    };
+
+    // 6. Open vector store and search
+    let vector_path = docs_root.join(".alcove").join("vectors.db");
+    let store = VectorStore::open(&vector_path, embedding_service.model_name(), embedding_service.dimension());
+
+    let vector_results = match store {
+        Ok(s) => match s.search(&query_embedding, limit * 2) {
+            Ok(r) => r,
+            Err(_) => Vec::new(),
+        },
+        Err(_) => Vec::new(),
+    };
+
+    // 7. Combine with RRF
+    let fused = reciprocal_rank_fusion(&bm25_results, &vector_results, 60);
+
+    // 8. Build final results with snippets from index
+    let index_path = index_dir(docs_root);
+    let index = Index::open_in_dir(&index_path)?;
+    let reader = index.reader()?;
+    let searcher = reader.searcher();
+
+    let schema = index.schema();
+    let project_field = schema.get_field("project")?;
+    let file_field = schema.get_field("file")?;
+    let body_field = schema.get_field("body")?;
+    let line_start_field = schema.get_field("line_start")?;
+    let chunk_id_field = schema.get_field("chunk_id")?;
+
+    let mut results: Vec<JsonValue> = Vec::new();
+
+    for (project, file, _chunk_id, rrf_score) in fused.into_iter().take(limit) {
+        // Find the document in the index to get snippet
+        let query_parser = QueryParser::for_index(index.clone(), vec![body_field]);
+        let file_query = tantivy::query::TermQuery::new(
+            tantivy::Term::from_field_text(file_field, &file),
+            tantivy::query::Occur::Must,
+        );
+
+        let project_term = tantivy::Term::from_field_text(project_field, &project);
+        let project_query = tantivy::query::TermQuery::new(project_term, tantivy::query::Occur::Must);
+
+        let combined = tantivy::query::BooleanQuery::new(vec![
+            (tantivy::query::Occur::Must, Box::new(file_query) as Box<dyn tantivy::query::Query>),
+            (tantivy::query::Occur::Must, Box::new(project_query) as Box<dyn tantivy::query::Query>),
+        ]);
+
+        let top_docs = searcher.search(&combined, &TopDocs::with_limit(1))?;
+
+        if let Some((_score, doc_address)) = top_docs.first() {
+            let doc: TantivyDocument = searcher.doc(*doc_address)?;
+            let body = doc
+                .get_first(body_field)
+                .and_then(|v| schema::Value::as_str(&v))
+                .unwrap_or("")
+                .to_string();
+            let line_start = doc
+                .get_first(line_start_field)
+                .and_then(|v| schema::Value::as_u64(&v))
+                .unwrap_or(0);
+
+            results.push(json!({
+                "project": project,
+                "file": file,
+                "line_start": line_start,
+                "snippet": body,
+                "score": (rrf_score * 1000.0).round() / 1000.0,
+            }));
+        } else {
+            // Fallback: add without snippet
+            results.push(json!({
+                "project": project,
+                "file": file,
+                "line_start": 0,
+                "snippet": "",
+                "score": (rrf_score * 1000.0).round() / 1000.0,
+            }));
+        }
+    }
+
+    Ok(json!({
+        "query": query,
+        "scope": if project_filter.is_some() { "project" } else { "global" },
+        "mode": "hybrid-bm25-vector",
+        "embedding_status": "ready",
+        "matches": results,
+        "truncated": results.len() >= limit,
+    }))
+}
+
+/// Hybrid search stub for non-alcove-full builds
+#[cfg(not(feature = "alcove-full"))]
+pub fn search_hybrid(
+    docs_root: &Path,
+    query: &str,
+    _embedding_service: &crate::embedding::EmbeddingService,
+    limit: usize,
+    project_filter: Option<&str>,
+) -> Result<JsonValue> {
+    // Fall back to BM25-only
+    let bm25_json = search_indexed(docs_root, query, limit, project_filter)?;
+    
+    Ok(json!({
+        "query": query,
+        "scope": if project_filter.is_some() { "project" } else { "global" },
+        "mode": "bm25-only",
+        "embedding_status": "alcove-full feature not enabled",
+        "matches": bm25_json["matches"],
+        "truncated": bm25_json["truncated"],
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
