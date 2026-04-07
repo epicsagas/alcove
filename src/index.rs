@@ -758,7 +758,7 @@ pub fn search_hybrid(
     limit: usize,
     project_filter: Option<&str>,
 ) -> Result<JsonValue> {
-    use crate::vector::{reciprocal_rank_fusion, VectorResult, VectorStore};
+    use crate::vector::{reciprocal_rank_fusion, VectorStore};
 
     // 1. Ensure index is fresh
     ensure_index_fresh(docs_root);
@@ -839,7 +839,7 @@ pub fn search_hybrid(
     let file_field = schema.get_field("file")?;
     let body_field = schema.get_field("body")?;
     let line_start_field = schema.get_field("line_start")?;
-    let chunk_id_field = schema.get_field("chunk_id")?;
+    let _chunk_id_field = schema.get_field("chunk_id")?;
 
     let mut results: Vec<JsonValue> = Vec::new();
 

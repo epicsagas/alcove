@@ -207,3 +207,5 @@ $RECYCLE.BIN/
 # End of https://www.toptal.com/developers/gitignore/api/windows,<D-s>macos,linux,dotenv,visualstudiocode,intellij+all,rust
 
 ./alcove.toml
+# collet
+.collet/.secrets

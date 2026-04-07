@@ -68,7 +68,7 @@ pub enum EmbeddingModelChoice {
 impl EmbeddingModelChoice {
     /// Get the fastembed model enum variant
     #[cfg(feature = "alcove-full")]
-    pub fn to_fastembed_model(&self) -> EmbeddingModel {
+    pub fn as_fastembed_model(self) -> EmbeddingModel {
         match self {
             Self::MultilingualE5Small => EmbeddingModel::MultilingualE5Small,
             Self::MultilingualE5Base => EmbeddingModel::MultilingualE5Base,
@@ -324,7 +324,7 @@ impl EmbeddingService {
             *state = ModelState::Downloading { progress_pct: 10 };
         }
 
-        let options = TextInitOptions::new(self.config.model.to_fastembed_model())
+        let options = TextInitOptions::new(self.config.model.as_fastembed_model())
             .with_cache_dir(self.config.cache_dir.clone())
             .with_show_download_progress(true);
 
