@@ -308,6 +308,111 @@ pub fn tool_search(
         return Ok(json!({ "query": args.query, "matches": [], "truncated": false }));
     }
 
+    // Extract project name and docs_root
+    let project_name = project_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    let docs_root = project_root.parent().unwrap_or(project_root);
+
+    // Try indexed search first (faster and ranked)
+    #[cfg(feature = "alcove-full")]
+    {
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService, EmbeddingConfig};
+        use crate::index::search_hybrid;
+        use crate::config::load_config;
+
+        if crate::index::index_exists(docs_root) {
+            // Get embedding config
+            let cfg = load_config();
+            let emb_cfg = cfg.embedding_config_with_defaults();
+            
+            // Create embedding service if enabled
+            if emb_cfg.enabled {
+                let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+                let service = EmbeddingService::new(EmbeddingConfig {
+                    model,
+                    auto_download: emb_cfg.auto_download,
+                    cache_dir: std::path::PathBuf::from(
+                        emb_cfg.cache_dir.starts_with('~')
+                            .then(|| std::env::var("HOME").ok())
+                            .flatten()
+                            .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
+                            .unwrap_or_else(|| emb_cfg.cache_dir.clone())
+                    ),
+                    enabled: true,
+                });
+
+                // Use hybrid search
+                let result = search_hybrid(
+                    docs_root,
+                    query_trimmed,
+                    &service,
+                    args.limit,
+                    Some(project_name),
+                );
+
+                if let Ok(json) = result {
+                    // Transform to expected format
+                    let matches: Vec<Value> = json["matches"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|m| {
+                                    Some(json!({
+                                        "file": m["file"].as_str().unwrap_or("?"),
+                                        "line": m["line_start"].as_u64().unwrap_or(0),
+                                        "snippet": m["snippet"].as_str().unwrap_or(""),
+                                        "source": "hybrid",
+                                        "score": m["score"].as_f64().unwrap_or(0.0),
+                                    }))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    return Ok(json!({
+                        "query": args.query,
+                        "matches": matches,
+                        "truncated": json["truncated"].as_bool().unwrap_or(false),
+                        "mode": json["mode"].as_str().unwrap_or("hybrid"),
+                    }));
+                }
+            }
+        }
+    }
+
+    // Fall back to indexed search (BM25 only) if index exists
+    if crate::index::index_exists(docs_root) {
+        let result = crate::index::search_indexed(docs_root, query_trimmed, args.limit, Some(project_name));
+        if let Ok(json) = result {
+            let matches: Vec<Value> = json["matches"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|m| {
+                            Some(json!({
+                                "file": m["file"].as_str().unwrap_or("?"),
+                                "line": m["line_start"].as_u64().unwrap_or(0),
+                                "snippet": m["snippet"].as_str().unwrap_or(""),
+                                "source": "ranked",
+                                "score": m["score"].as_f64().unwrap_or(0.0),
+                            }))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            return Ok(json!({
+                "query": args.query,
+                "matches": matches,
+                "truncated": json["truncated"].as_bool().unwrap_or(false),
+                "mode": "ranked",
+            }));
+        }
+    }
+
+    // Fall back to grep search if no index
     let query_lower = query_trimmed.to_lowercase();
     let mut matches = Vec::new();
 
@@ -364,7 +469,7 @@ pub fn tool_search(
     }
 
     let truncated = matches.len() >= args.limit;
-    Ok(json!({ "query": args.query, "matches": matches, "truncated": truncated }))
+    Ok(json!({ "query": args.query, "matches": matches, "truncated": truncated, "mode": "grep" }))
 }
 
 /// Global search across all projects in docs_root.
@@ -380,6 +485,38 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
         return Ok(json!({ "query": args.query, "matches": [], "truncated": false }));
     }
 
+    // Try indexed search first (faster and ranked)
+    if crate::index::index_exists(docs_root) {
+        let result = crate::index::search_indexed(docs_root, query_trimmed, args.limit, None);
+        if let Ok(json) = result {
+            let matches: Vec<Value> = json["matches"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|m| {
+                            Some(json!({
+                                "project": m["project"].as_str().unwrap_or("?"),
+                                "file": m["file"].as_str().unwrap_or("?"),
+                                "line": m["line_start"].as_u64().unwrap_or(0),
+                                "snippet": m["snippet"].as_str().unwrap_or(""),
+                                "source": "ranked",
+                                "score": m["score"].as_f64().unwrap_or(0.0),
+                            }))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            return Ok(json!({
+                "query": args.query,
+                "matches": matches,
+                "truncated": json["truncated"].as_bool().unwrap_or(false),
+                "mode": "ranked",
+            }));
+        }
+    }
+
+    // Fall back to grep search if no index
     let query_lower = query_trimmed.to_lowercase();
     let mut matches = Vec::new();
 
@@ -442,7 +579,7 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
 
     let truncated = matches.len() >= args.limit;
     Ok(
-        json!({ "query": args.query, "scope": "global", "matches": matches, "truncated": truncated }),
+        json!({ "query": args.query, "scope": "global", "matches": matches, "truncated": truncated, "mode": "grep" }),
     )
 }
 
