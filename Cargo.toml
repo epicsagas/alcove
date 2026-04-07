@@ -48,9 +48,12 @@ axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 tower-http = { version = "0.6", features = ["cors"], optional = true }
 
+# HNSW vector indexing (alcove-full feature)
+hnsw_rs = { version = "0.3", optional = true }
+
 [features]
 default = []
-alcove-full = ["fastembed", "rusqlite"]
+alcove-full = ["fastembed", "rusqlite", "hnsw_rs"]
 alcove-server = ["axum", "tokio", "tower-http"]
 full = ["alcove-full", "alcove-server"]
 

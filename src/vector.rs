@@ -163,8 +163,26 @@ impl VectorStore {
         Ok(count)
     }
 
-    /// Search for similar vectors using cosine similarity
+    /// Search for similar vectors using HNSW (large datasets) or linear scan (small)
     pub fn search(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
+        let count: usize = self.conn.query_row(
+            "SELECT COUNT(*) FROM vectors",
+            [],
+            |row| row.get(0),
+        )?;
+
+        // Use HNSW for large datasets (>= 5000 vectors)
+        #[cfg(feature = "alcove-full")]
+        if count >= 5000 {
+            return self.search_hnsw(query, limit);
+        }
+
+        // Fall back to linear search for small datasets
+        self.search_linear(query, limit)
+    }
+
+    /// Linear search (O(n)) - good for small datasets
+    fn search_linear(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
         let mut stmt = self.conn.prepare(
             "SELECT project, file, chunk_id, embedding FROM vectors"
         )?;
@@ -199,6 +217,73 @@ impl VectorStore {
         results.truncate(limit);
 
         Ok(results)
+    }
+
+    /// HNSW search (O(log n)) - good for large datasets
+    #[cfg(feature = "alcove-full")]
+    fn search_hnsw(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
+        use hnsw_rs::prelude::*;
+
+        // Load all vectors from SQLite
+        let mut stmt = self.conn.prepare(
+            "SELECT id, project, file, chunk_id, embedding FROM vectors"
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let project: String = row.get(1)?;
+            let file: String = row.get(2)?;
+            let chunk_id: u64 = row.get(3)?;
+            let blob: Vec<u8> = row.get(4)?;
+            Ok((id, project, file, chunk_id, blob))
+        })?;
+
+        let mut vectors: Vec<(i64, String, String, u64, Vec<f32>)> = Vec::new();
+        for row_result in rows {
+            let (id, project, file, chunk_id, blob) = row_result?;
+            let embedding = Self::decode_embedding(&blob);
+            vectors.push((id, project, file, chunk_id, embedding));
+        }
+
+        if vectors.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build HNSW index
+        let ef_search = (limit * 2).max(50);
+        let hnsw = Hnsw::<f32, DistCosine>::new(
+            vectors.len().max(1),  // max elements
+            self.dimension,
+            16,                     // M (connectivity)
+            ef_search,              // ef (search parameter)
+            DistCosine {},          // distance function
+        );
+
+        // Insert all vectors
+        for (id, _, _, _, embedding) in &vectors {
+            hnsw.insert((embedding.as_slice(), *id as usize));
+        }
+
+        // Search - hnsw_rs API: search(data, knbn, ef_arg)
+        let results = hnsw.search(query, limit, ef_search);
+
+        // Map back to VectorResult
+        let mut vector_results: Vec<VectorResult> = Vec::new();
+        for neighbor in results {
+            if let Some((id, project, file, chunk_id, _)) = vectors
+                .iter()
+                .find(|(vid, _, _, _, _)| *vid as usize == neighbor.d_id)
+            {
+                vector_results.push(VectorResult {
+                    project: project.clone(),
+                    file: file.clone(),
+                    chunk_id: *chunk_id,
+                    score: 1.0 - neighbor.distance, // Convert distance to similarity
+                });
+            }
+        }
+
+        Ok(vector_results)
     }
 
     /// Get store metadata
