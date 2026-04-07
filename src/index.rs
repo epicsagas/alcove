@@ -761,7 +761,7 @@ pub fn search_hybrid(
     use crate::vector::{reciprocal_rank_fusion, VectorResult, VectorStore};
 
     // 1. Ensure index is fresh
-    ensure_index_fresh(docs_root)?;
+    ensure_index_fresh(docs_root);
 
     // 2. Check embedding model state
     let model_state = embedding_service.state();
@@ -845,14 +845,17 @@ pub fn search_hybrid(
 
     for (project, file, _chunk_id, rrf_score) in fused.into_iter().take(limit) {
         // Find the document in the index to get snippet
-        let query_parser = QueryParser::for_index(index.clone(), vec![body_field]);
-        let file_query = tantivy::query::TermQuery::new(
-            tantivy::Term::from_field_text(file_field, &file),
-            tantivy::query::Occur::Must,
-        );
-
+        let file_term = tantivy::Term::from_field_text(file_field, &file);
         let project_term = tantivy::Term::from_field_text(project_field, &project);
-        let project_query = tantivy::query::TermQuery::new(project_term, tantivy::query::Occur::Must);
+
+        let file_query = tantivy::query::TermQuery::new(
+            file_term,
+            tantivy::schema::IndexRecordOption::Basic,
+        );
+        let project_query = tantivy::query::TermQuery::new(
+            project_term,
+            tantivy::schema::IndexRecordOption::Basic,
+        );
 
         let combined = tantivy::query::BooleanQuery::new(vec![
             (tantivy::query::Occur::Must, Box::new(file_query) as Box<dyn tantivy::query::Query>),

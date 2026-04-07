@@ -1744,6 +1744,8 @@ fn cmd_model_list() -> Result<()> {
 fn cmd_model_download() -> Result<()> {
     #[cfg(feature = "alcove-full")]
     {
+        use crate::embedding::EmbeddingService;
+        
         let cfg = load_config().embedding_config_with_defaults();
         let service = EmbeddingService::new(crate::embedding::EmbeddingConfig {
             model: crate::embedding::EmbeddingModelChoice::from_str(&cfg.model).unwrap_or_default(),
@@ -1803,9 +1805,15 @@ fn cmd_model_remove() -> Result<()> {
         let model_dir = cache_dir.join(&cfg.model);
 
         if model_dir.exists() {
-            let size_mb = fs_extra::dir::get_size(&model_dir)
-                .map(|s| s / 1_000_000)
-                .unwrap_or(0);
+            // Calculate size before removal
+            let size_mb: u64 = walkdir::WalkDir::new(&model_dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .filter_map(|e| e.metadata().ok())
+                .map(|m| m.len())
+                .sum::<u64>()
+                / 1_000_000;
 
             fs::remove_dir_all(&model_dir)?;
             println!(

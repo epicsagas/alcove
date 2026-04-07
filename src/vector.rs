@@ -84,11 +84,14 @@ impl VectorStore {
             |row| row.get(0),
         ).ok();
 
-        let existing_dim: Option<usize> = conn.query_row(
-            "SELECT value FROM meta WHERE key = 'dimension'",
-            [],
-            |row| row.get::<_, String>(0).map(|s| s.parse().unwrap_or(0)),
-        ).ok().flatten();
+        let existing_dim: Option<usize> = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'dimension'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|s| s.parse().ok());
 
         // If model or dimension changed, clear existing vectors
         if let Some(em) = existing_model {
