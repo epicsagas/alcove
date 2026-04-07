@@ -714,10 +714,10 @@ pub fn cmd_setup() -> Result<()> {
     {
         if let Some(ref cfg) = embedding_config {
             println!("  Embedding: {} ({}d, ~{}MB)", cfg.model, 
-                crate::embedding::EmbeddingModelChoice::from_str(&cfg.model)
+                crate::embedding::EmbeddingModelChoice::parse(&cfg.model)
                     .map(|m| m.dimension())
                     .unwrap_or(384),
-                crate::embedding::EmbeddingModelChoice::from_str(&cfg.model)
+                crate::embedding::EmbeddingModelChoice::parse(&cfg.model)
                     .map(|m| m.size_mb())
                     .unwrap_or(235));
         }
@@ -1406,7 +1406,7 @@ fn save_full_config_to(
             .join(", ")
     };
 
-    let content = format!(
+    let mut content = format!(
         "docs_root = \"{}\"\n\n[core]\nfiles = [{}]\n\n[team]\nfiles = [{}]\n\n[public]\nfiles = [{}]\n\n[diagram]\nformat = \"{}\"\n",
         docs_root.display(),
         fmt_list(core_files),
@@ -1877,7 +1877,7 @@ fn cmd_model_list() -> Result<()> {
         .unwrap_or("MultilingualE5Small");
 
     for model in EmbeddingModelChoice::all() {
-        let marker = if model.to_str() == current { " [current]" } else { "" };
+        let marker = if model.as_str() == current { " [current]" } else { "" };
         let desc = match model {
             EmbeddingModelChoice::SnowflakeArcticEmbedXS => "Mobile/low-spec, fastest",
             EmbeddingModelChoice::SnowflakeArcticEmbedXSQ => "Quantized XS, smallest",
@@ -1892,7 +1892,7 @@ fn cmd_model_list() -> Result<()> {
         };
         println!(
             "{:<30} {:<8} {:<10} {}{}",
-            model.to_str(),
+            model.as_str(),
             model.dimension(),
             format!("~{}MB", model.size_mb()),
             desc,
@@ -1915,7 +1915,7 @@ fn cmd_model_download() -> Result<()> {
         
         let cfg = load_config().embedding_config_with_defaults();
         let service = EmbeddingService::new(crate::embedding::EmbeddingConfig {
-            model: crate::embedding::EmbeddingModelChoice::from_str(&cfg.model).unwrap_or_default(),
+            model: crate::embedding::EmbeddingModelChoice::parse(&cfg.model).unwrap_or_default(),
             auto_download: true,
             cache_dir: std::path::PathBuf::from(
                 cfg.cache_dir.starts_with('~')
@@ -2004,7 +2004,7 @@ fn cmd_model_set(model_name: &str) -> Result<()> {
     use crate::embedding::EmbeddingModelChoice;
     
     // Validate model name
-    let model = EmbeddingModelChoice::from_str(model_name)
+    let model = EmbeddingModelChoice::parse(model_name)
         .ok_or_else(|| anyhow::anyhow!("Unknown model: {}. Run 'alcove model list' to see available models.", model_name))?;
 
     // Read current config
@@ -2073,14 +2073,14 @@ fn cmd_model_status() -> Result<()> {
     println!(
         "{:<20} {}d",
         style("Dimension:").dim(),
-        crate::embedding::EmbeddingModelChoice::from_str(&emb_cfg.model)
+        crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
             .map(|m| m.dimension())
             .unwrap_or(384)
     );
     println!(
         "{:<20} ~{}MB",
         style("Size:").dim(),
-        crate::embedding::EmbeddingModelChoice::from_str(&emb_cfg.model)
+        crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
             .map(|m| m.size_mb())
             .unwrap_or(235)
     );

@@ -252,7 +252,7 @@ impl EmbeddingService {
     fn is_model_cached(config: &EmbeddingConfig) -> bool {
         // fastembed uses HuggingFace hub cache, check for model existence
         // The actual cache location is managed by hf-hub crate
-        config.cache_dir.join(config.model.to_str()).exists()
+        config.cache_dir.join(config.model.as_str()).exists()
     }
 
     /// Get current model state
@@ -371,7 +371,7 @@ impl EmbeddingService {
 
     /// Remove cached model
     pub fn remove_cache(&self) -> Result<(), String> {
-        let model_dir = self.config.cache_dir.join(self.config.model.to_str());
+        let model_dir = self.config.cache_dir.join(self.config.model.as_str());
         if model_dir.exists() {
             std::fs::remove_dir_all(&model_dir)
                 .map_err(|e| format!("Failed to remove cache: {}", e))?;
@@ -395,7 +395,7 @@ impl EmbeddingService {
 
     /// Get model name
     pub fn model_name(&self) -> &'static str {
-        self.config.model.to_str()
+        self.config.model.as_str()
     }
 }
 
