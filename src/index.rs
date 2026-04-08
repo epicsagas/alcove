@@ -7,6 +7,7 @@ use serde_json::{Value as JsonValue, json};
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::{self, *};
+use tantivy::{DocAddress, Score};
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
 use tantivy::{Index, IndexWriter, ReloadPolicy, TantivyDocument};
 use walkdir::WalkDir;
@@ -808,8 +809,8 @@ pub fn search_indexed(
         .context("Failed to parse search query")?;
 
     // Fetch more candidates for deduplication
-    let top_docs = searcher
-        .search(&parsed_query, &TopDocs::with_limit(limit * 5))
+    let top_docs: Vec<(Score, DocAddress)> = searcher
+        .search(&parsed_query, &TopDocs::with_limit(limit * 5).order_by_score())
         .context("Search failed")?;
 
     // Deduplicate: keep only the best-scoring chunk per (project, file) pair

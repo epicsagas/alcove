@@ -363,9 +363,9 @@ const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
     ("disabled", "Disable embedding (BM25 only)", 0, 0),
 ];
 
-/// Interactive embedding model selection
-#[cfg(feature = "alcove-full")]
-fn setup_embedding() -> Result<Option<crate::config::EmbeddingConfig>> {
+/// Returns the TOML `[embedding]` section string for saving to config.
+/// Returns `None` when embedding is not applicable (feature disabled, user skipped).
+fn setup_embedding() -> Result<Option<String>> {
     println!();
     println!(
         "{}",
@@ -411,12 +411,7 @@ fn setup_embedding() -> Result<Option<crate::config::EmbeddingConfig>> {
                 "  {} Embedding disabled. Search will use BM25 only.",
                 style("✓").green()
             );
-            return Ok(Some(crate::config::EmbeddingConfig {
-                model: "disabled".to_string(),
-                auto_download: false,
-                cache_dir: String::new(),
-                enabled: false,
-            }));
+            return Ok(Some("\n[embedding]\nenabled = false\n".to_string()));
         }
 
         // Ask about auto-download
@@ -437,22 +432,29 @@ fn setup_embedding() -> Result<Option<crate::config::EmbeddingConfig>> {
             model_name
         );
 
-        Ok(Some(crate::config::EmbeddingConfig {
-            model: model_name.to_string(),
-            auto_download,
-            cache_dir,
-            enabled: true,
-        }))
+        Ok(Some(format!(
+            "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\ncache_dir = \"{}\"\nenabled = true\n",
+            model_name, auto_download, cache_dir
+        )))
     }
 
     #[cfg(not(feature = "alcove-full"))]
     {
         println!(
-            "  {} alcove-full feature not enabled",
+            "  {} Embedding search (hybrid RAG) requires the full installation.",
             style("ℹ").yellow()
         );
-        println!("  Embedding requires: cargo install alcove --features alcove-full");
-        println!("  Search will use BM25 only.");
+        println!();
+        println!("  To enable hybrid search later, reinstall with:");
+        println!(
+            "  {} cargo install alcove --features alcove-full",
+            style("→").cyan()
+        );
+        println!();
+        println!(
+            "  {} Search will use BM25 (keyword) only for now.",
+            style("✓").green()
+        );
         Ok(None)
     }
 }
@@ -623,28 +625,17 @@ pub fn cmd_setup() -> Result<()> {
         t!("setup.diagram_set", format = diagram_format)
     );
 
-    // 4. Embedding model (alcove-full feature)
-    #[cfg(feature = "alcove-full")]
+    // 4. Embedding model (always shown; guided when alcove-full, informative otherwise)
     let embedding_config = setup_embedding()?;
 
     // 5. Save config
-    #[cfg(feature = "alcove-full")]
     save_full_config(
         &docs_root,
         diagram_format,
         &core_files,
         &team_files,
         &public_files,
-        embedding_config.as_ref(),
-    )?;
-
-    #[cfg(not(feature = "alcove-full"))]
-    save_full_config(
-        &docs_root,
-        diagram_format,
-        &core_files,
-        &team_files,
-        &public_files,
+        embedding_config.as_deref(),
     )?;
 
     // 6. Agent setup
@@ -710,21 +701,34 @@ pub fn cmd_setup() -> Result<()> {
     println!("  {}", t!("setup.docs", path = docs_root.display()));
     
     // Show embedding status
-    #[cfg(feature = "alcove-full")]
-    {
-        if let Some(ref cfg) = embedding_config {
-            println!("  Embedding: {} ({}d, ~{}MB)", cfg.model, 
-                crate::embedding::EmbeddingModelChoice::parse(&cfg.model)
-                    .map(|m| m.dimension())
-                    .unwrap_or(384),
-                crate::embedding::EmbeddingModelChoice::parse(&cfg.model)
-                    .map(|m| m.size_mb())
-                    .unwrap_or(235));
+    match &embedding_config {
+        Some(toml_section) => {
+            // Parse model name from TOML for display
+            let model = toml_section
+                .lines()
+                .find_map(|l| l.strip_prefix("model = ").map(|v| v.trim_matches('"')));
+            if let Some(model_name) = model {
+                #[cfg(feature = "alcove-full")]
+                {
+                    let m = crate::embedding::EmbeddingModelChoice::parse(model_name);
+                    println!(
+                        "  Embedding: {} ({}d, ~{}MB)",
+                        model_name,
+                        m.map(|m| m.dimension()).unwrap_or(384),
+                        m.map(|m| m.size_mb()).unwrap_or(235)
+                    );
+                }
+                #[cfg(not(feature = "alcove-full"))]
+                {
+                    println!("  Embedding: {} (configured)", model_name);
+                }
+            } else if toml_section.contains("enabled = false") {
+                println!("  Embedding: disabled");
+            }
         }
-    }
-    #[cfg(not(feature = "alcove-full"))]
-    {
-        println!("  Embedding: disabled (install with --features alcove-full)");
+        None => {
+            println!("  Embedding: not configured (BM25 only)");
+        }
     }
     
     println!();
@@ -1408,8 +1412,7 @@ fn save_full_config(
     core_files: &[String],
     team_files: &[String],
     public_files: &[String],
-    #[cfg(feature = "alcove-full")]
-    embedding_config: Option<&crate::config::EmbeddingConfig>,
+    embedding_section: Option<&str>,
 ) -> Result<()> {
     let cfg_path = config_path();
     save_full_config_to(
@@ -1419,8 +1422,7 @@ fn save_full_config(
         core_files,
         team_files,
         public_files,
-        #[cfg(feature = "alcove-full")]
-        embedding_config,
+        embedding_section,
     )?;
     println!(
         "  {} {}",
@@ -1437,8 +1439,7 @@ fn save_full_config_to(
     core_files: &[String],
     team_files: &[String],
     public_files: &[String],
-    #[cfg(feature = "alcove-full")]
-    embedding_config: Option<&crate::config::EmbeddingConfig>,
+    embedding_section: Option<&str>,
 ) -> Result<()> {
     fs::create_dir_all(cfg_path.parent().unwrap())?;
 
@@ -1450,7 +1451,7 @@ fn save_full_config_to(
             .join(", ")
     };
 
-    let content = format!(
+    let mut content = format!(
         "docs_root = \"{}\"\n\n[core]\nfiles = [{}]\n\n[team]\nfiles = [{}]\n\n[public]\nfiles = [{}]\n\n[diagram]\nformat = \"{}\"\n",
         docs_root.display(),
         fmt_list(core_files),
@@ -1459,19 +1460,8 @@ fn save_full_config_to(
         diagram_format,
     );
 
-    // Add embedding section if configured
-    #[cfg(feature = "alcove-full")]
-    if let Some(cfg) = embedding_config {
-        if cfg.enabled {
-            content.push_str(&format!(
-                "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\ncache_dir = \"{}\"\nenabled = true\n",
-                cfg.model,
-                cfg.auto_download,
-                cfg.cache_dir
-            ));
-        } else {
-            content.push_str("\n[embedding]\nenabled = false\n");
-        }
+    if let Some(section) = embedding_section {
+        content.push_str(section);
     }
 
     fs::write(cfg_path, content)?;
@@ -1865,10 +1855,7 @@ mod tests {
         let team = vec!["ENV_SETUP.md".to_string()];
         let public = vec!["README.md".to_string()];
 
-        #[cfg(feature = "alcove-full")]
         let result = save_full_config_to(&cfg, &docs, "mermaid", &core, &team, &public, None);
-        #[cfg(not(feature = "alcove-full"))]
-        let result = save_full_config_to(&cfg, &docs, "mermaid", &core, &team, &public);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");

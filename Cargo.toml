@@ -37,11 +37,11 @@ toml = "1"
 walkdir = "2"
 rust-i18n = "3.1.5"
 sys-locale = "0.3.2"
-tantivy = "0.25"
+tantivy = "0.26"
 
 # alcove-full feature dependencies (lazy embedding + vector search)
 fastembed = { version = "5", optional = true }
-rusqlite = { version = "0.34", optional = true }
+rusqlite = { version = "0.39", optional = true }
 
 # HTTP server dependencies (alcove-server feature)
 axum = { version = "0.8", optional = true }

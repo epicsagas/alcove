@@ -4,6 +4,9 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "alcove-full")]
+use crate::embedding::EmbeddingModelChoice;
+
 // ---------------------------------------------------------------------------
 // Document tier classification constants
 // ---------------------------------------------------------------------------
@@ -94,6 +97,15 @@ fn default_index_buffer_mb() -> usize {
     15
 }
 
+/// Default server bind host — localhost only for security.
+fn default_server_host() -> String {
+    "127.0.0.1".into()
+}
+
+fn default_server_port() -> u16 {
+    8080
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IndexConfig {
     #[serde(default = "default_index_buffer_mb")]
@@ -108,6 +120,35 @@ impl Default for IndexConfig {
     }
 }
 
+/// Server configuration for the HTTP RAG server (`alcove serve`).
+///
+/// By default the server binds to `127.0.0.1` (localhost only).
+/// Set `host = "0.0.0.0"` to accept connections from all interfaces.
+///
+/// ```toml
+/// [server]
+/// host = "127.0.0.1"
+/// port = 8080
+/// ```
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ServerConfig {
+    /// Bind address. Default: `"127.0.0.1"` (localhost only).
+    #[serde(default = "default_server_host")]
+    pub host: String,
+    /// Listen port. Default: `8080`.
+    #[serde(default = "default_server_port")]
+    pub port: u16,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            host: default_server_host(),
+            port: default_server_port(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Embedding config (alcove-full feature)
 // ---------------------------------------------------------------------------
@@ -115,18 +156,6 @@ impl Default for IndexConfig {
 #[cfg(feature = "alcove-full")]
 fn default_embedding_model() -> String {
     "MultilingualE5Small".into()
-}
-
-fn default_embedding_enabled() -> bool {
-    #[cfg(feature = "alcove-full")]
-    #[allow(dead_code)] // used by serde default, may not be directly called
-    {
-        true
-    }
-    #[cfg(not(feature = "alcove-full"))]
-    {
-        false
-    }
 }
 
 #[cfg(feature = "alcove-full")]
@@ -154,7 +183,7 @@ pub struct EmbeddingConfig {
     #[serde(default = "default_embedding_cache_dir")]
     pub cache_dir: String,
     /// Enable embedding (false = BM25 only)
-    #[serde(default = "default_embedding_enabled")]
+    #[serde(default)]
     pub enabled: bool,
 }
 
@@ -165,7 +194,7 @@ impl Default for EmbeddingConfig {
             model: default_embedding_model(),
             auto_download: default_embedding_auto_download(),
             cache_dir: default_embedding_cache_dir(),
-            enabled: default_embedding_enabled(),
+            enabled: true,
         }
     }
 }
@@ -200,6 +229,10 @@ pub struct DocConfig {
     #[cfg(feature = "alcove-full")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<EmbeddingConfig>,
+    /// HTTP server configuration (`alcove serve`).
+    /// Defaults to localhost-only binding when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<ServerConfig>,
 }
 
 
@@ -217,6 +250,7 @@ impl DocConfig {
             extra_extensions: self.extra_extensions.clone().or_else(|| base.extra_extensions.clone()),
             #[cfg(feature = "alcove-full")]
             embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
+            server: self.server.clone().or_else(|| base.server.clone()),
         }
     }
 
@@ -300,6 +334,12 @@ impl DocConfig {
     pub fn embedding_config_with_defaults(&self) -> EmbeddingConfig {
         self.embedding.clone().unwrap_or_default()
     }
+
+    /// Get resolved server configuration (config value with defaults applied).
+    #[cfg(feature = "alcove-server")]
+    pub fn server_config(&self) -> ServerConfig {
+        self.server.clone().unwrap_or_default()
+    }
 }
 
 /// Default docs root: `~/.config/alcove/docs`
@@ -339,6 +379,7 @@ pub fn load_config() -> &'static DocConfig {
             extra_extensions: None,
             #[cfg(feature = "alcove-full")]
             embedding: None,
+            server: None,
         }
     })
 }
