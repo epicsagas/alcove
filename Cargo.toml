@@ -30,6 +30,8 @@ clap = { version = "4", features = ["derive"] }
 dialoguer = { version = "0.12", features = ["fuzzy-select"] }
 console = "0.16"
 dirs = "6"
+indicatif = "0.17"
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -42,6 +44,10 @@ tantivy = "0.25"
 # alcove-full feature dependencies (lazy embedding + vector search)
 fastembed = { version = "5", optional = true }
 rusqlite = { version = "0.34", optional = true }
+pdf-extract = { version = "0.7", optional = true }
+zip = { version = "2", optional = true }
+quick-xml = { version = "0.37", optional = true }
+calamine = { version = "0.26", optional = true }
 
 # HTTP server dependencies (alcove-server feature)
 axum = { version = "0.8", optional = true }
@@ -52,8 +58,8 @@ tower-http = { version = "0.6", features = ["cors"], optional = true }
 hnsw_rs = { version = "0.3", optional = true }
 
 [features]
-default = []
-alcove-full = ["fastembed", "rusqlite", "hnsw_rs"]
+default = ["full"]
+alcove-full = ["fastembed", "rusqlite", "hnsw_rs", "pdf-extract", "zip", "quick-xml", "calamine"]
 alcove-server = ["axum", "tokio", "tower-http"]
 full = ["alcove-full", "alcove-server"]
 

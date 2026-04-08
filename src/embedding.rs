@@ -50,6 +50,7 @@ impl std::fmt::Display for ModelState {
 }
 
 /// Supported embedding models (Korean + multilingual)
+#[cfg_attr(not(feature = "alcove-full"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EmbeddingModelChoice {
     #[default]
@@ -65,6 +66,7 @@ pub enum EmbeddingModelChoice {
     BGEM3,
 }
 
+#[cfg_attr(not(feature = "alcove-full"), allow(dead_code))]
 impl EmbeddingModelChoice {
     /// Get the fastembed model enum variant
     #[cfg(feature = "alcove-full")]
@@ -162,6 +164,22 @@ impl EmbeddingModelChoice {
             Self::BGEM3,
         ]
     }
+
+    /// Get the HuggingFace model ID
+    pub fn model_id(self) -> &'static str {
+        match self {
+            Self::MultilingualE5Small => "intfloat/multilingual-e5-small",
+            Self::MultilingualE5Base => "intfloat/multilingual-e5-base",
+            Self::MultilingualE5Large => "intfloat/multilingual-e5-large",
+            Self::SnowflakeArcticEmbedXS => "Snowflake/snowflake-arctic-embed-xs",
+            Self::SnowflakeArcticEmbedXSQ => "Snowflake/snowflake-arctic-embed-xs",
+            Self::SnowflakeArcticEmbedS => "Snowflake/snowflake-arctic-embed-s",
+            Self::SnowflakeArcticEmbedSQ => "Snowflake/snowflake-arctic-embed-s",
+            Self::SnowflakeArcticEmbedM => "Snowflake/snowflake-arctic-embed-m",
+            Self::SnowflakeArcticEmbedMQ => "Snowflake/snowflake-arctic-embed-m",
+            Self::BGEM3 => "BAAI/bge-m3",
+        }
+    }
 }
 
 impl std::fmt::Display for EmbeddingModelChoice {
@@ -171,11 +189,13 @@ impl std::fmt::Display for EmbeddingModelChoice {
 }
 
 /// Embedding configuration
+#[cfg_attr(not(feature = "alcove-full"), allow(dead_code))]
 #[derive(Debug, Clone)]
 pub struct EmbeddingConfig {
     /// Selected model
     pub model: EmbeddingModelChoice,
     /// Auto-download on first search
+    #[allow(dead_code)]
     pub auto_download: bool,
     /// Model cache directory
     pub cache_dir: PathBuf,
@@ -225,6 +245,7 @@ pub struct EmbeddingService {
     /// ONNX session (lazy loaded)
     session: Arc<Mutex<Option<TextEmbedding>>>,
     /// Previous model dimension (for detecting changes)
+    #[allow(dead_code)]
     previous_dimension: Arc<Mutex<Option<usize>>>,
 }
 
@@ -250,9 +271,10 @@ impl EmbeddingService {
 
     /// Check if model is cached locally
     fn is_model_cached(config: &EmbeddingConfig) -> bool {
-        // fastembed uses HuggingFace hub cache, check for model existence
-        // The actual cache location is managed by hf-hub crate
-        config.cache_dir.join(config.model.as_str()).exists()
+        // fastembed uses HuggingFace hub cache: models--{user}--{repo}
+        let model_id = config.model.model_id();
+        let folder_name = format!("models--{}", model_id.replace('/', "--"));
+        config.cache_dir.join(folder_name).exists()
     }
 
     /// Get current model state
@@ -266,6 +288,7 @@ impl EmbeddingService {
     }
 
     /// Check if dimension changed since last call
+    #[allow(dead_code)]
     pub fn dimension_changed(&self) -> bool {
         let current = self.config.model.dimension();
         let mut prev = self.previous_dimension.lock().unwrap();
@@ -370,6 +393,7 @@ impl EmbeddingService {
     }
 
     /// Remove cached model
+    #[allow(dead_code)]
     pub fn remove_cache(&self) -> Result<(), String> {
         let model_dir = self.config.cache_dir.join(self.config.model.as_str());
         if model_dir.exists() {
@@ -389,6 +413,7 @@ impl EmbeddingService {
     }
 
     /// Check if embedding is enabled
+    #[allow(dead_code)]
     pub fn is_enabled(&self) -> bool {
         self.config.enabled
     }

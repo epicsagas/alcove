@@ -8,7 +8,7 @@ use anyhow::Result;
 #[cfg(feature = "alcove-server")]
 use axum::{
     extract::{Query, State},
-    http::{header, StatusCode},
+    http::StatusCode,
     response::Json,
     routing::{get, post},
     Router,
@@ -95,6 +95,7 @@ pub struct ErrorResponse {
 #[derive(Clone)]
 pub struct ServerState {
     pub docs_root: std::path::PathBuf,
+    #[allow(dead_code)]
     pub token: Option<String>,
 }
 

@@ -221,6 +221,23 @@ alcove uninstall    Remove skills, config, and legacy files
 
 Alcove automatically picks the best search strategy. When the search index exists, it uses **BM25 ranked search** (powered by [tantivy](https://github.com/quickwit-oss/tantivy)) for relevance-scored results. When it doesn't, it falls back to grep. You never have to think about it.
 
+### Hybrid Search (RAG)
+
+Alcove supports **Hybrid Search** which combines BM25 with **Vector Similarity Search** (powered by [fastembed](https://github.com/ankane/fastembed-rs)).
+
+During `alcove setup`, you can choose an embedding model and download it immediately. You can also manage models manually:
+
+```bash
+# Set and download an embedding model
+alcove model set MultilingualE5Small
+alcove model download
+
+# Check model status
+alcove model status
+```
+
+Once a model is downloaded and ready, Alcove will automatically use Hybrid Search for both CLI search and agent-based MCP tools. This is particularly effective for multilingual projects and complex semantic queries.
+
 ```bash
 # Search the current project (auto-detected from CWD)
 alcove search "authentication flow"

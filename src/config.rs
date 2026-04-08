@@ -117,14 +117,11 @@ fn default_embedding_model() -> String {
     "MultilingualE5Small".into()
 }
 
+#[cfg(feature = "alcove-full")]
 fn default_embedding_enabled() -> bool {
     #[cfg(feature = "alcove-full")]
     {
         true
-    }
-    #[cfg(not(feature = "alcove-full"))]
-    {
-        false
     }
 }
 
@@ -172,6 +169,7 @@ impl Default for EmbeddingConfig {
 #[cfg(feature = "alcove-full")]
 impl EmbeddingConfig {
     /// Get the model name as a string
+    #[allow(dead_code)]
     pub fn model_name(&self) -> &str {
         &self.model
     }
@@ -290,6 +288,7 @@ impl DocConfig {
 
     /// Get embedding configuration as TOML struct
     #[cfg(feature = "alcove-full")]
+    #[allow(dead_code)]
     pub fn embedding_config(&self) -> &Option<EmbeddingConfig> {
         &self.embedding
     }
@@ -451,7 +450,7 @@ pub fn suggest_categorization(filename: &str) -> &'static str {
 pub fn is_doc_file(path: &Path) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     match ext {
-        "md" | "txt" | "rst" => true,
+        "md" | "txt" | "rst" | "pdf" | "docx" | "pptx" | "xlsx" | "csv" => true,
         "yml" | "yaml" | "json" => {
             let filename = path
                 .file_name()

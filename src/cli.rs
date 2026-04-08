@@ -427,31 +427,80 @@ fn setup_embedding() -> Result<Option<crate::config::EmbeddingConfig>> {
             .interact()? == 0;
 
         // Determine cache directory
-        let cache_dir = dirs::cache_dir()
+        let cache_dir_str = dirs::cache_dir()
             .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
             .unwrap_or_else(|| "~/.cache/alcove/models".to_string());
 
-        println!(
-            "  {} Model: {} (will download on first search)",
-            style("✓").green(),
-            model_name
-        );
-
-        Ok(Some(crate::config::EmbeddingConfig {
+        let config = crate::config::EmbeddingConfig {
             model: model_name.to_string(),
             auto_download,
-            cache_dir,
+            cache_dir: cache_dir_str.clone(),
             enabled: true,
-        }))
+        };
+
+        use crate::embedding::{EmbeddingService, EmbeddingModelChoice, EmbeddingConfig as EmbConfig, ModelState};
+        
+        let service = EmbeddingService::new(EmbConfig {
+            model: EmbeddingModelChoice::parse(model_name).unwrap_or_default(),
+            auto_download: true,
+            cache_dir: expand_path(&cache_dir_str),
+            enabled: true,
+        });
+
+        // Check if already cached
+        let state = service.state();
+        let is_cached = matches!(state, ModelState::Cached | ModelState::Ready);
+
+        if is_cached {
+            println!(
+                "  {} Model already downloaded and ready: {}",
+                style("✓").green(),
+                style(model_name).cyan()
+            );
+        } else {
+            println!(
+                "  {} Model selected: {}",
+                style("✓").green(),
+                model_name
+            );
+
+            // Offer immediate download
+            if Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Download model now?")
+                .items(&["Yes, download now", "No, download on first search"])
+                .default(0)
+                .interact()? == 0 
+            {
+                println!();
+                println!(
+                    "{} Downloading embedding model: {}",
+                    style("⏳").yellow(),
+                    style(model_name).cyan()
+                );
+                println!("{}", style("  (Progress bar will appear below)").dim());
+                println!();
+                
+                // fastembed shows its own indicatif progress bar to stderr
+                service.ensure_model().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                println!();
+                println!(
+                    "{} Model downloaded and ready!",
+                    style("✓").green()
+                );
+            }
+        }
+
+        Ok(Some(config))
     }
 
     #[cfg(not(feature = "alcove-full"))]
     {
         println!(
-            "  {} alcove-full feature not enabled",
+            "  {} RAG/Embedding support not built into this binary",
             style("ℹ").yellow()
         );
-        println!("  Embedding requires: cargo install alcove --features alcove-full");
+        println!("  To enable, reinstall with: cargo install alcove --features full");
         println!("  Search will use BM25 only.");
         Ok(None)
     }
@@ -1865,7 +1914,16 @@ mod tests {
         let team = vec!["ENV_SETUP.md".to_string()];
         let public = vec!["README.md".to_string()];
 
-        let result = save_full_config_to(&cfg, &docs, "mermaid", &core, &team, &public, None);
+        let result = save_full_config_to(
+            &cfg,
+            &docs,
+            "mermaid",
+            &core,
+            &team,
+            &public,
+            #[cfg(feature = "alcove-full")]
+            None,
+        );
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
@@ -1977,9 +2035,15 @@ fn cmd_model_download() -> Result<()> {
             style(&cfg.model).cyan()
         );
         println!("This may take a few minutes on first run...");
-        println!();
+        
+        let pb = indicatif::ProgressBar::new_spinner();
+        pb.set_style(indicatif::ProgressStyle::default_spinner().template("{spinner:.green} {msg}")?);
+        pb.set_message("Downloading and loading model...");
+        pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
         service.ensure_model().map_err(|e| anyhow::anyhow!("{}", e))?;
+        
+        pb.finish_and_clear();
 
         println!(
             "{} Model downloaded and ready: {}",
@@ -2114,19 +2178,19 @@ fn cmd_model_status() -> Result<()> {
         style("Configured model:").dim(),
         style(&emb_cfg.model).cyan()
     );
+    
+    let model_choice = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
+        .unwrap_or_default();
+
     println!(
         "{:<20} {}d",
         style("Dimension:").dim(),
-        crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
-            .map(|m| m.dimension())
-            .unwrap_or(384)
+        model_choice.dimension()
     );
     println!(
         "{:<20} ~{}MB",
         style("Size:").dim(),
-        crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
-            .map(|m| m.size_mb())
-            .unwrap_or(235)
+        model_choice.size_mb()
     );
     println!(
         "{:<20} {}",
@@ -2139,40 +2203,24 @@ fn cmd_model_status() -> Result<()> {
         emb_cfg.cache_dir
     );
 
-    #[cfg(feature = "alcove-full")]
-    {
-        let cache_path = std::path::PathBuf::from(
-            emb_cfg.cache_dir.starts_with('~')
-                .then(|| std::env::var("HOME").ok())
-                .flatten()
-                .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
-                .unwrap_or_else(|| emb_cfg.cache_dir.clone())
-        );
-        let model_dir = cache_path.join(&emb_cfg.model);
+    let cache_path = expand_path(&emb_cfg.cache_dir);
+    let model_id = model_choice.model_id();
+    let folder_name = format!("models--{}", model_id.replace('/', "--"));
+    let model_dir = cache_path.join(folder_name);
 
-        println!();
-        if model_dir.exists() {
-            println!(
-                "{} Model cached: {}",
-                style("✓").green(),
-                model_dir.display()
-            );
-        } else {
-            println!(
-                "{} Model not cached. Run 'alcove model download' to download.",
-                style("⏳").yellow()
-            );
-        }
-    }
-
-    #[cfg(not(feature = "alcove-full"))]
-    {
-        println!();
+    println!();
+    if model_dir.exists() {
         println!(
-            "{} alcove-full feature not enabled",
-            style("⚠").yellow()
+            "{} Model cached and ready!",
+            style("✓").green()
         );
-        println!("Vector search requires: cargo install alcove --features alcove-full");
+        println!("  Location: {}", model_dir.display());
+    } else {
+        println!(
+            "{} Model not cached locally.",
+            style("⏳").yellow()
+        );
+        println!("  Run 'alcove model download' to prepare for hybrid search.");
     }
 
     Ok(())

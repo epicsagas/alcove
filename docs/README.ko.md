@@ -197,12 +197,26 @@ alcove uninstall    스킬, 설정 및 레거시 파일 제거
 
 Alcove는 자동으로 최적의 검색 전략을 선택합니다. 검색 인덱스가 존재하면 **BM25 랭킹 검색** ([tantivy](https://github.com/quickwit-oss/tantivy) 기반)을 사용하여 관련도 점수로 정렬된 결과를 반환합니다. 인덱스가 없으면 grep으로 폴백합니다. 사용자가 신경 쓸 필요 없습니다.
 
+### 하이브리드 검색 (RAG)
+
+Alcove는 BM25와 **벡터 유사도 검색** ([fastembed](https://github.com/ankane/fastembed-rs) 기반)을 결합한 **하이브리드 검색**을 지원합니다.
+
+`alcove setup` 과정에서 임베딩 모델을 선택하고 즉시 다운로드할 수 있습니다. 모델을 수동으로 관리할 수도 있습니다:
+
+```bash
+# 임베딩 모델 설정 및 다운로드
+alcove model set MultilingualE5Small
+alcove model download
+
+# 모델 상태 확인
+alcove model status
+```
+
+모델이 준비되면 Alcove는 CLI 검색과 에이전트 기반 MCP 도구 모두에서 자동으로 하이브리드 검색을 사용합니다. 이는 다국어 프로젝트나 복잡한 의미론적 쿼리에 특히 효과적입니다.
+
 ```bash
 # 현재 프로젝트 검색 (CWD에서 자동 감지)
 alcove search "authentication flow"
-
-# 모든 프로젝트를 한 번에 검색 — 개인 지식 베이스
-alcove search "OAuth token refresh" --scope global
 
 # 정확한 부분 문자열 매칭이 필요하면 grep 모드 강제
 alcove search "FR-023" --mode grep

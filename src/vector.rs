@@ -13,6 +13,7 @@ use rusqlite::{Connection, params};
 /// Vector store metadata
 #[cfg(feature = "alcove-full")]
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct VectorMeta {
     /// Model name used for embeddings
     pub model: String,
@@ -44,6 +45,7 @@ pub struct VectorResult {
 pub struct VectorStore {
     conn: Connection,
     dimension: usize,
+    #[allow(dead_code)]
     model: String,
 }
 
@@ -124,7 +126,30 @@ impl VectorStore {
         })
     }
 
+    /// Insert or update multiple vectors efficiently using a transaction
+    pub fn batch_upsert(
+        &mut self,
+        embeddings: impl Iterator<Item = (String, String, u64, Vec<f32>)>,
+    ) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                r#"
+                INSERT OR REPLACE INTO vectors (project, file, chunk_id, embedding)
+                VALUES (?1, ?2, ?3, ?4)
+                "#
+            )?;
+            for (project, file, chunk_id, embedding) in embeddings {
+                let blob = Self::encode_embedding(&embedding);
+                stmt.execute(params![project, file, chunk_id, blob])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Insert or update a vector
+    #[allow(dead_code)]
     pub fn upsert(
         &self,
         project: &str,
@@ -145,7 +170,18 @@ impl VectorStore {
         Ok(())
     }
 
+    /// Check if a file already has vectors in the store
+    pub fn has_file(&self, project: &str, file: &str) -> Result<bool> {
+        let count: usize = self.conn.query_row(
+            "SELECT COUNT(*) FROM vectors WHERE project = ?1 AND file = ?2",
+            params![project, file],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
     /// Delete vectors for a file
+    #[allow(dead_code)]
     pub fn delete_file(&self, project: &str, file: &str) -> Result<usize> {
         let count = self.conn.execute(
             "DELETE FROM vectors WHERE project = ?1 AND file = ?2",
@@ -155,6 +191,7 @@ impl VectorStore {
     }
 
     /// Delete all vectors for a project
+    #[allow(dead_code)]
     pub fn delete_project(&self, project: &str) -> Result<usize> {
         let count = self.conn.execute(
             "DELETE FROM vectors WHERE project = ?1",
@@ -270,7 +307,7 @@ impl VectorStore {
         // Map back to VectorResult
         let mut vector_results: Vec<VectorResult> = Vec::new();
         for neighbor in results {
-            if let Some((id, project, file, chunk_id, _)) = vectors
+            if let Some((_id, project, file, chunk_id, _)) = vectors
                 .iter()
                 .find(|(vid, _, _, _, _)| *vid as usize == neighbor.d_id)
             {
@@ -287,6 +324,7 @@ impl VectorStore {
     }
 
     /// Get store metadata
+    #[allow(dead_code)]
     pub fn meta(&self) -> Result<VectorMeta> {
         let count: usize = self.conn.query_row(
             "SELECT COUNT(*) FROM vectors",
@@ -302,6 +340,7 @@ impl VectorStore {
     }
 
     /// Check if store is empty
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         let count: usize = self.conn.query_row(
             "SELECT COUNT(*) FROM vectors",
@@ -313,6 +352,7 @@ impl VectorStore {
     }
 
     /// Clear all vectors
+    #[allow(dead_code)]
     pub fn clear(&self) -> Result<()> {
         self.conn.execute("DELETE FROM vectors", [])?;
         Ok(())

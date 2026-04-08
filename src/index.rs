@@ -1,14 +1,16 @@
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{SystemTime, Duration};
 
 use anyhow::{Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::{self, *};
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
-use tantivy::{Index, IndexWriter, ReloadPolicy, TantivyDocument};
+use tantivy::{Index, ReloadPolicy, TantivyDocument};
 use walkdir::WalkDir;
 
 use crate::config::{effective_config, load_config};
@@ -143,8 +145,8 @@ fn register_ngram_tokenizer(index: &Index) -> Result<()> {
 // Chunking
 // ---------------------------------------------------------------------------
 
-const CHUNK_SIZE: usize = 500; // chars per chunk
-const CHUNK_OVERLAP: usize = 50; // overlap between chunks
+const CHUNK_SIZE: usize = 1500; // chars per chunk
+const CHUNK_OVERLAP: usize = 300; // overlap between chunks
 
 struct Chunk {
     text: String,
@@ -378,7 +380,37 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
     false
 }
 
+/// Helper to extract text from XML tags (e.g., w:t for Word, a:t for PPT)
+#[cfg(feature = "alcove-full")]
+fn extract_xml_text(content: &str, tag_name: &[u8]) -> Result<String> {
+    use quick_xml::reader::Reader;
+    use quick_xml::events::Event;
+
+    let mut reader = Reader::from_str(content);
+    let mut text = String::new();
+    let mut in_tag = false;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(ref e)) if e.name().as_ref() == tag_name => {
+                in_tag = true;
+            }
+            Ok(Event::End(ref e)) if e.name().as_ref() == tag_name => {
+                in_tag = false;
+            }
+            Ok(Event::Text(e)) if in_tag => {
+                text.push_str(&e.unescape().unwrap_or_default());
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(anyhow::anyhow!("XML parse error: {}", e)),
+            _ => {}
+        }
+    }
+    Ok(text)
+}
+
 /// Ensure index is up-to-date, rebuilding in background if stale.
+
 /// Returns true if a rebuild was triggered.
 pub fn ensure_index_fresh(docs_root: &Path) -> bool {
     if !is_index_stale(docs_root) {
@@ -387,6 +419,88 @@ pub fn ensure_index_fresh(docs_root: &Path) -> bool {
     // Rebuild synchronously (called from search path, needs result immediately)
     let _ = build_index(docs_root);
     true
+}
+
+/// Read file content, extracting text from PDF/DOCX if needed.
+fn read_file_content(path: &Path) -> Result<String> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    
+    match ext.as_str() {
+        #[cfg(feature = "alcove-full")]
+        "pdf" => {
+            pdf_extract::extract_text(path)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e))
+        }
+        #[cfg(feature = "alcove-full")]
+        "docx" | "pptx" => {
+            use std::io::Read;
+            let file = std::fs::File::open(path)?;
+            let mut archive = zip::ZipArchive::new(file)
+                .map_err(|e| anyhow::anyhow!("Failed to open {} (ZIP): {}", ext, e))?;
+            
+            let mut text = String::new();
+            
+            if ext == "docx" {
+                let mut doc_xml = archive.by_name("word/document.xml")
+                    .map_err(|e| anyhow::anyhow!("Failed to find word/document.xml in DOCX: {}", e))?;
+                let mut content = String::new();
+                doc_xml.read_to_string(&mut content)?;
+                text = extract_xml_text(&content, b"w:t")?;
+            } else {
+                // PPTX: iterate through slides
+                let mut slide_names: Vec<String> = archive.file_names()
+                    .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
+                    .map(|n| n.to_string())
+                    .collect();
+                slide_names.sort_by_key(|n| {
+                    n.trim_start_matches("ppt/slides/slide")
+                     .trim_end_matches(".xml")
+                     .parse::<u32>().unwrap_or(0)
+                });
+
+                for name in slide_names {
+                    let mut slide_xml = archive.by_name(&name)?;
+                    let mut content = String::new();
+                    slide_xml.read_to_string(&mut content)?;
+                    let slide_text = extract_xml_text(&content, b"a:t")?;
+                    if !slide_text.is_empty() {
+                        text.push_str(&format!("\n--- Slide {} ---\n", name));
+                        text.push_str(&slide_text);
+                    }
+                }
+            }
+            Ok(text)
+        }
+        #[cfg(feature = "alcove-full")]
+        "xlsx" | "csv" => {
+            use calamine::{Reader, open_workbook_auto};
+            let mut workbook = open_workbook_auto(path)
+                .map_err(|e| anyhow::anyhow!("Failed to open Excel/CSV: {}", e))?;
+            
+            let mut text = String::new();
+            // Process all sheets
+            for sheet_name in workbook.sheet_names().to_owned() {
+                if let Ok(range) = workbook.worksheet_range(&sheet_name) {
+                    text.push_str(&format!("\n--- Sheet: {} ---\n", sheet_name));
+                    for row in range.rows() {
+                        let row_text: Vec<String> = row.iter().map(|c| match c {
+                            calamine::Data::Empty => "".to_string(),
+                            calamine::Data::String(s) => s.clone(),
+                            calamine::Data::Float(f) => f.to_string(),
+                            calamine::Data::Int(i) => i.to_string(),
+                            calamine::Data::Bool(b) => b.to_string(),
+                            _ => "".to_string(),
+                        }).collect();
+                        text.push_str(&row_text.join("\t"));
+                        text.push('\n');
+                    }
+                }
+            }
+            Ok(text)
+        }
+        _ => std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read file {}: {}", path.display(), e)),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +528,19 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
     let dir = index_dir(docs_root);
     std::fs::create_dir_all(&dir)?;
 
+    let fun_messages = [
+        "에이전트에게 지식 주입 중...",
+        "문서 사이의 행간 읽는 중...",
+        "흩어진 정보 모으는 중...",
+        "지식 베이스 구축하는 중...",
+        "기억력 향상시키는 중...",
+        "문서들의 연관 관계 분석 중...",
+        "AI에게 컨텍스트 설명하는 중...",
+        "똑똑한 검색을 위해 인덱싱 중...",
+        "데이터 조각들 맞추는 중...",
+        "문서 도서관 정리 중...",
+    ];
+
     let (schema, project_field, file_field, chunk_id_field, body_field, line_start_field) =
         build_schema();
 
@@ -422,168 +549,116 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
     let mut skipped_count = 0u64;
     let mut project_count = 0u64;
 
-    // Determine which files changed
-    let mut current_files: std::collections::HashMap<String, [u64; 2]> =
-        std::collections::HashMap::new();
-    let mut files_to_index: Vec<(String, String, PathBuf)> = Vec::new(); // (project, rel_path, full_path)
-
+    // 1. Scan for all potential files
+    let mut all_files: Vec<(String, String, PathBuf)> = Vec::new();
     for entry in std::fs::read_dir(docs_root)
         .context("Failed to read DOCS_ROOT")?
         .flatten()
     {
         let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
-            continue;
-        }
+        if !path.is_dir() { continue; }
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" { continue; }
         project_count += 1;
 
         let proj_cfg = effective_config(&path);
-        for walk_entry in WalkDir::new(&path)
-            .into_iter()
-            .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path()))
-        {
+        for walk_entry in WalkDir::new(&path).into_iter().flatten().filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())) {
             let file_path = walk_entry.path().to_path_buf();
-            let rel = file_path
-                .strip_prefix(docs_root)
-                .unwrap_or(&file_path)
-                .to_string_lossy()
-                .to_string();
-            let fp = file_fingerprint(&file_path);
-            current_files.insert(rel.clone(), fp);
-
-            let rel_to_project = file_path
-                .strip_prefix(&path)
-                .unwrap_or(&file_path)
-                .to_string_lossy()
-                .to_string();
-
-            if meta.files.get(&rel).copied() == Some(fp) {
-                skipped_count += 1;
-            } else {
-                files_to_index.push((name.clone(), rel_to_project, file_path));
-            }
+            let rel_to_project = file_path.strip_prefix(&path).unwrap_or(&file_path).to_string_lossy().to_string();
+            all_files.push((name.clone(), rel_to_project, file_path));
         }
     }
 
-    // If nothing changed, skip reindex
-    let needs_full_rebuild = !dir.join("meta.json").exists()
-        || meta.files.is_empty()
-        || files_to_index.len() as f64 > (current_files.len() as f64 * 0.5);
+    // 2. Filter changed files
+    let mut current_files: std::collections::HashMap<String, [u64; 2]> = std::collections::HashMap::new();
+    let mut files_to_index: Vec<(String, String, PathBuf)> = Vec::new();
 
-    if needs_full_rebuild {
-        // Full rebuild
-        let index = Index::create_in_dir(&dir, schema.clone())
-            .or_else(|_| {
-                // Directory exists with old schema, recreate
-                std::fs::remove_dir_all(&dir)?;
-                std::fs::create_dir_all(&dir)?;
-                Index::create_in_dir(&dir, schema.clone())
-            })
-            .context("Failed to create search index")?;
+    for (proj, rel_to_proj, full_path) in all_files {
+        let rel_to_root = full_path.strip_prefix(docs_root).unwrap_or(&full_path).to_string_lossy().to_string();
+        let fp = file_fingerprint(&full_path);
+        current_files.insert(rel_to_root.clone(), fp);
+
+        if meta.files.get(&rel_to_root).copied() == Some(fp) {
+            skipped_count += 1;
+        } else {
+            files_to_index.push((proj, rel_to_proj, full_path));
+        }
+    }
+
+    let needs_full_rebuild = !dir.join("meta.json").exists() || meta.files.is_empty();
+
+    if !files_to_index.is_empty() {
+        let pb = ProgressBar::new(files_to_index.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) | {msg}")?
+                .progress_chars("#>-"),
+        );
+        pb.enable_steady_tick(Duration::from_millis(100));
+
+        let index = if needs_full_rebuild {
+            pb.set_message("인덱스 엔진 초기화 중...");
+            Index::create_in_dir(&dir, schema.clone())
+                .or_else(|_| {
+                    std::fs::remove_dir_all(&dir)?;
+                    std::fs::create_dir_all(&dir)?;
+                    Index::create_in_dir(&dir, schema.clone())
+                })?
+        } else {
+            Index::open_in_dir(&dir)?
+        };
         register_ngram_tokenizer(&index)?;
+        let mut writer = index.writer(load_config().index_buffer_bytes())?;
 
-        let mut writer: IndexWriter = index
-            .writer(load_config().index_buffer_bytes())
-            .context("Failed to create index writer")?;
+        for (proj, rel, full) in &files_to_index {
+            // Update progress message with ETA only after some progress
+            let eta_str = if pb.position() > 0 {
+                format!("남은 시간: {eta}", eta = "{eta}")
+            } else {
+                "계산 중...".to_string()
+            };
+            
+            let msg = if indexed_count % 5 == 0 {
+                fun_messages.choose(&mut rand::thread_rng()).unwrap().to_string()
+            } else {
+                format!("{}:{}", proj, rel)
+            };
+            
+            pb.set_message(format!("{} ({})", msg, eta_str));
 
-        // Index all files
-        for entry in std::fs::read_dir(docs_root)?.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
+            if !needs_full_rebuild {
+                let term = tantivy::Term::from_field_text(file_field, rel);
+                writer.delete_term(term);
             }
-            let name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
-                continue;
-            }
 
-            let proj_cfg = effective_config(&path);
-            for walk_entry in WalkDir::new(&path)
-                .into_iter()
-                .filter_map(std::result::Result::ok)
-                .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path()))
-            {
-                let file_path = walk_entry.path();
-                let content = match std::fs::read_to_string(file_path) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        eprintln!("[alcove] Failed to read {}: {}", file_path.display(), e);
-                        continue;
-                    }
-                };
-                let rel = file_path
-                    .strip_prefix(&path)
-                    .unwrap_or(file_path)
-                    .to_string_lossy()
-                    .to_string();
-
+            if let Ok(content) = read_file_content(full) {
                 for (chunk_idx, chunk) in chunk_content(&content).iter().enumerate() {
                     let mut doc = TantivyDocument::new();
-                    doc.add_text(project_field, &name);
-                    doc.add_text(file_field, &rel);
+                    doc.add_text(project_field, proj);
+                    doc.add_text(file_field, rel);
                     doc.add_u64(chunk_id_field, chunk_idx as u64);
                     doc.add_text(body_field, &chunk.text);
                     doc.add_u64(line_start_field, chunk.line_start as u64);
                     writer.add_document(doc)?;
                 }
-                indexed_count += 1;
-            }
-        }
-
-        writer.commit().context("Failed to commit index")?;
-    } else if !files_to_index.is_empty() {
-        // Incremental update
-        let index = Index::open_in_dir(&dir).context("Failed to open existing index")?;
-        register_ngram_tokenizer(&index)?;
-        let mut writer: IndexWriter = index.writer(load_config().index_buffer_bytes())?;
-
-        for (project_name, rel_path, file_path) in &files_to_index {
-            // Delete old documents for this file
-            let term = tantivy::Term::from_field_text(file_field, rel_path);
-            writer.delete_term(term);
-
-            let content = match std::fs::read_to_string(file_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("[alcove] Failed to read {}: {}", file_path.display(), e);
-                    continue;
-                }
-            };
-            for (chunk_idx, chunk) in chunk_content(&content).iter().enumerate() {
-                let mut doc = TantivyDocument::new();
-                doc.add_text(project_field, project_name);
-                doc.add_text(file_field, rel_path);
-                doc.add_u64(chunk_id_field, chunk_idx as u64);
-                doc.add_text(body_field, &chunk.text);
-                doc.add_u64(line_start_field, chunk.line_start as u64);
-                writer.add_document(doc)?;
             }
             indexed_count += 1;
+            pb.inc(1);
         }
-
+        
+        pb.set_message("변경 사항 저장 중 (Commit)...");
         writer.commit()?;
+        pb.finish_with_message("문서 인덱싱 완료");
     }
-
-    // Update metadata
-    meta.files = current_files;
-    meta.save(docs_root)?;
 
     // ---------------------------------------------------------------------------
     // Vector indexing (alcove-full feature)
     // ---------------------------------------------------------------------------
+
+    let mut vector_status = "disabled".to_string();
+    let mut vectors_indexed = 0u64;
+    let mut vector_errors = 0u64;
+    let mut embedding_model = String::new();
 
     #[cfg(feature = "alcove-full")]
     {
@@ -596,125 +671,121 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
 
         if emb_cfg.enabled {
             let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
-            let cache_dir = std::path::PathBuf::from(
-                emb_cfg.cache_dir.starts_with('~')
-                    .then(|| std::env::var("HOME").ok())
-                    .flatten()
-                    .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
-                    .unwrap_or_else(|| emb_cfg.cache_dir.clone())
-            );
-
+            embedding_model = model.as_str().to_string();
+            
+            let cache_dir = expand_path(&emb_cfg.cache_dir);
             let service = EmbeddingService::new(EmbConfig {
                 model,
                 auto_download: emb_cfg.auto_download,
-                cache_dir: cache_dir.clone(),
+                cache_dir,
                 enabled: true,
             });
 
-            // Check if model is ready
+            // Ensure model is loaded (and downloaded if auto_download is enabled)
+            if emb_cfg.auto_download {
+                let _ = service.ensure_model();
+            }
+
             if service.state() == crate::embedding::ModelState::Ready {
                 let vector_path = docs_root.join(".alcove").join("vectors.db");
-                let store = match VectorStore::open(&vector_path, service.model_name(), service.dimension()) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!("[alcove] Failed to open vector store: {}", e);
-                        return Ok(json!({
-                            "status": "ok",
-                            "projects": project_count,
-                            "indexed": indexed_count,
-                            "skipped": skipped_count,
-                            "index_path": dir.to_string_lossy(),
-                            "vector_status": "failed",
-                            "vector_error": e.to_string(),
-                        }));
-                    }
-                };
+                match VectorStore::open(&vector_path, service.model_name(), service.dimension()) {
+                    Ok(mut store) => {
+                        vector_status = "ok".to_string();
+                        if !files_to_index.is_empty() {
+                            let vpb = ProgressBar::new(files_to_index.len() as u64);
+                            vpb.set_style(
+                                ProgressStyle::default_bar()
+                                    .template("{spinner:.yellow} [{elapsed_precise}] [{bar:40.yellow/orange}] {pos}/{len} ({percent}%) | {msg}")?
+                                    .progress_chars("#>-"),
+                            );
+                            vpb.enable_steady_tick(Duration::from_millis(100));
+                            vpb.set_message("벡터 임베딩 추출 준비 중...");
 
-                let mut vector_count = 0u64;
-                let mut vector_errors = 0u64;
+                            let mut batch: Vec<(String, String, u64, String)> = Vec::new();
+                            const BATCH_SIZE: usize = 64;
 
-                // Collect all chunks for embedding
-                for entry in std::fs::read_dir(docs_root)?.flatten() {
-                    let path = entry.path();
-                    if !path.is_dir() {
-                        continue;
-                    }
-                    let project_name = path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                    if project_name.starts_with('.') || project_name.starts_with('_') 
-                        || project_name == "mcp" || project_name == "skills" 
-                        || project_name == ".alcove" {
-                        continue;
-                    }
+                            for (proj, rel, full) in files_to_index {
+                                if let Ok(true) = store.has_file(&proj, &rel) {
+                                    vpb.inc(1);
+                                    vectors_indexed += 1; // Count as skipped/indexed
+                                    continue;
+                                }
 
-                    let proj_cfg = effective_config(&path);
-                    for walk_entry in WalkDir::new(&path)
-                        .into_iter()
-                        .filter_map(std::result::Result::ok)
-                        .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path()))
-                    {
-                        let file_path = walk_entry.path();
-                        let content = match std::fs::read_to_string(file_path) {
-                            Ok(c) => c,
-                            Err(_) => continue,
-                        };
-                        let rel = file_path
-                            .strip_prefix(&path)
-                            .unwrap_or(file_path)
-                            .to_string_lossy()
-                            .to_string();
+                                let eta_str = if vpb.position() > 0 {
+                                    format!("남은 시간: {eta}", eta = "{eta}")
+                                } else {
+                                    "계산 중...".to_string()
+                                };
+                                vpb.set_message(format!("임베딩 추출 중 ({}) [{}:{}]", eta_str, proj, rel));
+                                
+                                if let Ok(content) = read_file_content(&full) {
+                                    let chunks = chunk_content(&content);
+                                    for (chunk_idx, chunk) in chunks.into_iter().enumerate() {
+                                        batch.push((proj.clone(), rel.clone(), chunk_idx as u64, chunk.text));
+                                        
+                                        if batch.len() >= BATCH_SIZE {
+                                            let texts: Vec<&str> = batch.iter().map(|(_, _, _, t)| t.as_str()).collect();
+                                            match service.embed(&texts) {
+                                                Ok(embeddings) => {
+                                                    let it = batch.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
+                                                    if let Err(e) = store.batch_upsert(it) {
+                                                        eprintln!("[alcove] Failed to batch upsert vectors: {}", e);
+                                                        vector_errors += BATCH_SIZE as u64;
+                                                    } else {
+                                                        vectors_indexed += BATCH_SIZE as u64;
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("[alcove] Failed to embed batch: {}", e);
+                                                    vector_errors += BATCH_SIZE as u64;
+                                                    batch.clear();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                vpb.inc(1);
+                            }
 
-                        let chunks = chunk_content(&content);
-                        let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
-
-                        // Batch embed all chunks in the file
-                        match service.embed(&texts) {
-                            Ok(embeddings) => {
-                                for (chunk_idx, embedding) in embeddings.into_iter().enumerate() {
-                                    if let Err(e) = store.upsert(&project_name, &rel, chunk_idx as u64, &embedding) {
-                                        eprintln!("[alcove] Failed to upsert vector: {}", e);
-                                        vector_errors += 1;
-                                    } else {
-                                        vector_count += 1;
+                            // Flush remaining batch
+                            if !batch.is_empty() {
+                                let texts: Vec<&str> = batch.iter().map(|(_, _, _, t)| t.as_str()).collect();
+                                match service.embed(&texts) {
+                                    Ok(embeddings) => {
+                                        let count = batch.len() as u64;
+                                        let it = batch.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
+                                        if let Err(e) = store.batch_upsert(it) {
+                                            eprintln!("[alcove] Failed to batch upsert final vectors: {}", e);
+                                            vector_errors += count;
+                                        } else {
+                                            vectors_indexed += count;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("[alcove] Failed to embed final batch: {}", e);
+                                        vector_errors += batch.len() as u64;
+                                        batch.clear();
                                     }
                                 }
                             }
-                            Err(e) => {
-                                eprintln!("[alcove] Failed to embed {}: {}", rel, e);
-                                vector_errors += 1;
-                            }
+
+                            vpb.finish_with_message("벡터 임베딩 완료");
                         }
                     }
+                    Err(e) => {
+                        eprintln!("[alcove] Failed to open vector store: {}", e);
+                        vector_status = format!("error: {}", e);
+                    }
                 }
-
-                return Ok(json!({
-                    "status": "ok",
-                    "projects": project_count,
-                    "indexed": indexed_count,
-                    "skipped": skipped_count,
-                    "index_path": dir.to_string_lossy(),
-                    "vector_status": "ok",
-                    "vectors_indexed": vector_count,
-                    "vector_errors": vector_errors,
-                    "embedding_model": service.model_name(),
-                }));
             } else {
-                // Model not ready, return BM25-only status
-                return Ok(json!({
-                    "status": "ok",
-                    "projects": project_count,
-                    "indexed": indexed_count,
-                    "skipped": skipped_count,
-                    "index_path": dir.to_string_lossy(),
-                    "vector_status": "model_not_ready",
-                    "embedding_status": service.state().to_string(),
-                }));
+                vector_status = "model_not_ready".to_string();
             }
         }
     }
+
+    // Final metadata save after all indexing steps (Tantivy + Vector) are complete
+    meta.files = current_files;
+    let _ = meta.save(docs_root);
 
     Ok(json!({
         "status": "ok",
@@ -722,8 +793,21 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
         "indexed": indexed_count,
         "skipped": skipped_count,
         "index_path": dir.to_string_lossy(),
-        "vector_status": "disabled",
+        "vector_status": vector_status,
+        "vectors_indexed": vectors_indexed,
+        "vector_errors": vector_errors,
+        "embedding_model": embedding_model,
     }))
+}
+
+/// Helper to expand ~ in paths
+fn expand_path(path: &str) -> PathBuf {
+    if path.starts_with('~') {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(path.replacen('~', &home, 1));
+        }
+    }
+    PathBuf::from(path)
 }
 
 // ---------------------------------------------------------------------------
