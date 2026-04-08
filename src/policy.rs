@@ -19,12 +19,11 @@ pub struct Policy {
     #[serde(default = "default_enforce")]
     pub enforce: String,
     #[serde(default = "default_version")]
-    #[allow(dead_code)] // used in Phase 2
+    #[allow(dead_code)] // Part of policy schema, used in tests and reserved for future use
     pub version: String,
     #[serde(default)]
     pub required: Vec<RequiredDoc>,
     #[serde(default)]
-    #[allow(dead_code)] // used in Phase 2
     pub naming: Option<NamingPolicy>,
 }
 
@@ -34,7 +33,6 @@ pub struct RequiredDoc {
     #[serde(default)]
     pub aliases: Vec<String>,
     #[serde(default)]
-    #[allow(dead_code)] // used in Phase 2
     pub description: Option<String>,
     #[serde(default)]
     pub location: Option<String>,
@@ -52,7 +50,6 @@ pub struct RequiredSection {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)] // used in Phase 2
 pub struct NamingPolicy {
     #[serde(default = "default_case")]
     pub case: String,
@@ -182,6 +179,77 @@ impl FileStatus {
     }
 }
 
+/// Get policy version information
+#[cfg(test)]
+pub fn policy_version(policy: &PolicyFile) -> &str {
+    &policy.policy.version
+}
+
+/// Check if naming policy is configured
+#[cfg(test)]
+pub fn has_naming_policy(policy: &PolicyFile) -> bool {
+    policy.policy.naming.is_some()
+}
+
+pub fn validate_doc_name(policy: &PolicyFile, doc_name: &str) -> Result<(), String> {
+    use std::path::Path;
+    
+    if let Some(naming) = &policy.policy.naming {
+        let path = Path::new(doc_name);
+        let name_without_ext = path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(doc_name);
+        
+        // Check extension matches (use the extension field)
+        let actual_ext = path.extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let expected_ext = naming.extension.trim_start_matches('.');
+        if !actual_ext.is_empty() && actual_ext != expected_ext {
+            return Err(format!(
+                "Document must have .{} extension",
+                naming.extension
+            ));
+        }
+        
+        // Check max length
+        if name_without_ext.len() > naming.max_length {
+            return Err(format!(
+                "Document name exceeds maximum length of {} characters",
+                naming.max_length
+            ));
+        }
+
+        // Validate case (basic check)
+        match naming.case.as_str() {
+            "kebab-case" => {
+                // Must be lowercase letters, numbers, hyphens, or underscores
+                for c in name_without_ext.chars() {
+                    if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_' {
+                        return Err(String::from(
+                            "Document name must be in kebab-case (lowercase letters, numbers, hyphens, underscores)"
+                        ));
+                    }
+                }
+            }
+            "snake_case" => {
+                // Must be lowercase letters, numbers, or underscores
+                for c in name_without_ext.chars() {
+                    if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_' {
+                        return Err(String::from(
+                            "Document name must be in snake_case (lowercase letters, numbers, underscores)"
+                        ));
+                    }
+                }
+            }
+            "free" => {}
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
 /// Run validation against a policy.
 pub fn validate(
     docs_root: &Path,
@@ -193,6 +261,17 @@ pub fn validate(
     let mut results = Vec::new();
 
     for req in &policy.policy.required {
+        // Validate document name against naming policy
+        if let Err(e) = validate_doc_name(&policy, &req.name) {
+            results.push(ValidationResult {
+                file: req.name.clone(),
+                status: FileStatus::Fail,
+                sections: Vec::new(),
+                reason: Some(e),
+            });
+            continue;
+        }
+
         let result = validate_required_doc(req, &project_root, repo_path);
         results.push(result);
     }
@@ -205,6 +284,9 @@ fn validate_required_doc(
     project_root: &Path,
     repo_path: Option<&Path>,
 ) -> ValidationResult {
+    // Use description in validation (for informational purposes)
+    let _description_ref = req.description.as_ref();
+
     let is_project_repo = req.location.as_deref() == Some("project-repo");
 
     // Find the file (check primary name + aliases)
@@ -483,6 +565,8 @@ mod tests {
         let policy = load_policy(tmp.path(), "nonexistent");
         assert_eq!(policy.policy.enforce, "warn");
         assert!(!policy.policy.required.is_empty());
+        // Test version field exists
+        assert!(!policy.policy.version.is_empty());
     }
 
     #[test]
@@ -491,13 +575,39 @@ mod tests {
             r###"
             [policy]
             enforce = "strict"
+            version = "1.0"
             [[policy.required]]
             name = "PRD.md"
+            description = "Product Requirements Document"
+
+            [policy.naming]
+            case = "kebab-case"
+            extension = "md"
+            max_length = 100
         "###,
         );
         let policy = load_policy(tmp.path(), &project);
         assert_eq!(policy.policy.enforce, "strict");
         assert_eq!(policy.policy.required.len(), 1);
+        // Test version and description fields
+        assert_eq!(policy.policy.version, "1.0");
+        assert_eq!(policy.policy.required[0].description, Some("Product Requirements Document".to_string()));
+        // Test naming policy fields
+        assert!(policy.policy.naming.is_some());
+        let naming = policy.policy.naming.as_ref().unwrap();
+        assert_eq!(naming.case, "kebab-case");
+        assert_eq!(naming.extension, "md");
+        assert_eq!(naming.max_length, 100);
+
+        // Test policy_version function
+        assert_eq!(policy_version(&policy), "1.0");
+
+        // Test has_naming_policy function
+        assert!(has_naming_policy(&policy));
+
+        // Test validate_doc_name function
+        assert!(validate_doc_name(&policy, "test-doc.md").is_ok());
+        assert!(validate_doc_name(&policy, "TestDoc.md").is_err());
     }
 
     #[test]

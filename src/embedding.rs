@@ -3,6 +3,7 @@
 //! Provides lazy model download, ONNX inference, and vector index management.
 //! Graceful degradation ensures BM25-only search works even when models aren't ready.
 
+#[cfg(feature = "alcove-full")]
 use std::path::PathBuf;
 
 #[cfg(feature = "alcove-full")]
@@ -182,57 +183,13 @@ impl EmbeddingModelChoice {
     }
 }
 
+#[cfg(feature = "alcove-full")]
 impl std::fmt::Display for EmbeddingModelChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", (*self).as_str())
     }
 }
 
-/// Embedding configuration
-#[cfg_attr(not(feature = "alcove-full"), allow(dead_code))]
-#[derive(Debug, Clone)]
-pub struct EmbeddingConfig {
-    /// Selected model
-    pub model: EmbeddingModelChoice,
-    /// Auto-download on first search
-    #[allow(dead_code)]
-    pub auto_download: bool,
-    /// Model cache directory
-    pub cache_dir: PathBuf,
-    /// Enable embedding (false = BM25 only)
-    pub enabled: bool,
-}
-
-#[cfg(not(feature = "alcove-full"))]
-impl Default for EmbeddingConfig {
-    fn default() -> Self {
-        Self {
-            model: EmbeddingModelChoice::default(),
-            auto_download: false,
-            cache_dir: PathBuf::new(),
-            enabled: false,
-        }
-    }
-}
-
-#[cfg(feature = "alcove-full")]
-impl Default for EmbeddingConfig {
-    fn default() -> Self {
-        let cache_dir = dirs::cache_dir()
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
-            .join("alcove")
-            .join("models");
-
-        Self {
-            model: EmbeddingModelChoice::default(),
-            auto_download: true,
-            cache_dir,
-            enabled: true,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Feature-gated implementation
 // ---------------------------------------------------------------------------
 
@@ -241,7 +198,9 @@ pub struct EmbeddingService {
     /// Current model state
     state: Arc<Mutex<ModelState>>,
     /// Configuration
-    config: EmbeddingConfig,
+    config: crate::config::EmbeddingConfig,
+    /// Internal configuration with model choice
+    internal_config: InternalEmbeddingConfig,
     /// ONNX session (lazy loaded)
     session: Arc<Mutex<Option<TextEmbedding>>>,
     /// Previous model dimension (for detecting changes)
@@ -249,13 +208,36 @@ pub struct EmbeddingService {
     previous_dimension: Arc<Mutex<Option<usize>>>,
 }
 
+/// Internal embedding configuration (not part of public API)
+#[cfg(feature = "alcove-full")]
+struct InternalEmbeddingConfig {
+    model: EmbeddingModelChoice,
+    auto_download: bool,
+    cache_dir: PathBuf,
+    enabled: bool,
+}
+
 #[cfg(feature = "alcove-full")]
 impl EmbeddingService {
     /// Create a new embedding service
-    pub fn new(config: EmbeddingConfig) -> Self {
-        let initial_state = if config.enabled && Self::is_model_cached(&config) {
+    pub fn new(config: crate::config::EmbeddingConfig) -> Self {
+        // Parse model string to EmbeddingModelChoice
+        let model_choice = EmbeddingModelChoice::parse(&config.model)
+            .unwrap_or_else(|| {
+                eprintln!("Warning: Unknown model '{}', using default", config.model);
+                EmbeddingModelChoice::default()
+            });
+
+        let internal_config = InternalEmbeddingConfig {
+            model: model_choice,
+            auto_download: config.auto_download,
+            cache_dir: PathBuf::from(&config.cache_dir),
+            enabled: config.enabled,
+        };
+
+        let initial_state = if internal_config.enabled && Self::is_model_cached(&internal_config) {
             ModelState::Cached
-        } else if config.enabled {
+        } else if internal_config.enabled {
             ModelState::NotDownloaded
         } else {
             ModelState::Failed("Embedding disabled".to_string())
@@ -264,13 +246,14 @@ impl EmbeddingService {
         Self {
             state: Arc::new(Mutex::new(initial_state)),
             config,
+            internal_config,
             session: Arc::new(Mutex::new(None)),
             previous_dimension: Arc::new(Mutex::new(None)),
         }
     }
 
     /// Check if model is cached locally
-    fn is_model_cached(config: &EmbeddingConfig) -> bool {
+    fn is_model_cached(config: &InternalEmbeddingConfig) -> bool {
         // fastembed uses HuggingFace hub cache: models--{user}--{repo}
         let model_id = config.model.model_id();
         let folder_name = format!("models--{}", model_id.replace('/', "--"));
@@ -284,13 +267,13 @@ impl EmbeddingService {
 
     /// Get current dimension
     pub fn dimension(&self) -> usize {
-        self.config.model.dimension()
+        self.internal_config.model.dimension()
     }
 
     /// Check if dimension changed since last call
     #[allow(dead_code)]
     pub fn dimension_changed(&self) -> bool {
-        let current = self.config.model.dimension();
+        let current = self.internal_config.model.dimension();
         let mut prev = self.previous_dimension.lock().unwrap();
         if let Some(p) = *prev {
             p != current
@@ -347,8 +330,8 @@ impl EmbeddingService {
             *state = ModelState::Downloading { progress_pct: 10 };
         }
 
-        let options = TextInitOptions::new(self.config.model.as_fastembed_model())
-            .with_cache_dir(self.config.cache_dir.clone())
+        let options = TextInitOptions::new(self.internal_config.model.as_fastembed_model())
+            .with_cache_dir(self.internal_config.cache_dir.clone())
             .with_show_download_progress(true);
 
         // Update progress
@@ -395,7 +378,7 @@ impl EmbeddingService {
     /// Remove cached model
     #[allow(dead_code)]
     pub fn remove_cache(&self) -> Result<(), String> {
-        let model_dir = self.config.cache_dir.join(self.config.model.as_str());
+        let model_dir = self.internal_config.cache_dir.join(self.internal_config.model.as_str());
         if model_dir.exists() {
             std::fs::remove_dir_all(&model_dir)
                 .map_err(|e| format!("Failed to remove cache: {}", e))?;
@@ -415,12 +398,12 @@ impl EmbeddingService {
     /// Check if embedding is enabled
     #[allow(dead_code)]
     pub fn is_enabled(&self) -> bool {
-        self.config.enabled
+        self.internal_config.enabled
     }
 
     /// Get model name
     pub fn model_name(&self) -> &'static str {
-        self.config.model.as_str()
+        self.internal_config.model.as_str()
     }
 }
 
@@ -429,41 +412,53 @@ impl EmbeddingService {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[cfg(feature = "alcove-full")]
 mod tests {
+    #[cfg(feature = "alcove-full")]
     use super::*;
 
     #[test]
     fn test_model_choice_dimension() {
-        assert_eq!(EmbeddingModelChoice::MultilingualE5Small.dimension(), 384);
-        assert_eq!(EmbeddingModelChoice::MultilingualE5Base.dimension(), 768);
-        assert_eq!(EmbeddingModelChoice::MultilingualE5Large.dimension(), 1024);
-        assert_eq!(EmbeddingModelChoice::SnowflakeArcticEmbedXS.dimension(), 384);
+        #[cfg(feature = "alcove-full")]
+        {
+            assert_eq!(EmbeddingModelChoice::MultilingualE5Small.dimension(), 384);
+            assert_eq!(EmbeddingModelChoice::MultilingualE5Base.dimension(), 768);
+            assert_eq!(EmbeddingModelChoice::MultilingualE5Large.dimension(), 1024);
+            assert_eq!(EmbeddingModelChoice::SnowflakeArcticEmbedXS.dimension(), 384);
+        }
     }
 
     #[test]
     fn test_model_choice_parse() {
-        assert_eq!(
-            EmbeddingModelChoice::parse("MultilingualE5Small"),
-            Some(EmbeddingModelChoice::MultilingualE5Small)
-        );
-        assert_eq!(
-            EmbeddingModelChoice::parse("InvalidModel"),
-            None
-        );
+        #[cfg(feature = "alcove-full")]
+        {
+            assert_eq!(
+                EmbeddingModelChoice::parse("MultilingualE5Small"),
+                Some(EmbeddingModelChoice::MultilingualE5Small)
+            );
+            assert_eq!(
+                EmbeddingModelChoice::parse("InvalidModel"),
+                None
+            );
+        }
     }
 
     #[test]
     fn test_model_state_display() {
-        assert_eq!(format!("{}", ModelState::NotDownloaded), "not_downloaded");
-        assert_eq!(format!("{}", ModelState::Downloading { progress_pct: 42 }), "downloading (42%)");
-        assert_eq!(format!("{}", ModelState::Ready), "ready");
+        #[cfg(feature = "alcove-full")]
+        {
+            assert_eq!(format!("{}", ModelState::NotDownloaded), "not_downloaded");
+            assert_eq!(format!("{}", ModelState::Downloading { progress_pct: 42 }), "downloading (42%)");
+            assert_eq!(format!("{}", ModelState::Ready), "ready");
+        }
     }
 
     #[test]
     fn test_model_size() {
-        assert_eq!(EmbeddingModelChoice::SnowflakeArcticEmbedXSQ.size_mb(), 15);
-        assert_eq!(EmbeddingModelChoice::MultilingualE5Small.size_mb(), 235);
-        assert_eq!(EmbeddingModelChoice::BGEM3.size_mb(), 2300);
+        #[cfg(feature = "alcove-full")]
+        {
+            assert_eq!(EmbeddingModelChoice::SnowflakeArcticEmbedXSQ.size_mb(), 15);
+            assert_eq!(EmbeddingModelChoice::MultilingualE5Small.size_mb(), 235);
+            assert_eq!(EmbeddingModelChoice::BGEM3.size_mb(), 2300);
+        }
     }
 }

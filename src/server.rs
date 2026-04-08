@@ -143,7 +143,7 @@ async fn search(
     // Try hybrid search first if available
     #[cfg(feature = "alcove-full")]
     if use_hybrid {
-        use crate::embedding::{EmbeddingConfig, EmbeddingModelChoice, EmbeddingService};
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
         use crate::config::load_config;
 
         if crate::index::index_exists(docs_root) {
@@ -160,10 +160,10 @@ async fn search(
                         .unwrap_or_else(|| emb_cfg.cache_dir.clone())
                 );
 
-                let service = EmbeddingService::new(EmbeddingConfig {
-                    model,
+                let service = EmbeddingService::new(crate::config::EmbeddingConfig {
+                    model: model.as_str().to_string(),
                     auto_download: emb_cfg.auto_download,
-                    cache_dir,
+                    cache_dir: emb_cfg.cache_dir.clone(),
                     enabled: true,
                 });
 
@@ -254,7 +254,7 @@ async fn search(
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "alcove-server")]
-pub async fn run_server(docs_root: std::path::PathBuf, port: u16, token: Option<String>) -> Result<()> {
+pub async fn run_server(docs_root: std::path::PathBuf, host: &str, port: u16, token: Option<String>) -> Result<()> {
     let state = Arc::new(ServerState { docs_root, token });
 
     let app = Router::new()
@@ -269,7 +269,11 @@ pub async fn run_server(docs_root: std::path::PathBuf, port: u16, token: Option<
         )
         .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    // Parse the bind host; fail clearly if invalid.
+    let ip: std::net::IpAddr = host.parse().map_err(|e| {
+        anyhow::anyhow!("Invalid server host '{}': {}", host, e)
+    })?;
+    let addr = SocketAddr::from((ip, port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     println!(
@@ -295,6 +299,7 @@ pub async fn run_server(docs_root: std::path::PathBuf, port: u16, token: Option<
 #[cfg(not(feature = "alcove-server"))]
 pub async fn run_server(
     _docs_root: std::path::PathBuf,
+    _host: &str,
     _port: u16,
     _token: Option<String>,
 ) -> anyhow::Result<()> {

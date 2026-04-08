@@ -13,7 +13,7 @@ use crate::tools;
 #[derive(Debug, Deserialize)]
 pub struct RpcRequest {
     #[allow(dead_code)]
-    pub jsonrpc: String,
+    jsonrpc: String,
     #[serde(default)]
     pub id: Option<Value>,
     pub method: String,

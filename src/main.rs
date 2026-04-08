@@ -99,9 +99,12 @@ enum Commands {
     /// Start HTTP RAG server for external access
     #[cfg(feature = "alcove-server")]
     Serve {
+        /// Host / bind address (default: 127.0.0.1, use 0.0.0.0 for all interfaces)
+        #[arg(long)]
+        host: Option<String>,
         /// Port to listen on
-        #[arg(long, default_value = "8080")]
-        port: u16,
+        #[arg(long)]
+        port: Option<u16>,
         /// Bearer token for authentication (optional)
         #[arg(long)]
         token: Option<String>,
@@ -156,23 +159,35 @@ fn main() -> Result<()> {
         #[cfg(feature = "alcove-full")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
         #[cfg(feature = "alcove-server")]
-        Some(Commands::Serve { port, token }) => {
-            let docs_root = config::load_config()
+        Some(Commands::Serve { host, port, token }) => {
+            let cfg = config::load_config();
+            let docs_root = cfg
                 .docs_root()
                 .ok_or_else(|| anyhow::anyhow!("docs_root not configured. Run 'alcove setup' first."))?;
             
+            // Resolve host: CLI flag > config.toml > default (127.0.0.1)
+            let srv_cfg = cfg.server_config();
+            let bind_host = host.as_deref().unwrap_or(&srv_cfg.host);
+            // Resolve port: CLI flag > config.toml > default (8080)
+            let bind_port = port.unwrap_or(srv_cfg.port);
+
             println!("{}", console::style("Starting Alcove RAG server...").bold());
             println!(
                 "  {} Docs root: {}",
                 console::style("→").dim(),
                 docs_root.display()
             );
+            println!(
+                "  {} Bind: {}:{}",
+                console::style("→").dim(),
+                bind_host, bind_port
+            );
             println!();
 
             // Create tokio runtime for async server
             tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime")
-                .block_on(server::run_server(docs_root, port, token))
+                .block_on(server::run_server(docs_root, bind_host, bind_port, token))
         }
     }
 }

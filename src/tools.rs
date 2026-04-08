@@ -318,7 +318,7 @@ pub fn tool_search(
     // Try indexed search first (faster and ranked)
     #[cfg(feature = "alcove-full")]
     {
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService, EmbeddingConfig};
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
         use crate::index::search_hybrid;
         use crate::config::load_config;
 
@@ -330,16 +330,14 @@ pub fn tool_search(
             // Create embedding service if enabled
             if emb_cfg.enabled {
                 let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
-                let service = EmbeddingService::new(EmbeddingConfig {
-                    model,
+                let service = EmbeddingService::new(crate::config::EmbeddingConfig {
+                    model: model.as_str().to_string(),
                     auto_download: emb_cfg.auto_download,
-                    cache_dir: std::path::PathBuf::from(
-                        emb_cfg.cache_dir.starts_with('~')
+                    cache_dir: emb_cfg.cache_dir.starts_with('~')
                             .then(|| std::env::var("HOME").ok())
                             .flatten()
                             .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
-                            .unwrap_or_else(|| emb_cfg.cache_dir.clone())
-                    ),
+                            .unwrap_or_else(|| emb_cfg.cache_dir.clone()),
                     enabled: true,
                 });
 
@@ -390,14 +388,14 @@ pub fn tool_search(
                 .as_array()
                 .map(|arr| {
                     arr.iter()
-                        .filter_map(|m| {
-                            Some(json!({
+                        .map(|m| {
+                            json!({
                                 "file": m["file"].as_str().unwrap_or("?"),
                                 "line": m["line_start"].as_u64().unwrap_or(0),
                                 "snippet": m["snippet"].as_str().unwrap_or(""),
                                 "source": "ranked",
                                 "score": m["score"].as_f64().unwrap_or(0.0),
-                            }))
+                            })
                         })
                         .collect()
                 })
@@ -493,15 +491,15 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
                 .as_array()
                 .map(|arr| {
                     arr.iter()
-                        .filter_map(|m| {
-                            Some(json!({
+                        .map(|m| {
+                            json!({
                                 "project": m["project"].as_str().unwrap_or("?"),
                                 "file": m["file"].as_str().unwrap_or("?"),
                                 "line": m["line_start"].as_u64().unwrap_or(0),
                                 "snippet": m["snippet"].as_str().unwrap_or(""),
                                 "source": "ranked",
                                 "score": m["score"].as_f64().unwrap_or(0.0),
-                            }))
+                            })
                         })
                         .collect()
                 })

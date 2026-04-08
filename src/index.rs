@@ -9,6 +9,7 @@ use serde_json::{Value as JsonValue, json};
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::{self, *};
+use tantivy::{DocAddress, Score};
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
 use tantivy::{Index, ReloadPolicy, TantivyDocument};
 use walkdir::WalkDir;
@@ -662,7 +663,7 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
 
     #[cfg(feature = "alcove-full")]
     {
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService, EmbeddingConfig as EmbConfig};
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
         use crate::vector::VectorStore;
         use crate::config::load_config;
 
@@ -673,11 +674,10 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
             let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
             embedding_model = model.as_str().to_string();
             
-            let cache_dir = expand_path(&emb_cfg.cache_dir);
-            let service = EmbeddingService::new(EmbConfig {
-                model,
+            let service = EmbeddingService::new(crate::config::EmbeddingConfig {
+                model: model.as_str().to_string(),
                 auto_download: emb_cfg.auto_download,
-                cache_dir,
+                cache_dir: emb_cfg.cache_dir.clone(),
                 enabled: true,
             });
 
@@ -892,8 +892,8 @@ pub fn search_indexed(
         .context("Failed to parse search query")?;
 
     // Fetch more candidates for deduplication
-    let top_docs = searcher
-        .search(&parsed_query, &TopDocs::with_limit(limit * 5))
+    let top_docs: Vec<(Score, DocAddress)> = searcher
+        .search(&parsed_query, &TopDocs::with_limit(limit * 5).order_by_score())
         .context("Search failed")?;
 
     // Deduplicate: keep only the best-scoring chunk per (project, file) pair
@@ -1082,7 +1082,7 @@ pub fn search_hybrid(
             (tantivy::query::Occur::Must, Box::new(project_query) as Box<dyn tantivy::query::Query>),
         ]);
 
-        let top_docs = searcher.search(&combined, &TopDocs::with_limit(1))?;
+        let top_docs: Vec<(f32, _)> = searcher.search(&combined, &TopDocs::with_limit(1).order_by_score())?;
 
         if let Some((_score, doc_address)) = top_docs.first() {
             let doc: TantivyDocument = searcher.doc(*doc_address)?;

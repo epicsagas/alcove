@@ -20,7 +20,7 @@ pub struct VectorMeta {
     /// Embedding dimension
     pub dimension: usize,
     /// Number of vectors stored
-    pub count: usize,
+    pub count: i64,
 }
 
 /// Search result with similarity score
@@ -141,7 +141,7 @@ impl VectorStore {
             )?;
             for (project, file, chunk_id, embedding) in embeddings {
                 let blob = Self::encode_embedding(&embedding);
-                stmt.execute(params![project, file, chunk_id, blob])?;
+                stmt.execute(params![project, file, chunk_id as i64, blob])?;
             }
         }
         tx.commit()?;
@@ -164,7 +164,7 @@ impl VectorStore {
             INSERT OR REPLACE INTO vectors (project, file, chunk_id, embedding)
             VALUES (?1, ?2, ?3, ?4)
             "#,
-            params![project, file, chunk_id, blob],
+            params![project, file, chunk_id as i64, blob],
         )?;
 
         Ok(())
@@ -172,7 +172,7 @@ impl VectorStore {
 
     /// Check if a file already has vectors in the store
     pub fn has_file(&self, project: &str, file: &str) -> Result<bool> {
-        let count: usize = self.conn.query_row(
+        let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM vectors WHERE project = ?1 AND file = ?2",
             params![project, file],
             |row| row.get(0),
@@ -202,7 +202,7 @@ impl VectorStore {
 
     /// Search for similar vectors using HNSW (large datasets) or linear scan (small)
     pub fn search(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
-        let count: usize = self.conn.query_row(
+        let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM vectors",
             [],
             |row| row.get(0),
@@ -227,7 +227,7 @@ impl VectorStore {
         let rows = stmt.query_map([], |row| {
             let project: String = row.get(0)?;
             let file: String = row.get(1)?;
-            let chunk_id: u64 = row.get(2)?;
+            let chunk_id: u64 = row.get::<_, i64>(2)? as u64;
             let blob: Vec<u8> = row.get(3)?;
             Ok((project, file, chunk_id, blob))
         })?;
@@ -270,7 +270,7 @@ impl VectorStore {
             let id: i64 = row.get(0)?;
             let project: String = row.get(1)?;
             let file: String = row.get(2)?;
-            let chunk_id: u64 = row.get(3)?;
+            let chunk_id: u64 = row.get::<_, i64>(3)? as u64;
             let blob: Vec<u8> = row.get(4)?;
             Ok((id, project, file, chunk_id, blob))
         })?;
@@ -326,7 +326,7 @@ impl VectorStore {
     /// Get store metadata
     #[allow(dead_code)]
     pub fn meta(&self) -> Result<VectorMeta> {
-        let count: usize = self.conn.query_row(
+        let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM vectors",
             [],
             |row| row.get(0),
@@ -335,14 +335,14 @@ impl VectorStore {
         Ok(VectorMeta {
             model: self.model.clone(),
             dimension: self.dimension,
-            count,
+            count: count.try_into().unwrap(),
         })
     }
 
     /// Check if store is empty
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
-        let count: usize = self.conn.query_row(
+        let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM vectors",
             [],
             |row| row.get(0),
