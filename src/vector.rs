@@ -270,7 +270,7 @@ impl VectorStore {
         // Map back to VectorResult
         let mut vector_results: Vec<VectorResult> = Vec::new();
         for neighbor in results {
-            if let Some((id, project, file, chunk_id, _)) = vectors
+            if let Some((_id, project, file, chunk_id, _)) = vectors
                 .iter()
                 .find(|(vid, _, _, _, _)| *vid as usize == neighbor.d_id)
             {
