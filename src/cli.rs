@@ -1450,7 +1450,7 @@ fn save_full_config_to(
             .join(", ")
     };
 
-    let mut content = format!(
+    let content = format!(
         "docs_root = \"{}\"\n\n[core]\nfiles = [{}]\n\n[team]\nfiles = [{}]\n\n[public]\nfiles = [{}]\n\n[diagram]\nformat = \"{}\"\n",
         docs_root.display(),
         fmt_list(core_files),
