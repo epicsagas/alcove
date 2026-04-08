@@ -363,8 +363,8 @@ pub fn classify_tier_with(relative_path: &str, cfg: &DocConfig) -> &'static str 
     }
 }
 
-/// Classify using the global config.  Convenience wrapper around [`classify_tier_with`].
-#[allow(dead_code)]
+/// Classify using the global config. Convenience wrapper around [`classify_tier_with`].
+#[cfg(test)]
 pub fn classify_tier(relative_path: &str) -> &'static str {
     classify_tier_with(relative_path, load_config())
 }
