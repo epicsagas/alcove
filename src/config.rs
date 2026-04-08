@@ -119,6 +119,7 @@ fn default_embedding_model() -> String {
 
 fn default_embedding_enabled() -> bool {
     #[cfg(feature = "alcove-full")]
+    #[allow(dead_code)] // used by serde default, may not be directly called
     {
         true
     }

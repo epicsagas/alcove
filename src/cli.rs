@@ -1865,7 +1865,10 @@ mod tests {
         let team = vec!["ENV_SETUP.md".to_string()];
         let public = vec!["README.md".to_string()];
 
+        #[cfg(feature = "alcove-full")]
         let result = save_full_config_to(&cfg, &docs, "mermaid", &core, &team, &public, None);
+        #[cfg(not(feature = "alcove-full"))]
+        let result = save_full_config_to(&cfg, &docs, "mermaid", &core, &team, &public);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
