@@ -349,6 +349,103 @@ fn select_agents(prompt: &str) -> Result<Vec<usize>> {
 }
 
 // ---------------------------------------------------------------------------
+// Setup wizard state machine
+// ---------------------------------------------------------------------------
+
+/// Total number of setup steps (for progress indicator)
+const SETUP_STEPS: usize = 6;
+
+/// Setup wizard steps
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Step {
+    DocsRoot = 0,
+    Categories = 1,
+    Diagram = 2,
+    Embedding = 3,
+    Agents = 4,
+    Summary = 5,
+}
+
+impl Step {
+    fn header(&self) -> String {
+        use std::borrow::Cow;
+        let step_num = *self as usize + 1;
+        let title: Cow<'_, str> = match self {
+            Step::DocsRoot => t!("setup.docs_repo"),
+            Step::Categories => t!("setup.categories"),
+            Step::Diagram => t!("setup.diagram"),
+            Step::Embedding => Cow::Borrowed("Embedding Model (Hybrid Search)"),
+            Step::Agents => t!("setup.agents"),
+            Step::Summary => t!("setup.done"),
+        };
+        format!("[{}/{}] ── {} ──", step_num, SETUP_STEPS, title.as_ref())
+    }
+
+    fn next(&self) -> Option<Step> {
+        match self {
+            Step::DocsRoot => Some(Step::Categories),
+            Step::Categories => Some(Step::Diagram),
+            Step::Diagram => Some(Step::Embedding),
+            Step::Embedding => Some(Step::Agents),
+            Step::Agents => Some(Step::Summary),
+            Step::Summary => None,
+        }
+    }
+
+    fn prev(&self) -> Option<Step> {
+        match self {
+            Step::DocsRoot => None,
+            Step::Categories => Some(Step::DocsRoot),
+            Step::Diagram => Some(Step::Categories),
+            Step::Embedding => Some(Step::Diagram),
+            Step::Agents => Some(Step::Embedding),
+            Step::Summary => Some(Step::Agents),
+        }
+    }
+}
+
+/// Result of a step execution
+enum StepResult {
+    /// Continue to next step
+    Continue,
+    /// Go back to previous step
+    Back,
+    /// User cancelled the wizard
+    Cancelled,
+}
+
+/// Holds all state collected during the setup wizard
+struct SetupState {
+    docs_root: Option<PathBuf>,
+    core_files: Vec<String>,
+    team_files: Vec<String>,
+    public_files: Vec<String>,
+    diagram_format: Option<String>,
+    embedding_section: Option<String>,
+    selected_agents: Vec<usize>,
+}
+
+impl Default for SetupState {
+    fn default() -> Self {
+        Self {
+            docs_root: None,
+            core_files: Vec::new(),
+            team_files: Vec::new(),
+            public_files: Vec::new(),
+            diagram_format: None,
+            embedding_section: None,
+            selected_agents: Vec::new(),
+        }
+    }
+}
+
+/// Print step header with progress indicator
+fn print_step_header(step: &Step) {
+    println!();
+    println!("{}", style(step.header()).bold());
+}
+
+// ---------------------------------------------------------------------------
 // Embedding model selection
 // ---------------------------------------------------------------------------
 
@@ -457,6 +554,518 @@ fn setup_embedding() -> Result<Option<String>> {
         );
         Ok(None)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Step functions with Back support
+// ---------------------------------------------------------------------------
+
+/// Add "← Back" option to labels and return the modified list
+fn add_back_option(labels: &[String]) -> Vec<String> {
+    let mut result = vec![style("← Go back").yellow().to_string()];
+    result.extend(labels.iter().cloned());
+    result
+}
+
+/// Check if user selected "Back" (index 0 after adding back option)
+fn is_back_selection(idx: usize) -> bool {
+    idx == 0
+}
+
+/// Adjust index to account for "Back" option being at index 0
+fn adjust_index_for_back(idx: usize) -> usize {
+    idx.saturating_sub(1)
+}
+
+/// Step 1: Docs Root selection
+fn step_docs_root(state: &mut SetupState) -> Result<StepResult> {
+    print_step_header(&Step::DocsRoot);
+    
+    let current = state.docs_root.clone().or_else(|| saved_docs_root());
+    
+    // Show current value as default
+    let theme = ColorfulTheme::default();
+    let prompt = t!("setup.docs_prompt");
+    let fallback = default_docs_root();
+    let default_path = current.as_ref().unwrap_or(&fallback);
+
+    // Add back option info
+    println!("{}", style("  (Press Enter to confirm, or type '..' to go back)").dim());
+
+    let input: String = Input::with_theme(&theme)
+        .with_prompt(prompt.as_ref())
+        .default(default_path.to_string_lossy().into_owned())
+        .interact_text()?;
+
+    // Check for back command
+    if input.trim() == ".." {
+        return Ok(StepResult::Back);
+    }
+
+    let p = PathBuf::from(shellexpand(&input));
+
+    // Auto-create the directory if it doesn't exist
+    if !p.exists() {
+        std::fs::create_dir_all(&p)?;
+    }
+    if !p.is_dir() {
+        anyhow::bail!("{}", t!("setup.invalid_path", path = p.display()));
+    }
+
+    state.docs_root = Some(p.clone());
+    save_docs_root(&p)?;
+    
+    println!(
+        "  {} {}",
+        style("✓").green(),
+        t!("setup.docs_root_set", path = p.display())
+    );
+
+    Ok(StepResult::Continue)
+}
+
+/// Step 2: Document Categories selection
+fn step_categories(state: &mut SetupState) -> Result<StepResult> {
+    print_step_header(&Step::Categories);
+    println!("{}", style("  (Uncheck all and continue to go back)").dim());
+
+    let (core_files, team_files, public_files) = select_categories_with_back(state)?;
+    
+    // If all empty, treat as back
+    if core_files.is_empty() && team_files.is_empty() && public_files.is_empty() {
+        return Ok(StepResult::Back);
+    }
+
+    state.core_files = core_files;
+    state.team_files = team_files;
+    state.public_files = public_files;
+
+    Ok(StepResult::Continue)
+}
+
+/// Modified category selection that supports going back
+fn select_categories_with_back(state: &SetupState) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
+    // Use existing state or load from config
+    let cfg = load_fresh_config();
+    let existing: [Vec<String>; 3] = [
+        if state.core_files.is_empty() {
+            cfg.as_ref().map_or_else(
+                || DOC_REPO_REQUIRED.iter().map(std::string::ToString::to_string).collect(),
+                super::config::DocConfig::core_files,
+            )
+        } else {
+            state.core_files.clone()
+        },
+        if state.team_files.is_empty() {
+            cfg.as_ref().map_or_else(
+                || DOC_REPO_SUPPLEMENTARY.iter().map(std::string::ToString::to_string).collect(),
+                super::config::DocConfig::team_files,
+            )
+        } else {
+            state.team_files.clone()
+        },
+        if state.public_files.is_empty() {
+            cfg.as_ref().map_or_else(
+                || PROJECT_REPO_FILES.iter().map(std::string::ToString::to_string).collect(),
+                super::config::DocConfig::public_files,
+            )
+        } else {
+            state.public_files.clone()
+        },
+    ];
+
+    let theme = ColorfulTheme::default();
+    let mut results: Vec<Vec<String>> = Vec::new();
+
+    for (i, cat) in CATEGORIES.iter().enumerate() {
+        let items: Vec<&str> = cat.defaults.to_vec();
+        let defaults: Vec<bool> = items
+            .iter()
+            .map(|item| existing[i].iter().any(|e| e == *item))
+            .collect();
+
+        let selected = MultiSelect::with_theme(&theme)
+            .with_prompt(cat.label)
+            .items(&items)
+            .defaults(&defaults)
+            .interact()?;
+
+        let files: Vec<String> = selected.iter().map(|&idx| items[idx].to_string()).collect();
+        println!(
+            "  {} {}",
+            style("✓").green(),
+            t!(
+                "setup.category_status",
+                label = cat.label,
+                selected = files.len(),
+                total = items.len()
+            )
+        );
+        results.push(files);
+    }
+
+    Ok((results.remove(0), results.remove(0), results.remove(0)))
+}
+
+/// Step 3: Diagram Format selection
+fn step_diagram(state: &mut SetupState) -> Result<StepResult> {
+    print_step_header(&Step::Diagram);
+
+    let existing_diagram = state.diagram_format.clone().unwrap_or_else(|| {
+        load_fresh_config()
+            .map(|c| c.diagram_format())
+            .unwrap_or_default()
+    });
+
+    // Add back option
+    let format_labels: Vec<String> = add_back_option(
+        &DIAGRAM_FORMATS
+            .iter()
+            .map(|(_, l)| l.to_string())
+            .collect::<Vec<_>>()
+    );
+
+    let diagram_default = DIAGRAM_FORMATS
+        .iter()
+        .position(|(k, _)| *k == existing_diagram)
+        .map(|i| i + 1) // +1 for back option
+        .unwrap_or(1);
+
+    let idx = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(t!("setup.diagram_prompt").as_ref())
+        .items(&format_labels)
+        .default(diagram_default)
+        .interact()?;
+
+    if is_back_selection(idx) {
+        return Ok(StepResult::Back);
+    }
+
+    let real_idx = adjust_index_for_back(idx);
+    let diagram_format = DIAGRAM_FORMATS[real_idx].0;
+    
+    state.diagram_format = Some(diagram_format.to_string());
+    
+    println!(
+        "  {} {}",
+        style("✓").green(),
+        t!("setup.diagram_set", format = diagram_format)
+    );
+
+    Ok(StepResult::Continue)
+}
+
+/// Step 4: Embedding Model selection
+fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
+    print_step_header(&Step::Embedding);
+
+    #[cfg(feature = "alcove-full")]
+    {
+        // Check current config
+        let current_model = state.embedding_section.as_ref()
+            .and_then(|s| {
+                s.lines()
+                    .find_map(|l| l.strip_prefix("model = ").map(|v| v.trim_matches('"')))
+            })
+            .unwrap_or_else(|| {
+                load_config()
+                    .embedding
+                    .as_ref()
+                    .map(|e| e.model.as_str())
+                    .unwrap_or("MultilingualE5Small")
+            });
+
+        // Add back and skip options
+        let mut labels = vec![
+            style("← Go back").yellow().to_string(),
+            style("Skip for now (BM25 only)").dim().to_string(),
+        ];
+        
+        let model_labels: Vec<String> = EMBEDDING_OPTIONS
+            .iter()
+            .map(|(name, desc, dim, size)| {
+                let marker = if *name == current_model { " [current]" } else { "" };
+                if *size == 0 {
+                    format!("{} — {}{}", name, desc, marker)
+                } else {
+                    format!("{} — {} ({}d){}", name, desc, dim, marker)
+                }
+            })
+            .collect();
+        labels.extend(model_labels);
+
+        let default_idx = EMBEDDING_OPTIONS
+            .iter()
+            .position(|(name, _, _, _)| *name == current_model)
+            .map(|i| i + 2) // +2 for back and skip options
+            .unwrap_or(2);
+
+        let idx = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Select embedding model for hybrid search")
+            .items(&labels)
+            .default(default_idx)
+            .interact()?;
+
+        // Back
+        if idx == 0 {
+            return Ok(StepResult::Back);
+        }
+
+        // Skip
+        if idx == 1 {
+            println!(
+                "  {} Embedding skipped. Search will use BM25 only.",
+                style("✓").green()
+            );
+            state.embedding_section = None;
+            return Ok(StepResult::Continue);
+        }
+
+        let real_idx = idx - 2;
+        let (model_name, _, _, _) = EMBEDDING_OPTIONS[real_idx];
+
+        if model_name == "disabled" {
+            println!(
+                "  {} Embedding disabled. Search will use BM25 only.",
+                style("✓").green()
+            );
+            state.embedding_section = Some("\n[embedding]\nenabled = false\n".to_string());
+            return Ok(StepResult::Continue);
+        }
+
+        // Ask about auto-download
+        let auto_labels = vec![
+            style("← Go back").yellow().to_string(),
+            "Yes (recommended)".to_string(),
+            "No — manual download only".to_string(),
+        ];
+        
+        let auto_idx = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Download model automatically on first search?")
+            .items(&auto_labels)
+            .default(1)
+            .interact()?;
+
+        if auto_idx == 0 {
+            // Go back to model selection
+            return step_embedding(state);
+        }
+
+        let auto_download = auto_idx == 1;
+
+        // Determine cache directory
+        let cache_dir = dirs::cache_dir()
+            .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
+            .unwrap_or_else(|| "~/.cache/alcove/models".to_string());
+
+        println!(
+            "  {} Model: {} (will download on first search)",
+            style("✓").green(),
+            model_name
+        );
+
+        state.embedding_section = Some(format!(
+            "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\ncache_dir = \"{}\"\nenabled = true\n",
+            model_name, auto_download, cache_dir
+        ));
+
+        Ok(StepResult::Continue)
+    }
+
+    #[cfg(not(feature = "alcove-full"))]
+    {
+        // Add back option for non-full feature
+        let labels = vec![
+            style("← Go back").yellow().to_string(),
+            style("Continue (BM25 only)").green().to_string(),
+        ];
+
+        let idx = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Embedding options")
+            .items(&labels)
+            .default(1)
+            .interact()?;
+
+        if idx == 0 {
+            return Ok(StepResult::Back);
+        }
+
+        println!(
+            "  {} Embedding search (hybrid RAG) requires the full installation.",
+            style("ℹ").yellow()
+        );
+        println!();
+        println!("  To enable hybrid search later, reinstall with:");
+        println!(
+            "  {} cargo install alcove --features alcove-full",
+            style("→").cyan()
+        );
+        println!();
+        println!(
+            "  {} Search will use BM25 (keyword) only for now.",
+            style("✓").green()
+        );
+        
+        state.embedding_section = None;
+        Ok(StepResult::Continue)
+    }
+}
+
+/// Step 5: Agent selection
+fn step_agents(state: &mut SetupState) -> Result<StepResult> {
+    print_step_header(&Step::Agents);
+
+    let agent_list = agents();
+    let names: Vec<&str> = agent_list.iter().map(|a| a.name).collect();
+
+    // Pre-select previously selected agents or none
+    let defaults: Vec<bool> = if state.selected_agents.is_empty() {
+        vec![false; names.len()]
+    } else {
+        names.iter()
+            .enumerate()
+            .map(|(i, _)| state.selected_agents.contains(&i))
+            .collect()
+    };
+
+    let selected = MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!("{} (select at least 1)", t!("setup.agents_prompt").as_ref()))
+        .items(&names)
+        .defaults(&defaults)
+        .interact()?;
+
+    // Validate at least one selected
+    if selected.is_empty() {
+        println!(
+            "  {} Please select at least one agent to continue.",
+            style("⚠").yellow()
+        );
+        // Re-prompt
+        return step_agents(state);
+    }
+
+    state.selected_agents = selected;
+    
+    for &idx in &state.selected_agents {
+        let agent = &agent_list[idx];
+        println!("  {} {}", style("✓").green(), agent.name);
+    }
+
+    Ok(StepResult::Continue)
+}
+
+/// Step 6: Summary and finalization
+fn step_summary(state: &mut SetupState) -> Result<StepResult> {
+    print_step_header(&Step::Summary);
+
+    let docs_root = state.docs_root.clone().unwrap_or_else(default_docs_root);
+    let diagram_format = state.diagram_format.clone().unwrap_or_else(|| "mermaid".to_string());
+
+    // Save config
+    save_full_config(
+        &docs_root,
+        &diagram_format,
+        &state.core_files,
+        &state.team_files,
+        &state.public_files,
+        state.embedding_section.as_deref(),
+    )?;
+
+    // Install agent configs
+    let agent_list = agents();
+    let bin = binary_path();
+
+    for &idx in &state.selected_agents {
+        let agent = &agent_list[idx];
+        println!();
+        println!("  {}", style(agent.name).cyan());
+
+        // MCP
+        match &agent.mcp_config {
+            McpConfig::Json { path, server_key } => {
+                let p = expand_path(path);
+                write_json_mcp(&p, server_key, &bin, &docs_root)?;
+                println!(
+                    "  {} {}",
+                    style("✓").green(),
+                    t!("setup.mcp_set", path = path)
+                );
+            }
+            McpConfig::OpenCode { path } => {
+                let p = expand_path(path);
+                write_opencode_mcp(&p, &bin, &docs_root)?;
+                println!(
+                    "  {} {}",
+                    style("✓").green(),
+                    t!("setup.mcp_set", path = path)
+                );
+            }
+            McpConfig::Codex { path } => {
+                let p = expand_path(path);
+                write_codex_mcp(&p, &bin, &docs_root)?;
+                println!(
+                    "  {} {}",
+                    style("✓").green(),
+                    t!("setup.mcp_set", path = path)
+                );
+            }
+        }
+
+        // Skill
+        if let Some(skill_path) = agent.skill_dir {
+            let p = expand_path(skill_path);
+            install_skill_to(&p)?;
+            println!(
+                "  {} {}",
+                style("✓").green(),
+                t!("setup.skill_set", path = skill_path)
+            );
+        }
+    }
+
+    // Print summary
+    println!();
+    println!("{}", style("── Configuration Summary ──").bold());
+    println!("  {}", t!("setup.binary", path = binary_path().display()));
+    println!("  {}", t!("setup.config", path = config_path().display()));
+    println!("  {}", t!("setup.docs", path = docs_root.display()));
+
+    // Show embedding status
+    match &state.embedding_section {
+        Some(toml_section) => {
+            let model = toml_section
+                .lines()
+                .find_map(|l| l.strip_prefix("model = ").map(|v| v.trim_matches('"')));
+            if let Some(model_name) = model {
+                #[cfg(feature = "alcove-full")]
+                {
+                    let m = crate::embedding::EmbeddingModelChoice::parse(model_name);
+                    println!(
+                        "  Embedding: {} ({}d, ~{}MB)",
+                        model_name,
+                        m.map(|m| m.dimension()).unwrap_or(384),
+                        m.map(|m| m.size_mb()).unwrap_or(235)
+                    );
+                }
+                #[cfg(not(feature = "alcove-full"))]
+                {
+                    println!("  Embedding: {} (configured)", model_name);
+                }
+            } else if toml_section.contains("enabled = false") {
+                println!("  Embedding: disabled");
+            }
+        }
+        None => {
+            println!("  Embedding: not configured (BM25 only)");
+        }
+    }
+
+    println!();
+    println!("  {}", style(t!("setup.hint_update").to_string()).dim());
+    println!("  {}", style(t!("setup.hint_uninstall").to_string()).dim());
+    println!();
+
+    Ok(StepResult::Continue)
 }
 
 // ---------------------------------------------------------------------------
@@ -580,161 +1189,48 @@ pub fn cmd_setup() -> Result<()> {
     println!("{}", style("══════════════════════════════════════").bold());
     println!("  {}", style(t!("setup.title")).bold());
     println!("{}", style("══════════════════════════════════════").bold());
-
-    // 1. Docs root
     println!();
     println!(
-        "{}",
-        style(format!("── {} ──", t!("setup.docs_repo"))).bold()
-    );
-    let docs_root = resolve_docs_root_interactive()?;
-    println!(
-        "  {} {}",
-        style("✓").green(),
-        t!("setup.docs_root_set", path = docs_root.display())
+        "  {} Use arrow keys to navigate, Enter to select. Type '..' to go back.",
+        style("ℹ").dim()
     );
 
-    // 2. Document categories
-    println!();
-    println!(
-        "{}",
-        style(format!("── {} ──", t!("setup.categories"))).bold()
-    );
-    let (core_files, team_files, public_files) = select_categories()?;
+    let mut state = SetupState::default();
+    let mut current_step = Step::DocsRoot;
 
-    // 3. Diagram format
-    println!();
-    println!("{}", style(format!("── {} ──", t!("setup.diagram"))).bold());
-    let existing_diagram = load_fresh_config()
-        .map(|c| c.diagram_format())
-        .unwrap_or_default();
-    let diagram_default = DIAGRAM_FORMATS
-        .iter()
-        .position(|(k, _)| *k == existing_diagram)
-        .unwrap_or(0);
-    let format_labels: Vec<&str> = DIAGRAM_FORMATS.iter().map(|(_, l)| *l).collect();
-    let diagram_idx = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt(t!("setup.diagram_prompt").as_ref())
-        .items(&format_labels)
-        .default(diagram_default)
-        .interact()?;
-    let diagram_format = DIAGRAM_FORMATS[diagram_idx].0;
-    println!(
-        "  {} {}",
-        style("✓").green(),
-        t!("setup.diagram_set", format = diagram_format)
-    );
-
-    // 4. Embedding model (always shown; guided when alcove-full, informative otherwise)
-    let embedding_config = setup_embedding()?;
-
-    // 5. Save config
-    save_full_config(
-        &docs_root,
-        diagram_format,
-        &core_files,
-        &team_files,
-        &public_files,
-        embedding_config.as_deref(),
-    )?;
-
-    // 6. Agent setup
-    println!();
-    println!("{}", style(format!("── {} ──", t!("setup.agents"))).bold());
-    let selected = select_agents(&t!("setup.agents_prompt"))?;
-    let agent_list = agents();
-    let bin = binary_path();
-
-    for idx in &selected {
-        let agent = &agent_list[*idx];
-        println!();
-        println!("  {}", style(agent.name).cyan());
-
-        // MCP
-        match &agent.mcp_config {
-            McpConfig::Json { path, server_key } => {
-                let p = expand_path(path);
-                write_json_mcp(&p, server_key, &bin, &docs_root)?;
-                println!(
-                    "  {} {}",
-                    style("✓").green(),
-                    t!("setup.mcp_set", path = path)
-                );
+    loop {
+        let result = match current_step {
+            Step::DocsRoot => step_docs_root(&mut state)?,
+            Step::Categories => step_categories(&mut state)?,
+            Step::Diagram => step_diagram(&mut state)?,
+            Step::Embedding => step_embedding(&mut state)?,
+            Step::Agents => step_agents(&mut state)?,
+            Step::Summary => {
+                step_summary(&mut state)?;
+                break; // Done!
             }
-            McpConfig::OpenCode { path } => {
-                let p = expand_path(path);
-                write_opencode_mcp(&p, &bin, &docs_root)?;
-                println!(
-                    "  {} {}",
-                    style("✓").green(),
-                    t!("setup.mcp_set", path = path)
-                );
-            }
-            McpConfig::Codex { path } => {
-                let p = expand_path(path);
-                write_codex_mcp(&p, &bin, &docs_root)?;
-                println!(
-                    "  {} {}",
-                    style("✓").green(),
-                    t!("setup.mcp_set", path = path)
-                );
-            }
-        }
+        };
 
-        // Skill
-        if let Some(skill_path) = agent.skill_dir {
-            let p = expand_path(skill_path);
-            install_skill_to(&p)?;
-            println!(
-                "  {} {}",
-                style("✓").green(),
-                t!("setup.skill_set", path = skill_path)
-            );
+        match result {
+            StepResult::Continue => {
+                if let Some(next) = current_step.next() {
+                    current_step = next;
+                } else {
+                    break;
+                }
+            }
+            StepResult::Back => {
+                if let Some(prev) = current_step.prev() {
+                    current_step = prev;
+                }
+            }
+            StepResult::Cancelled => {
+                println!();
+                println!("  {}", style("Setup cancelled.").yellow());
+                return Ok(());
+            }
         }
     }
-
-    // 5. Summary
-    println!();
-    println!("{}", style(format!("── {} ──", t!("setup.done"))).bold());
-    println!("  {}", t!("setup.binary", path = binary_path().display()));
-    println!("  {}", t!("setup.config", path = config_path().display()));
-    println!("  {}", t!("setup.docs", path = docs_root.display()));
-    
-    // Show embedding status
-    match &embedding_config {
-        Some(toml_section) => {
-            // Parse model name from TOML for display
-            let model = toml_section
-                .lines()
-                .find_map(|l| l.strip_prefix("model = ").map(|v| v.trim_matches('"')));
-            if let Some(model_name) = model {
-                #[cfg(feature = "alcove-full")]
-                {
-                    let m = crate::embedding::EmbeddingModelChoice::parse(model_name);
-                    println!(
-                        "  Embedding: {} ({}d, ~{}MB)",
-                        model_name,
-                        m.map(|m| m.dimension()).unwrap_or(384),
-                        m.map(|m| m.size_mb()).unwrap_or(235)
-                    );
-                }
-                #[cfg(not(feature = "alcove-full"))]
-                {
-                    println!("  Embedding: {} (configured)", model_name);
-                }
-            } else if toml_section.contains("enabled = false") {
-                println!("  Embedding: disabled");
-            }
-        }
-        None => {
-            println!("  Embedding: not configured (BM25 only)");
-        }
-    }
-    
-    println!();
-    println!("  {}", style(t!("setup.hint_update").to_string()).dim());
-    println!("  {}", style(t!("setup.hint_uninstall").to_string()).dim());
-    println!();
 
     Ok(())
 }
