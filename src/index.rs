@@ -429,14 +429,24 @@ fn read_file_content(path: &Path) -> Result<String> {
     match ext.as_str() {
         #[cfg(feature = "alcove-full")]
         "pdf" => {
-            // pdf_extract prints unicode fallback warnings to stderr — suppress them
+            // pdf_extract prints unicode fallback noise to both stdout and stderr — suppress both
             let devnull = std::fs::File::open("/dev/null")
                 .map_err(|e| anyhow::anyhow!("Failed to open /dev/null: {}", e))?;
-            let saved = unsafe { libc::dup(libc::STDERR_FILENO) };
-            unsafe { libc::dup2(devnull.as_raw_fd(), libc::STDERR_FILENO) };
+            let devnull_fd = devnull.as_raw_fd();
+            let saved_stdout = unsafe { libc::dup(libc::STDOUT_FILENO) };
+            let saved_stderr = unsafe { libc::dup(libc::STDERR_FILENO) };
+            unsafe {
+                libc::dup2(devnull_fd, libc::STDOUT_FILENO);
+                libc::dup2(devnull_fd, libc::STDERR_FILENO);
+            }
             let result = pdf_extract::extract_text(path)
                 .map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e));
-            unsafe { libc::dup2(saved, libc::STDERR_FILENO); libc::close(saved); }
+            unsafe {
+                libc::dup2(saved_stdout, libc::STDOUT_FILENO);
+                libc::dup2(saved_stderr, libc::STDERR_FILENO);
+                libc::close(saved_stdout);
+                libc::close(saved_stderr);
+            }
             result
         }
         #[cfg(feature = "alcove-full")]
@@ -890,11 +900,15 @@ pub fn search_indexed(
         }));
     }
 
-    let (_schema, project_field, file_field, chunk_id_field, body_field, line_start_field) =
-        build_schema();
-
     let index = Index::open_in_dir(&dir).context("Failed to open search index")?;
     register_ngram_tokenizer(&index)?;
+
+    let schema = index.schema();
+    let project_field = schema.get_field("project").context("missing 'project' field")?;
+    let file_field = schema.get_field("file").context("missing 'file' field")?;
+    let chunk_id_field = schema.get_field("chunk_id").context("missing 'chunk_id' field")?;
+    let body_field = schema.get_field("body").context("missing 'body' field")?;
+    let line_start_field = schema.get_field("line_start").context("missing 'line_start' field")?;
 
     let reader = index
         .reader_builder()
