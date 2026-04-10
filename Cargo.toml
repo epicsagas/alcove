@@ -31,8 +31,8 @@ clap = { version = "4", features = ["derive"] }
 dialoguer = { version = "0.12", features = ["fuzzy-select"] }
 console = "0.16"
 dirs = "6"
-indicatif = "0.17"
-rand = "0.8"
+indicatif = "0.18"
+rand = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -47,10 +47,10 @@ tantivy = "0.26"
 # alcove-full feature dependencies (lazy embedding + vector search)
 fastembed = { version = "5", optional = true }
 rusqlite = { version = "0.39", optional = true }
-pdf-extract = { version = "0.7", optional = true }
-zip = { version = "2", optional = true }
-quick-xml = { version = "0.37", optional = true }
-calamine = { version = "0.26", optional = true }
+pdf-extract = { version = "0.10", optional = true }
+zip = { version = "8.5", optional = true }
+quick-xml = { version = "0.39", optional = true }
+calamine = { version = "0.34", optional = true }
 
 # HTTP server dependencies (alcove-server feature)
 axum = { version = "0.8", optional = true }
@@ -68,3 +68,21 @@ full = ["alcove-full", "alcove-server"]
 
 [dev-dependencies]
 tempfile = "3.26.0"
+
+# ---------------------------------------------------------------------------
+# Build optimizations
+# ---------------------------------------------------------------------------
+
+[profile.dev]
+opt-level = 1          # faster incremental builds vs opt-level=0
+debug = 1              # line numbers only, skip full debuginfo (saves link time)
+
+[profile.release]
+opt-level = 3
+lto = "thin"           # faster than full LTO, still good dead-code elimination
+codegen-units = 1      # single unit for best optimization
+strip = "symbols"      # smaller binary, faster install copy
+
+[profile.release.package."*"]
+opt-level = 3
+codegen-units = 4      # dependencies can parallelize more aggressively

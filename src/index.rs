@@ -400,7 +400,11 @@ fn extract_xml_text(content: &str, tag_name: &[u8]) -> Result<String> {
                 in_tag = false;
             }
             Ok(Event::Text(e)) if in_tag => {
-                text.push_str(&e.unescape().unwrap_or_default());
+                if let Ok(s) = std::str::from_utf8(&e.into_inner()) {
+                    text.push_str(
+                        &quick_xml::escape::unescape(s).unwrap_or(std::borrow::Cow::Borrowed(s))
+                    );
+                }
             }
             Ok(Event::Eof) => break,
             Err(e) => return Err(anyhow::anyhow!("XML parse error: {}", e)),

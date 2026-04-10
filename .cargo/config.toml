@@ -1,0 +1,10 @@
+[build]
+# Use Apple's ld (default on macOS) but with faster job scheduling
+jobs = 8  # M2 8-core — match physical core count
+
+[target.aarch64-apple-darwin]
+# zld is faster than ld on macOS for large crates; falls back to ld if absent
+# rustflags = ["-C", "link-arg=-fuse-ld=zld"]  # uncomment if zld is installed
+
+[net]
+retry = 2
