@@ -68,8 +68,10 @@ enum Commands {
         #[arg(long)]
         exit_code: bool,
     },
-    /// Build or rebuild the full-text search index for ranked search
+    /// Update the search index (incremental — only changed files)
     Index,
+    /// Rebuild the search index from scratch (drops and recreates all data)
+    Rebuild,
     /// Check the health of the alcove installation
     Doctor {
         /// Output format: human (default) or json
@@ -150,6 +152,7 @@ fn main() -> Result<()> {
         Some(Commands::Uninstall) => cli::cmd_uninstall(),
         Some(Commands::Validate { format, exit_code }) => cli::cmd_validate(&format, exit_code),
         Some(Commands::Index) => cli::cmd_index(),
+        Some(Commands::Rebuild) => cli::cmd_rebuild(),
         Some(Commands::Doctor { format }) => cli::cmd_doctor(&format),
         Some(Commands::Search {
             query,

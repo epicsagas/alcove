@@ -188,7 +188,8 @@ alcove              MCP 서버 시작 (에이전트가 호출)
 alcove setup        대화형 설정 — 언제든 다시 실행하여 재설정
 alcove doctor       설치 상태 진단
 alcove validate     정책에 따라 문서 검증 (--format json, --exit-code)
-alcove index        검색 인덱스 빌드 또는 재빌드
+alcove index        검색 인덱스 업데이트 (증분 — 변경된 파일만)
+alcove rebuild      검색 인덱스 전체 재구축 (스키마 변경 후 사용)
 alcove search       터미널에서 문서 검색
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
 ```

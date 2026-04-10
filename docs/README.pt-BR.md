@@ -188,7 +188,8 @@ alcove              Inicia o servidor MCP (agentes chamam isso)
 alcove setup        Configuração interativa — execute novamente a qualquer momento para reconfigurar
 alcove doctor       Verificar a integridade da instalação do Alcove
 alcove validate     Valida documentos contra a política (--format json, --exit-code)
-alcove index        Constrói ou reconstrói o índice de busca
+alcove index        Atualizar o índice de busca (incremental — apenas arquivos alterados)
+alcove rebuild      Reconstruir o índice de busca do zero (usar após mudanças de esquema)
 alcove search       Busca documentos pelo terminal
 alcove uninstall    Remove habilidades, configuração e arquivos legados
 ```

@@ -212,7 +212,8 @@ alcove              Start MCP server (agents call this)
 alcove setup        Interactive setup — re-run anytime to reconfigure
 alcove doctor       Check the health of your alcove installation
 alcove validate     Validate docs against policy (--format json, --exit-code)
-alcove index        Build or rebuild the full-text search index for ranked search
+alcove index        Update the search index (incremental — only changed files)
+alcove rebuild      Rebuild the search index from scratch (use after schema changes)
 alcove search       Search docs from the terminal
 alcove uninstall    Remove skills, config, and legacy files
 ```

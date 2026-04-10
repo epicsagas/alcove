@@ -188,7 +188,8 @@ alcove              MCP-Server starten (Agenten rufen das auf)
 alcove setup        Interaktives Setup — jederzeit erneut ausführen
 alcove doctor       Gesundheit der Alcove-Installation prüfen
 alcove validate     Dokumente gegen Policy validieren (--format json, --exit-code)
-alcove index        Suchindex erstellen oder neu aufbauen
+alcove index        Suchindex inkrementell aktualisieren (nur geänderte Dateien)
+alcove rebuild      Suchindex von Grund auf neu aufbauen (nach Schema-Änderungen)
 alcove search       Dokumente vom Terminal aus suchen
 alcove uninstall    Skills, Konfiguration und Legacy-Dateien entfernen
 ```

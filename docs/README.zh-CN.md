@@ -188,7 +188,8 @@ alcove              启动 MCP 服务器（代理调用）
 alcove setup        交互式设置——随时重新运行以重新配置
 alcove doctor       检查安装健康状态
 alcove validate     根据策略验证文档（--format json, --exit-code）
-alcove index        构建或重建搜索索引
+alcove index        增量更新搜索索引（仅处理变更文件）
+alcove rebuild      从头重建搜索索引（适用于模式变更后）
 alcove search       从终端搜索文档
 alcove uninstall    移除技能、配置和遗留文件
 ```

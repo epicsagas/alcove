@@ -188,7 +188,8 @@ alcove              MCPサーバーを起動（エージェントがこれを呼
 alcove setup        対話的セットアップ — いつでも再実行して再設定可能
 alcove doctor       インストール状態を診断
 alcove validate     ポリシーに対してドキュメントを検証（--format json, --exit-code）
-alcove index        検索インデックスのビルドまたは再ビルド
+alcove index        検索インデックスの増分更新（変更されたファイルのみ）
+alcove rebuild      検索インデックスをゼロから再構築（スキーマ変更後に使用）
 alcove search       ターミナルからドキュメントを検索
 alcove uninstall    スキル、設定、レガシーファイルを削除
 ```

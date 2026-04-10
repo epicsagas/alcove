@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, Duration};
+use std::os::unix::io::AsRawFd;
 
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
-use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use tantivy::collector::TopDocs;
@@ -429,8 +429,15 @@ fn read_file_content(path: &Path) -> Result<String> {
     match ext.as_str() {
         #[cfg(feature = "alcove-full")]
         "pdf" => {
-            pdf_extract::extract_text(path)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e))
+            // pdf_extract prints unicode fallback warnings to stderr — suppress them
+            let devnull = std::fs::File::open("/dev/null")
+                .map_err(|e| anyhow::anyhow!("Failed to open /dev/null: {}", e))?;
+            let saved = unsafe { libc::dup(libc::STDERR_FILENO) };
+            unsafe { libc::dup2(devnull.as_raw_fd(), libc::STDERR_FILENO) };
+            let result = pdf_extract::extract_text(path)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e));
+            unsafe { libc::dup2(saved, libc::STDERR_FILENO); libc::close(saved); }
+            result
         }
         #[cfg(feature = "alcove-full")]
         "docx" | "pptx" => {
@@ -509,11 +516,34 @@ fn read_file_content(path: &Path) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 pub fn build_index(docs_root: &Path) -> Result<JsonValue> {
+    build_index_with_mode(docs_root, false)
+}
+
+pub fn rebuild_index(docs_root: &Path) -> Result<JsonValue> {
+    build_index_with_mode(docs_root, true)
+}
+
+fn build_index_with_mode(docs_root: &Path, force_rebuild: bool) -> Result<JsonValue> {
     if !try_acquire_lock(docs_root) {
         return Ok(json!({
             "status": "skipped",
             "reason": "Index build already in progress",
         }));
+    }
+    if force_rebuild {
+        let dir = index_dir(docs_root);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir)?;
+        }
+        let meta_path = docs_root.join(".alcove").join("index_meta.json");
+        if meta_path.exists() {
+            std::fs::remove_file(&meta_path)?;
+        }
+        // Also clear vector store so embeddings are re-indexed
+        let vectors_path = docs_root.join(".alcove").join("vectors.db");
+        if vectors_path.exists() {
+            std::fs::remove_file(&vectors_path)?;
+        }
     }
     let result = build_index_inner(docs_root);
     release_lock(docs_root);
@@ -529,18 +559,7 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
     let dir = index_dir(docs_root);
     std::fs::create_dir_all(&dir)?;
 
-    let fun_messages = [
-        "에이전트에게 지식 주입 중...",
-        "문서 사이의 행간 읽는 중...",
-        "흩어진 정보 모으는 중...",
-        "지식 베이스 구축하는 중...",
-        "기억력 향상시키는 중...",
-        "문서들의 연관 관계 분석 중...",
-        "AI에게 컨텍스트 설명하는 중...",
-        "똑똑한 검색을 위해 인덱싱 중...",
-        "데이터 조각들 맞추는 중...",
-        "문서 도서관 정리 중...",
-    ];
+    // fun_messages removed — progress now shows project/file type label only
 
     let (schema, project_field, file_field, chunk_id_field, body_field, line_start_field) =
         build_schema();
@@ -592,13 +611,13 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
         let pb = ProgressBar::new(files_to_index.len() as u64);
         pb.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) | {msg}")?
-                .progress_chars("#>-"),
+                .template("  {spinner:.cyan}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
+                .progress_chars("━━╌"),
         );
-        pb.enable_steady_tick(Duration::from_millis(100));
+        pb.enable_steady_tick(Duration::from_millis(80));
 
         let index = if needs_full_rebuild {
-            pb.set_message("인덱스 엔진 초기화 중...");
+            pb.set_message("initializing...");
             Index::create_in_dir(&dir, schema.clone())
                 .or_else(|_| {
                     std::fs::remove_dir_all(&dir)?;
@@ -612,21 +631,14 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
         let mut writer = index.writer(load_config().index_buffer_bytes())?;
 
         for (proj, rel, full) in &files_to_index {
-            // Update progress message with ETA only after some progress
-            let eta_str = if pb.position() > 0 {
-                let secs = pb.eta().as_secs();
-                format!("남은 시간: {}초", secs)
-            } else {
-                "계산 중...".to_string()
+            let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("md").to_lowercase();
+            let label = match ext.as_str() {
+                "pdf"  => format!("{proj}  pdf"),
+                "docx" => format!("{proj}  docx"),
+                "xlsx" => format!("{proj}  xlsx"),
+                _      => proj.clone(),
             };
-            
-            let msg = if indexed_count % 5 == 0 {
-                fun_messages.choose(&mut rand::thread_rng()).unwrap().to_string()
-            } else {
-                format!("{}:{}", proj, rel)
-            };
-            
-            pb.set_message(format!("{} ({})", msg, eta_str));
+            pb.set_message(label);
 
             if !needs_full_rebuild {
                 let term = tantivy::Term::from_field_text(file_field, rel);
@@ -668,9 +680,9 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
             pb.inc(1);
         }
         
-        pb.set_message("변경 사항 저장 중 (Commit)...");
+        pb.set_message("saving...");
         writer.commit()?;
-        pb.finish_with_message("문서 인덱싱 완료");
+        pb.finish_and_clear();
     }
 
     // ---------------------------------------------------------------------------
@@ -716,11 +728,11 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                             let vpb = ProgressBar::new(files_to_index.len() as u64);
                             vpb.set_style(
                                 ProgressStyle::default_bar()
-                                    .template("{spinner:.yellow} [{elapsed_precise}] [{bar:40.yellow/orange}] {pos}/{len} ({percent}%) | {msg}")?
-                                    .progress_chars("#>-"),
+                                    .template("  {spinner:.magenta}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
+                                    .progress_chars("━━╌"),
                             );
-                            vpb.enable_steady_tick(Duration::from_millis(100));
-                            vpb.set_message("벡터 임베딩 추출 준비 중...");
+                            vpb.enable_steady_tick(Duration::from_millis(80));
+                            vpb.set_message("embedding");
 
                             let mut batch: Vec<(String, String, u64, String)> = Vec::new();
                             const BATCH_SIZE: usize = 64;
@@ -732,13 +744,7 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                                     continue;
                                 }
 
-                                let eta_str = if vpb.position() > 0 {
-                                    let secs = vpb.eta().as_secs();
-                                    format!("남은 시간: {}초", secs)
-                                } else {
-                                    "계산 중...".to_string()
-                                };
-                                vpb.set_message(format!("임베딩 추출 중 ({}) [{}:{}]", eta_str, proj, rel));
+                                vpb.set_message(proj.clone());
                                 
                                 if let Ok(content) = read_file_content(&full) {
                                     let chunks = chunk_content(&content);
@@ -791,7 +797,7 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                                 }
                             }
 
-                            vpb.finish_with_message("벡터 임베딩 완료");
+                            vpb.finish_and_clear();
                         }
                     }
                     Err(e) => {

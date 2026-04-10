@@ -1226,71 +1226,90 @@ pub fn cmd_index() -> Result<()> {
         }
     };
 
-    println!("{}", style("Building search index...").bold());
+    print_index_result(crate::index::build_index(&docs_root)?, false)
+}
 
-    let result = crate::index::build_index(&docs_root)?;
 
+// ---------------------------------------------------------------------------
+// alcove rebuild
+// ---------------------------------------------------------------------------
+
+pub fn cmd_rebuild() -> Result<()> {
+    let docs_root = match saved_docs_root() {
+        Some(p) => p,
+        None => {
+            anyhow::bail!("docs_root is not configured. Run `alcove setup` first.");
+        }
+    };
+
+    print_index_result(crate::index::rebuild_index(&docs_root)?, true)
+}
+
+// ---------------------------------------------------------------------------
+// Shared index result printer
+// ---------------------------------------------------------------------------
+
+fn print_index_result(result: serde_json::Value, is_rebuild: bool) -> Result<()> {
     let projects = result["projects"].as_u64().unwrap_or(0);
-    let indexed = result["indexed"].as_u64().unwrap_or(0);
-    let skipped = result["skipped"].as_u64().unwrap_or(0);
+    let indexed   = result["indexed"].as_u64().unwrap_or(0);
+    let skipped   = result["skipped"].as_u64().unwrap_or(0);
+    let index_path = result["index_path"].as_str().unwrap_or("unknown");
 
-    println!(
-        "  {} {} project(s), {} file(s) indexed, {} skipped (unchanged)",
-        style("✓").green(),
-        projects,
-        indexed,
-        skipped,
-    );
-    println!(
-        "  {} {}",
-        style("Index:").dim(),
-        result["index_path"].as_str().unwrap_or("unknown"),
-    );
+    // Header line
+    let label = if is_rebuild { "Rebuilt" } else { "Indexed" };
+    if indexed == 0 && skipped > 0 {
+        println!(
+            "  {} already up to date  {} projects  {} files",
+            style("✓").green(),
+            style(projects).bold(),
+            style(skipped).dim(),
+        );
+    } else {
+        println!(
+            "  {} {}  {} projects  {} files",
+            style("✓").green(),
+            style(label).bold(),
+            style(projects).bold(),
+            style(indexed).bold(),
+        );
+        if skipped > 0 {
+            println!("  {} {} unchanged", style("·").dim(), style(skipped).dim());
+        }
+    }
 
-    // Show vector indexing status
+    // Vector status
     let vector_status = result["vector_status"].as_str().unwrap_or("disabled");
     match vector_status {
         "ok" => {
             let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
-            let errors = result["vector_errors"].as_u64().unwrap_or(0);
-            let model = result["embedding_model"].as_str().unwrap_or("unknown");
+            let errors  = result["vector_errors"].as_u64().unwrap_or(0);
+            let model   = result["embedding_model"].as_str().unwrap_or("unknown");
             println!(
-                "  {} {} vector(s) indexed ({})",
+                "  {} {} vectors  {}",
                 style("✓").green(),
-                vectors,
-                style(model).cyan()
+                style(vectors).bold(),
+                style(model).dim(),
             );
             if errors > 0 {
-                println!(
-                    "  {} {} vector error(s)",
-                    style("!").yellow(),
-                    errors
-                );
+                println!("  {} {} embedding error(s)", style("!").yellow(), errors);
             }
         }
         "model_not_ready" => {
             let status = result["embedding_status"].as_str().unwrap_or("unknown");
             println!(
-                "  {} Vector index skipped (model: {})",
-                style("⏳").yellow(),
-                style(status).yellow()
+                "  {} hybrid search unavailable  {}",
+                style("·").dim(),
+                style(status).dim(),
             );
-            println!("  {} Run 'alcove model download' to enable hybrid search", style("→").dim());
         }
         "failed" => {
-            let error = result["vector_error"].as_str().unwrap_or("unknown error");
-            println!(
-                "  {} Vector index failed: {}",
-                style("✗").red(),
-                error
-            );
+            let err = result["vector_error"].as_str().unwrap_or("unknown");
+            println!("  {} vector indexing failed: {}", style("✗").red(), err);
         }
-        "disabled" => {
-            // No message - embedding is disabled
-        }
-        _ => {}
+        _ => {} // disabled — silent
     }
 
+    println!("  {} {}", style("·").dim(), style(index_path).dim());
     Ok(())
 }
 
