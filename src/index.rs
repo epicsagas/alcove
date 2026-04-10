@@ -820,16 +820,6 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
     }))
 }
 
-/// Helper to expand ~ in paths
-fn expand_path(path: &str) -> PathBuf {
-    if path.starts_with('~') {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(path.replacen('~', &home, 1));
-        }
-    }
-    PathBuf::from(path)
-}
-
 // ---------------------------------------------------------------------------
 // Query sanitization
 // ---------------------------------------------------------------------------

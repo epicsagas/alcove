@@ -132,13 +132,6 @@ pub(crate) fn expand_path(p: &str) -> PathBuf {
 // Resolve docs root
 // ---------------------------------------------------------------------------
 
-/// Resolve docs root for setup: always show prompt with current value as default,
-/// allowing the user to confirm or change it.
-fn resolve_docs_root_interactive() -> Result<PathBuf> {
-    let current = saved_docs_root();
-    prompt_docs_root(current.as_deref())
-}
-
 /// Return saved docs root from env or config.toml, falling back to default.
 fn saved_docs_root() -> Option<PathBuf> {
     if let Ok(v) = std::env::var("DOCS_ROOT") {
@@ -159,33 +152,6 @@ fn saved_docs_root() -> Option<PathBuf> {
         return Some(fallback);
     }
     None
-}
-
-/// Interactive prompt for docs root. Shows `default` as pre-filled value if provided.
-/// Falls back to `~/.config/alcove/docs` when no previous value exists.
-fn prompt_docs_root(default: Option<&Path>) -> Result<PathBuf> {
-    let theme = ColorfulTheme::default();
-    let prompt = t!("setup.docs_prompt");
-    let fallback = default_docs_root();
-    let default_path = default.unwrap_or(&fallback);
-
-    let input: String = Input::with_theme(&theme)
-        .with_prompt(prompt.as_ref())
-        .default(default_path.to_string_lossy().into_owned())
-        .interact_text()?;
-
-    let p = PathBuf::from(shellexpand(&input));
-
-    // Auto-create the directory if it doesn't exist (especially for default path)
-    if !p.exists() {
-        std::fs::create_dir_all(&p)?;
-    }
-    if !p.is_dir() {
-        anyhow::bail!("{}", t!("setup.invalid_path", path = p.display()));
-    }
-
-    save_docs_root(&p)?;
-    Ok(p)
 }
 
 fn shellexpand(s: &str) -> String {
@@ -332,23 +298,6 @@ fn write_codex_mcp(config_path: &Path, binary: &Path, docs_root: &Path) -> Resul
 }
 
 // ---------------------------------------------------------------------------
-// Agent selection UI
-// ---------------------------------------------------------------------------
-
-fn select_agents(prompt: &str) -> Result<Vec<usize>> {
-    let agent_list = agents();
-    let names: Vec<&str> = agent_list.iter().map(|a| a.name).collect();
-
-    let selected = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt)
-        .items(&names)
-        .defaults(&vec![false; names.len()])
-        .interact()?;
-
-    Ok(selected)
-}
-
-// ---------------------------------------------------------------------------
 // Setup wizard state machine
 // ---------------------------------------------------------------------------
 
@@ -410,8 +359,6 @@ enum StepResult {
     Continue,
     /// Go back to previous step
     Back,
-    /// User cancelled the wizard
-    Cancelled,
 }
 
 /// Holds all state collected during the setup wizard
@@ -459,148 +406,6 @@ const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
     ("MultilingualE5Base", "Large scale docs (~555MB)", 768, 555),
     ("disabled", "Disable embedding (BM25 only)", 0, 0),
 ];
-
-/// Returns the TOML `[embedding]` section string for saving to config.
-/// Returns `None` when embedding is not applicable (feature disabled, user skipped).
-fn setup_embedding() -> Result<Option<String>> {
-    println!();
-    println!(
-        "{}",
-        style("── Embedding Model (Hybrid Search) ──").bold()
-    );
-
-    #[cfg(feature = "alcove-full")]
-    {
-        // Check current config
-        let current_model = load_config()
-            .embedding
-            .as_ref()
-            .map(|e| e.model.as_str())
-            .unwrap_or("MultilingualE5Small");
-
-        let labels: Vec<String> = EMBEDDING_OPTIONS
-            .iter()
-            .map(|(name, desc, dim, size)| {
-                let marker = if *name == current_model { " [current]" } else { "" };
-                if *size == 0 {
-                    format!("{} — {}{}", name, desc, marker)
-                } else {
-                    format!("{} — {} ({}d){}", name, desc, dim, marker)
-                }
-            })
-            .collect();
-
-        let default_idx = EMBEDDING_OPTIONS
-            .iter()
-            .position(|(name, _, _, _)| *name == current_model)
-            .unwrap_or(0);
-
-        let idx = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Select embedding model for hybrid search")
-            .items(&labels)
-            .default(default_idx)
-            .interact()?;
-
-        let (model_name, _, _, _) = EMBEDDING_OPTIONS[idx];
-
-        if model_name == "disabled" {
-            println!(
-                "  {} Embedding disabled. Search will use BM25 only.",
-                style("✓").green()
-            );
-            return Ok(Some("\n[embedding]\nenabled = false\n".to_string()));
-        }
-
-        // Ask about auto-download
-        let auto_download = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Download model automatically on first search?")
-            .items(&["Yes (recommended)", "No — manual download only"])
-            .default(0)
-            .interact()? == 0;
-
-        let cache_dir_str = dirs::cache_dir()
-            .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
-            .unwrap_or_else(|| "~/.cache/alcove/models".to_string());
-
-        use crate::embedding::{EmbeddingService, ModelState};
-        
-        let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-            model: model_name.to_string(),
-            auto_download: true,
-            cache_dir: cache_dir_str.clone(),
-            enabled: true,
-        });
-
-        // Check if already cached
-        let state = service.state();
-        let is_cached = matches!(state, ModelState::Cached | ModelState::Ready);
-
-        if is_cached {
-            println!(
-                "  {} Model already downloaded and ready: {}",
-                style("✓").green(),
-                style(model_name).cyan()
-            );
-        } else {
-            println!(
-                "  {} Model selected: {}",
-                style("✓").green(),
-                model_name
-            );
-
-            // Offer immediate download
-            if Select::with_theme(&ColorfulTheme::default())
-                .with_prompt("Download model now?")
-                .items(&["Yes, download now", "No, download on first search"])
-                .default(0)
-                .interact()? == 0 
-            {
-                println!();
-                println!(
-                    "{} Downloading embedding model: {}",
-                    style("⏳").yellow(),
-                    style(model_name).cyan()
-                );
-                println!("{}", style("  (Progress bar will appear below)").dim());
-                println!();
-                
-                // fastembed shows its own indicatif progress bar to stderr
-                service.ensure_model().map_err(|e| anyhow::anyhow!("{}", e))?;
-
-                println!();
-                println!(
-                    "{} Model downloaded and ready!",
-                    style("✓").green()
-                );
-            }
-        }
-
-        Ok(Some(format!(
-            "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\ncache_dir = \"{}\"\nenabled = true\n",
-            model_name, auto_download, cache_dir_str
-        )))
-    }
-
-    #[cfg(not(feature = "alcove-full"))]
-    {
-        println!(
-            "  {} Embedding search (hybrid RAG) requires the full installation.",
-            style("ℹ").yellow()
-        );
-        println!();
-        println!("  To enable hybrid search later, reinstall with:");
-        println!(
-            "  {} cargo install alcove --features alcove-full",
-            style("→").cyan()
-        );
-        println!();
-        println!(
-            "  {} Search will use BM25 (keyword) only for now.",
-            style("✓").green()
-        );
-        Ok(None)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Step functions with Back support
@@ -1158,63 +963,6 @@ const CATEGORIES: &[CategoryDef] = &[
     },
 ];
 
-/// Returns (core_files, team_files, public_files) after interactive selection.
-/// Pre-checks items based on existing config or defaults.
-fn select_categories() -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
-    let cfg = load_fresh_config();
-    let existing: [Vec<String>; 3] = [
-        cfg.as_ref().map_or_else(
-            || DOC_REPO_REQUIRED.iter().map(std::string::ToString::to_string).collect(),
-            super::config::DocConfig::core_files,
-        ),
-        cfg.as_ref().map_or_else(
-            || {
-                DOC_REPO_SUPPLEMENTARY
-                    .iter()
-                    .map(std::string::ToString::to_string)
-                    .collect()
-            },
-            super::config::DocConfig::team_files,
-        ),
-        cfg.as_ref().map_or_else(
-            || PROJECT_REPO_FILES.iter().map(std::string::ToString::to_string).collect(),
-            super::config::DocConfig::public_files,
-        ),
-    ];
-
-    let theme = ColorfulTheme::default();
-    let mut results: Vec<Vec<String>> = Vec::new();
-
-    for (i, cat) in CATEGORIES.iter().enumerate() {
-        let items: Vec<&str> = cat.defaults.to_vec();
-        let defaults: Vec<bool> = items
-            .iter()
-            .map(|item| existing[i].iter().any(|e| e == *item))
-            .collect();
-
-        let selected = MultiSelect::with_theme(&theme)
-            .with_prompt(cat.label)
-            .items(&items)
-            .defaults(&defaults)
-            .interact()?;
-
-        let files: Vec<String> = selected.iter().map(|&idx| items[idx].to_string()).collect();
-        println!(
-            "  {} {}",
-            style("✓").green(),
-            t!(
-                "setup.category_status",
-                label = cat.label,
-                selected = files.len(),
-                total = items.len()
-            )
-        );
-        results.push(files);
-    }
-
-    Ok((results.remove(0), results.remove(0), results.remove(0)))
-}
-
 /// Load config fresh from disk (bypasses OnceLock cache).
 fn load_fresh_config() -> Option<DocConfig> {
     let path = config_path();
@@ -1269,11 +1017,6 @@ pub fn cmd_setup() -> Result<()> {
                 if let Some(prev) = current_step.prev() {
                     current_step = prev;
                 }
-            }
-            StepResult::Cancelled => {
-                println!();
-                println!("  {}", style("Setup cancelled.").yellow());
-                return Ok(());
             }
         }
     }

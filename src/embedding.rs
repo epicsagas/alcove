@@ -197,8 +197,6 @@ impl std::fmt::Display for EmbeddingModelChoice {
 pub struct EmbeddingService {
     /// Current model state
     state: Arc<Mutex<ModelState>>,
-    /// Configuration
-    config: crate::config::EmbeddingConfig,
     /// Internal configuration with model choice
     internal_config: InternalEmbeddingConfig,
     /// ONNX session (lazy loaded)
@@ -212,7 +210,6 @@ pub struct EmbeddingService {
 #[cfg(feature = "alcove-full")]
 struct InternalEmbeddingConfig {
     model: EmbeddingModelChoice,
-    auto_download: bool,
     cache_dir: PathBuf,
     enabled: bool,
 }
@@ -230,7 +227,6 @@ impl EmbeddingService {
 
         let internal_config = InternalEmbeddingConfig {
             model: model_choice,
-            auto_download: config.auto_download,
             cache_dir: PathBuf::from(&config.cache_dir),
             enabled: config.enabled,
         };
@@ -245,7 +241,6 @@ impl EmbeddingService {
 
         Self {
             state: Arc::new(Mutex::new(initial_state)),
-            config,
             internal_config,
             session: Arc::new(Mutex::new(None)),
             previous_dimension: Arc::new(Mutex::new(None)),

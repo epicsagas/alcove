@@ -158,11 +158,6 @@ fn default_embedding_model() -> String {
 }
 
 #[cfg(feature = "alcove-full")]
-fn default_embedding_enabled() -> bool {
-    true
-}
-
-#[cfg(feature = "alcove-full")]
 fn default_embedding_auto_download() -> bool {
     true
 }

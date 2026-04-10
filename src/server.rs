@@ -163,7 +163,7 @@ async fn search(
                 let service = EmbeddingService::new(crate::config::EmbeddingConfig {
                     model: model.as_str().to_string(),
                     auto_download: emb_cfg.auto_download,
-                    cache_dir: emb_cfg.cache_dir.clone(),
+                    cache_dir: cache_dir.to_string_lossy().into_owned(),
                     enabled: true,
                 });
 
