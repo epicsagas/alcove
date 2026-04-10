@@ -1,4 +1,3 @@
-use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -73,7 +72,18 @@ pub const PROJECT_REPO_FILES: &[&str] = &[
 ];
 
 // ---------------------------------------------------------------------------
-// Dynamic config from ~/.config/alcove/config.toml
+// Alcove home directory helpers
+// ---------------------------------------------------------------------------
+
+/// Returns `~/.alcove` — the canonical home directory for all alcove data.
+pub fn alcove_home() -> PathBuf {
+    dirs::home_dir()
+        .map(|p| p.join(".alcove"))
+        .unwrap_or_else(|| PathBuf::from("/nonexistent"))
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic config from ~/.alcove/config.toml
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -169,9 +179,7 @@ fn default_embedding_enabled() -> bool {
 
 #[cfg(feature = "alcove-full")]
 fn default_embedding_cache_dir() -> String {
-    dirs::home_dir()
-        .map(|p| p.join(".alcove").join("models").to_string_lossy().to_string())
-        .unwrap_or_else(|| "~/.alcove/models".into())
+    alcove_home().join("models").to_string_lossy().to_string()
 }
 
 #[cfg(feature = "alcove-full")]
@@ -296,7 +304,7 @@ impl DocConfig {
         if let Some(ref root) = self.docs_root {
             return Some(PathBuf::from(root));
         }
-        // 2. Fall back to default: ~/.config/alcove/docs
+        // 2. Fall back to default: ~/.alcove/docs
         let fallback = default_docs_root();
         if fallback.is_dir() {
             return Some(fallback);
@@ -348,20 +356,36 @@ impl DocConfig {
     }
 }
 
-/// Default docs root: `~/.config/alcove/docs`
+/// Default docs root: `~/.alcove/docs`
 pub fn default_docs_root() -> PathBuf {
-    if let Ok(home) = env::var("HOME") {
-        PathBuf::from(home).join(".config/alcove/docs")
-    } else {
-        PathBuf::from("/nonexistent")
-    }
+    alcove_home().join("docs")
 }
 
 pub fn config_path() -> PathBuf {
-    if let Ok(home) = env::var("HOME") {
-        PathBuf::from(home).join(".config/alcove/config.toml")
-    } else {
-        PathBuf::from("/nonexistent")
+    alcove_home().join("config.toml")
+}
+
+/// Migrate from the legacy `~/.config/alcove/` layout to `~/.alcove/`.
+/// Runs once at startup. Safe to call repeatedly — no-op if already migrated.
+pub fn migrate_legacy_paths() {
+    let Some(home) = dirs::home_dir() else { return };
+    let legacy = home.join(".config").join("alcove");
+    let new_home = home.join(".alcove");
+
+    // Only migrate if legacy exists and new home does NOT yet exist
+    if !legacy.exists() || new_home.exists() {
+        return;
+    }
+
+    match std::fs::rename(&legacy, &new_home) {
+        Ok(_) => eprintln!(
+            "[alcove] Migrated config directory: {} → {}",
+            legacy.display(), new_home.display()
+        ),
+        Err(e) => eprintln!(
+            "[alcove] Warning: could not migrate {} to {}: {}",
+            legacy.display(), new_home.display(), e
+        ),
     }
 }
 
@@ -443,7 +467,7 @@ pub fn load_project_config(project_repo: &Path) -> DocConfig {
 ///
 /// Resolution order (highest priority first):
 /// 1. `{project_repo}/alcove.toml`  (project repository root)
-/// 2. `~/.config/alcove/config.toml` (global)
+/// 2. `~/.alcove/config.toml` (global)
 /// 3. Built-in defaults
 pub fn effective_config(project_repo: &Path) -> DocConfig {
     load_project_config(project_repo).overlay(load_config())
@@ -692,7 +716,38 @@ mod tests {
     #[test]
     fn default_docs_root_contains_alcove_docs() {
         let path = default_docs_root();
-        assert!(path.to_string_lossy().ends_with(".config/alcove/docs"));
+        assert!(
+            path.to_string_lossy().ends_with(".alcove/docs"),
+            "expected path ending with .alcove/docs, got: {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn alcove_home_ends_with_dot_alcove() {
+        let home = alcove_home();
+        assert!(
+            home.to_string_lossy().ends_with(".alcove"),
+            "expected path ending with .alcove, got: {}",
+            home.display()
+        );
+    }
+
+    #[test]
+    fn config_path_is_inside_alcove_home() {
+        let path = config_path();
+        assert!(
+            path.to_string_lossy().ends_with(".alcove/config.toml"),
+            "expected path ending with .alcove/config.toml, got: {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn migrate_legacy_paths_noop_when_legacy_absent() {
+        // Legacy does not exist on a clean machine → function returns without error
+        // This is a smoke test: as long as it doesn't panic, we're fine.
+        migrate_legacy_paths();
     }
 
     #[test]

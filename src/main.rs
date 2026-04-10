@@ -134,6 +134,7 @@ enum ModelCommands {
 // ---------------------------------------------------------------------------
 
 fn main() -> Result<()> {
+    config::migrate_legacy_paths();
     init_locale();
     let cli = {
         use clap::{CommandFactory, FromArgMatches};
