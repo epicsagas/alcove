@@ -313,10 +313,10 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
         ToolDescription {
             name: "rebuild_index".into(),
             description: concat!(
-                "Build or rebuild the full-text search index for all projects. ",
-                "Uses BM25 ranking for relevance-scored search results. ",
+                "Trigger an incremental index update in the background. ",
+                "Returns immediately — the agent is not blocked while indexing runs. ",
                 "Run this after adding or updating documents. ",
-                "The index enables the 'ranked' search mode in search_project_docs."
+                "Search results will reflect the new documents once indexing completes."
             ).into(),
             input_schema: json!({
                 "type": "object",
@@ -393,10 +393,16 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         };
     }
     if call.name == "rebuild_index" {
-        return match crate::index::build_index(&docs_root) {
-            Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
-            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
-        };
+        // Fire-and-forget: spawn background thread so the agent isn't blocked.
+        // The lock mechanism prevents concurrent builds.
+        let docs_root_clone = docs_root.clone();
+        std::thread::spawn(move || {
+            let _ = crate::index::build_index(&docs_root_clone);
+        });
+        return RpcResponse::ok(id, mcp_text_result(&json!({
+            "status": "started",
+            "message": "Index build started in background. Search will use the updated index once complete."
+        })));
     }
     if call.name == "check_doc_changes" {
         return match tools::tool_check_doc_changes(&docs_root, call.arguments) {
