@@ -638,6 +638,10 @@ pub fn tool_get_doc_ir(project_root: &Path, args_value: Value) -> Result<Value> 
         .context("get_doc_ir requires { path }")?;
 
     let safe_rel = Path::new(&args.path);
+    // Reject absolute paths before join (Rust's join ignores base for absolute args)
+    if safe_rel.is_absolute() {
+        anyhow::bail!("Absolute paths are not allowed");
+    }
     if safe_rel
         .components()
         .any(|c| matches!(c, std::path::Component::ParentDir))
@@ -646,6 +650,17 @@ pub fn tool_get_doc_ir(project_root: &Path, args_value: Value) -> Result<Value> 
     }
 
     let md_path = project_root.join(safe_rel);
+    // Canonicalize to resolve symlinks and verify the path stays within project_root
+    let canonical_root = project_root
+        .canonicalize()
+        .context("Failed to canonicalize project root")?;
+    let canonical_md = md_path
+        .canonicalize()
+        .unwrap_or_else(|_| md_path.clone()); // file may not exist yet (sidecar scenario)
+    if canonical_md != md_path && !canonical_md.starts_with(&canonical_root) {
+        anyhow::bail!("Path traversal is not allowed");
+    }
+
     let sidecar_path = md_path.with_extension("ir.json");
 
     // Serve cached sidecar only if it is fresh (md not modified since sidecar was written)
@@ -672,6 +687,15 @@ pub fn tool_get_doc_ir(project_root: &Path, args_value: Value) -> Result<Value> 
                 .replace(".ir.json", ".md"),
         );
         if md_fallback.exists() {
+            const MAX_MD_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+            let md_size = md_fallback.metadata().map(|m| m.len()).unwrap_or(0);
+            if md_size > MAX_MD_BYTES {
+                anyhow::bail!(
+                    "Markdown file too large for on-the-fly IR generation ({} bytes, limit {} bytes)",
+                    md_size,
+                    MAX_MD_BYTES
+                );
+            }
             let md_content = std::fs::read_to_string(&md_fallback)
                 .context("Failed to read markdown file for on-the-fly IR generation")?;
             let ir_doc = ai_ir::Transpiler::from_markdown(
@@ -2483,5 +2507,29 @@ mod tests {
         let cfg = crate::config::load_project_config(repo.path());
         assert_eq!(cfg.diagram_format(), "plantuml");
         assert_eq!(cfg.core_files(), vec!["SPEC.md"]);
+    }
+
+    #[test]
+    fn test_get_doc_ir_rejects_absolute_path() {
+        let tmp = TempDir::new().unwrap();
+        let result = tool_get_doc_ir(tmp.path(), json!({"path": "/etc/passwd"}));
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("Absolute paths are not allowed"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_get_doc_ir_rejects_parent_traversal() {
+        let tmp = TempDir::new().unwrap();
+        let result = tool_get_doc_ir(tmp.path(), json!({"path": "../../../etc/passwd"}));
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("Path traversal is not allowed"),
+            "unexpected error: {msg}"
+        );
     }
 }
