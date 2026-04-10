@@ -47,8 +47,6 @@ struct HnswCache {
     index: hnsw_rs::prelude::Hnsw<'static, f32, hnsw_rs::prelude::DistCosine>,
     /// Maps HNSW d_id (= SQLite row `id` as usize) → (project, file, chunk_id)
     id_map: std::collections::HashMap<usize, (String, String, u64)>,
-    /// Vector count at build time — used to detect staleness.
-    vector_count: i64,
 }
 
 #[cfg(feature = "alcove-full")]
@@ -307,30 +305,15 @@ impl VectorStore {
 
     /// HNSW search (O(log n)) - good for large datasets.
     ///
-    /// The HNSW index is cached inside `hnsw_cache` and reused as long as the
-    /// vector count has not changed.  Any write operation (`batch_upsert`,
-    /// `upsert`, `delete_*`, `clear`) sets the cache to `None`, forcing a
-    /// rebuild on the next search.
+    /// The HNSW index is cached inside `hnsw_cache` and reused until a write
+    /// operation (`batch_upsert`, `upsert`, `delete_*`, `clear`) sets the cache
+    /// to `None`, forcing a rebuild on the next search.
     #[cfg(feature = "alcove-full")]
     fn search_hnsw(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
         use hnsw_rs::prelude::*;
         use std::collections::HashMap;
 
-        // Current vector count — used to detect whether the cache is stale.
-        let current_count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM vectors",
-            [],
-            |row| row.get(0),
-        )?;
-
-        // Check whether the existing cache is still valid.
-        let cache_valid = self
-            .hnsw_cache
-            .borrow()
-            .as_ref()
-            .map_or(false, |c| c.vector_count == current_count);
-
-        if !cache_valid {
+        if self.hnsw_cache.borrow().is_none() {
             // (Re-)build the HNSW index from SQLite.
             let mut stmt = self.conn.prepare(
                 "SELECT id, project, file, chunk_id, embedding FROM vectors",
@@ -377,7 +360,6 @@ impl VectorStore {
             *self.hnsw_cache.borrow_mut() = Some(HnswCache {
                 index: hnsw,
                 id_map,
-                vector_count: current_count,
             });
         }
 
@@ -642,21 +624,17 @@ mod tests {
         let _r1 = store.search_hnsw(&query, 5).unwrap();
 
         // After first search the cache must be populated.
-        let count_after_first = {
+        {
             let cache = store.hnsw_cache.borrow();
-            let c = cache.as_ref().expect("cache should be populated after first search");
-            c.vector_count
-        };
-        assert_eq!(count_after_first, 5000);
+            assert!(cache.is_some(), "cache should be populated after first search");
+        }
 
-        // Second search — no vectors added, so cache must be reused (same count).
+        // Second search — no vectors added, so cache must be reused.
         let _r2 = store.search_hnsw(&query, 5).unwrap();
-        let count_after_second = {
+        {
             let cache = store.hnsw_cache.borrow();
-            let c = cache.as_ref().expect("cache must still exist after second search");
-            c.vector_count
-        };
-        assert_eq!(count_after_second, 5000);
+            assert!(cache.is_some(), "cache must still exist after second search");
+        }
 
         // Insert one more vector — cache must be invalidated and rebuilt.
         store
@@ -672,13 +650,12 @@ mod tests {
             assert!(cache.is_none(), "cache must be invalidated after insert");
         }
 
-        // Search rebuilds to 5001.
+        // Search rebuilds the cache.
         let _r3 = store.search_hnsw(&query, 5).unwrap();
-        let count_after_insert = {
+        {
             let cache = store.hnsw_cache.borrow();
-            cache.as_ref().unwrap().vector_count
-        };
-        assert_eq!(count_after_insert, 5001);
+            assert!(cache.is_some(), "cache must be rebuilt after insert");
+        }
     }
 
     #[test]

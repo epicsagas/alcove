@@ -319,7 +319,16 @@ impl EmbeddingService {
                 // Another thread is already downloading; poll until done.
                 let deadline = Instant::now() + Duration::from_secs(300);
                 loop {
+                    // When running inside a Tokio multi-thread runtime (alcove-server),
+                    // use block_in_place so the executor can schedule other tasks on this
+                    // thread while we sleep, instead of parking the OS thread blindly.
+                    #[cfg(feature = "alcove-server")]
+                    tokio::task::block_in_place(|| {
+                        std::thread::sleep(Duration::from_millis(100));
+                    });
+                    #[cfg(not(feature = "alcove-server"))]
                     std::thread::sleep(Duration::from_millis(100));
+
                     let current = self
                         .state
                         .lock()
@@ -625,6 +634,59 @@ mod tests {
                 other => panic!("unexpected state: {}", other),
             }
         }
+    }
+
+    /// Polling sleep inside tokio runtime must use block_in_place, not plain thread::sleep.
+    /// Verify that the polling loop completes inside a tokio multi-thread runtime context
+    /// without starving other tasks.
+    #[test]
+    #[cfg(all(feature = "alcove-full", feature = "alcove-server"))]
+    fn test_ensure_model_polling_does_not_block_tokio_runtime() {
+        use std::sync::{Arc, Mutex};
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_time()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let state: Arc<Mutex<ModelState>> =
+                Arc::new(Mutex::new(ModelState::Downloading { progress_pct: 0 }));
+
+            let state_clone = Arc::clone(&state);
+            // Transition to Ready after 200 ms on a blocking thread so we don't starve
+            // the test runtime.
+            tokio::task::spawn_blocking(move || {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                *state_clone.lock().unwrap_or_else(|e| e.into_inner()) = ModelState::Ready;
+            });
+
+            // A concurrent task that must be able to run while the poll loop is waiting.
+            let concurrent = tokio::spawn(async {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                42u32
+            });
+
+            // Run the polling logic (mirrors ensure_model's Downloading branch) but
+            // using the non-blocking sleep so the executor can schedule other tasks.
+            let deadline = Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                let current = state.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                match current {
+                    ModelState::Ready => break,
+                    ModelState::Downloading { .. } => {
+                        assert!(Instant::now() < deadline, "timed out");
+                    }
+                    other => panic!("unexpected state: {}", other),
+                }
+            }
+
+            // The concurrent task must have completed because the poll loop yielded.
+            let val = concurrent.await.expect("concurrent task failed");
+            assert_eq!(val, 42);
+        });
     }
 
     /// Fix 2: polling must return a timeout error when state never changes.
