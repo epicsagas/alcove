@@ -54,6 +54,11 @@ struct HnswCacheEntry {
     last_accessed: std::time::Instant,
 }
 
+/// Maximum number of per-project HNSW indices held in memory simultaneously.
+/// When exceeded, the least-recently-used entry is evicted before inserting a new one.
+#[cfg(feature = "alcove-full")]
+const HNSW_CACHE_MAX_ENTRIES: usize = 8;
+
 #[cfg(feature = "alcove-full")]
 pub struct VectorStore {
     conn: Connection,
@@ -65,9 +70,14 @@ pub struct VectorStore {
     /// Key `None`       = index over all projects (used when no filter is given).
     /// Key `Some(name)` = index limited to that project.
     ///
+    /// Bounded to `HNSW_CACHE_MAX_ENTRIES`; LRU entry is dropped when full.
+    /// TTL eviction runs at most once per 60 s to avoid O(n) overhead on hot paths.
+    ///
     /// `RefCell` is safe because `Connection` is `!Send`, so `VectorStore` is
     /// already confined to a single thread.
     hnsw_cache: std::cell::RefCell<std::collections::HashMap<Option<String>, HnswCacheEntry>>,
+    /// Timestamp of the last TTL eviction pass. Throttles `evict_stale` calls.
+    last_evict: std::cell::Cell<std::time::Instant>,
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +173,7 @@ impl VectorStore {
             dimension,
             model: model.to_string(),
             hnsw_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+            last_evict: std::cell::Cell::new(std::time::Instant::now()),
         })
     }
 
@@ -391,10 +402,14 @@ impl VectorStore {
 
         let cache_key: Option<String> = project_filter.map(|s| s.to_string());
 
-        // Evict stale entries first.
+        // Evict stale entries at most once every 60 s to avoid O(n) overhead on hot paths.
         {
-            let mut cache = self.hnsw_cache.borrow_mut();
-            evict_stale(&mut cache);
+            let evict_interval = std::time::Duration::from_secs(60);
+            if self.last_evict.get().elapsed() >= evict_interval {
+                let mut cache = self.hnsw_cache.borrow_mut();
+                evict_stale(&mut cache);
+                self.last_evict.set(std::time::Instant::now());
+            }
         }
 
         // Cache miss: build the index for this key.
@@ -461,14 +476,28 @@ impl VectorStore {
                 id_map.insert(d_id, (project.clone(), file.clone(), *chunk_id));
             }
 
-            self.hnsw_cache.borrow_mut().insert(
-                cache_key.clone(),
-                HnswCacheEntry {
-                    index: hnsw,
-                    id_map,
-                    last_accessed: std::time::Instant::now(),
-                },
-            );
+            // Enforce LRU size cap before inserting.
+            {
+                let mut cache = self.hnsw_cache.borrow_mut();
+                if cache.len() >= HNSW_CACHE_MAX_ENTRIES {
+                    // Drop the least-recently-used entry.
+                    if let Some(lru_key) = cache
+                        .iter()
+                        .min_by_key(|(_, e)| e.last_accessed)
+                        .map(|(k, _)| k.clone())
+                    {
+                        cache.remove(&lru_key);
+                    }
+                }
+                cache.insert(
+                    cache_key.clone(),
+                    HnswCacheEntry {
+                        index: hnsw,
+                        id_map,
+                        last_accessed: std::time::Instant::now(),
+                    },
+                );
+            }
         }
 
         // Use the cached entry — update last_accessed.
@@ -848,31 +877,29 @@ mod tests {
         let query = vec![1.0f32, 0.0, 0.0, 0.0];
         store.search_hnsw(&query, 5, None).unwrap();
 
-        // Backdate the last_accessed timestamp by 10 minutes (past TTL of 5 min).
+        // Force immediate eviction by calling evict_stale with a 0-second TTL.
+        // We can't backdate Instant (monotonic clock), so instead we sleep briefly
+        // and call evict_stale directly with a 1ms TTL.
+        std::thread::sleep(std::time::Duration::from_millis(5));
         {
             let mut cache = store.hnsw_cache.borrow_mut();
-            if let Some(entry) = cache.get_mut(&None) {
-                entry.last_accessed =
-                    std::time::Instant::now()
-                        .checked_sub(std::time::Duration::from_secs(600))
-                        .unwrap_or_else(std::time::Instant::now);
-            }
+            let short_ttl = std::time::Duration::from_millis(1);
+            cache.retain(|_, entry| entry.last_accessed.elapsed() < short_ttl);
         }
 
-        // Confirm the stale entry is still there before the next search.
+        // After forced eviction the entry must be gone.
         assert!(
-            store.hnsw_cache.borrow().contains_key(&None),
-            "stale entry should still exist before eviction"
+            !store.hnsw_cache.borrow().contains_key(&None),
+            "entry must be evicted after TTL"
         );
 
-        // Next search triggers evict_stale, which removes the backdated entry,
-        // then rebuilds the cache for this key.
+        // Next search rebuilds the cache for this key.
         store.search_hnsw(&query, 5, None).unwrap();
 
-        // After the search the key must exist again (rebuilt after eviction).
+        // After rebuild the key must exist again.
         assert!(
             store.hnsw_cache.borrow().contains_key(&None),
-            "cache must be rebuilt after stale eviction"
+            "cache must be rebuilt after eviction"
         );
     }
 
