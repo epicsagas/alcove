@@ -389,6 +389,9 @@ impl EmbeddingService {
 
     /// Download model and load ONNX session
     fn download_and_load(&self) -> Result<()> {
+        // Ensure cache directory exists before fastembed tries to write into it.
+        std::fs::create_dir_all(&self.internal_config.cache_dir)?;
+
         // Update progress
         {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
