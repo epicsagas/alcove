@@ -169,9 +169,9 @@ fn default_embedding_enabled() -> bool {
 
 #[cfg(feature = "alcove-full")]
 fn default_embedding_cache_dir() -> String {
-    dirs::cache_dir()
-        .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
-        .unwrap_or_else(|| "~/.cache/alcove/models".into())
+    dirs::home_dir()
+        .map(|p| p.join(".alcove").join("models").to_string_lossy().to_string())
+        .unwrap_or_else(|| "~/.alcove/models".into())
 }
 
 #[cfg(feature = "alcove-full")]
