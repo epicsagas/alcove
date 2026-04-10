@@ -705,20 +705,19 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
 
             let auto_download = auto_idx == 1;
 
-            // Determine cache directory
-            let cache_dir = dirs::cache_dir()
-                .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
-                .unwrap_or_else(|| "~/.cache/alcove/models".to_string());
-
             println!(
                 "  {} Model: {} (will download on first search)",
                 style("✓").green(),
                 model_name
             );
 
+            let default_cache_dir = dirs::home_dir()
+                .map(|p| p.join(".alcove").join("models").to_string_lossy().to_string())
+                .unwrap_or_else(|| "~/.alcove/models".to_string());
+
             state.embedding_section = Some(format!(
-                "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\ncache_dir = \"{}\"\nenabled = true\n",
-                model_name, auto_download, cache_dir
+                "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\n# cache_dir = \"{}\"  # default, uncomment to override\nenabled = true\n",
+                model_name, auto_download, default_cache_dir
             ));
 
             return Ok(StepResult::Continue);
