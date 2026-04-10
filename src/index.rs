@@ -736,10 +736,8 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                         vector_status = "ok".to_string();
                         if !files_to_index.is_empty() {
                             use rayon::prelude::*;
-                            use std::sync::atomic::{AtomicU64, Ordering};
 
-                            // Phase 1: parallel file read + chunking
-                            // Filter out already-indexed files first (sequential, DB read)
+                            // Filter out already-indexed files (sequential DB read)
                             let to_embed: Vec<(String, String, PathBuf)> = files_to_index
                                 .into_iter()
                                 .filter(|(proj, rel, _)| {
@@ -748,13 +746,6 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                                 .collect();
 
                             let total_files = to_embed.len() as u64;
-                            let already_done = {
-                                // files_to_index was consumed; recount skipped
-                                let vpb_skip = ProgressBar::hidden();
-                                vpb_skip.finish();
-                                0u64
-                            };
-                            vectors_indexed += already_done;
 
                             let vpb = ProgressBar::new(total_files);
                             vpb.set_style(
@@ -763,57 +754,58 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                                     .progress_chars("━━╌"),
                             );
                             vpb.enable_steady_tick(Duration::from_millis(80));
-                            vpb.set_message("reading");
-
-                            // Parallel read + chunk — collect (proj, rel, chunk_idx, text)
-                            let read_counter = AtomicU64::new(0);
-                            let all_chunks: Vec<(String, String, u64, String)> = to_embed
-                                .par_iter()
-                                .flat_map(|(proj, rel, full)| {
-                                    let result = read_file_content(full)
-                                        .map(|content| {
-                                            chunk_content(&content)
-                                                .into_iter()
-                                                .enumerate()
-                                                .map(|(i, c)| (proj.clone(), rel.clone(), i as u64, c.text))
-                                                .collect::<Vec<_>>()
-                                        })
-                                        .unwrap_or_default();
-                                    read_counter.fetch_add(1, Ordering::Relaxed);
-                                    result
-                                })
-                                .collect();
-
-                            vpb.set_position(total_files);
                             vpb.set_message("embedding");
 
-                            // Phase 2: sequential embed in large batches (ONNX is already multi-threaded internally)
-                            const BATCH_SIZE: usize = 256;
-                            let total_chunks = all_chunks.len();
-                            let mut pos = 0usize;
+                            // Process in file-batches to bound memory usage:
+                            // - FILE_BATCH: parallel read+chunk N files at a time
+                            // - EMBED_BATCH: max chunks per embed() call (ONNX throughput)
+                            const FILE_BATCH: usize = 32;
+                            const EMBED_BATCH: usize = 128;
 
-                            while pos < total_chunks {
-                                let end = (pos + BATCH_SIZE).min(total_chunks);
-                                let batch = &all_chunks[pos..end];
-                                let texts: Vec<&str> = batch.iter().map(|(_, _, _, t)| t.as_str()).collect();
-                                match service.embed(&texts) {
-                                    Ok(embeddings) => {
-                                        let it = batch.iter().zip(embeddings).map(|((p, r, id, _), emb)| {
-                                            (p.clone(), r.clone(), *id, emb)
-                                        });
-                                        if let Err(e) = store.batch_upsert(it) {
-                                            eprintln!("[alcove] batch upsert failed: {}", e);
+                            for file_chunk in to_embed.chunks(FILE_BATCH) {
+                                // Parallel read + chunk within this file batch only
+                                let chunks: Vec<(String, String, u64, String)> = file_chunk
+                                    .par_iter()
+                                    .flat_map(|(proj, rel, full)| {
+                                        read_file_content(full)
+                                            .map(|content| {
+                                                chunk_content(&content)
+                                                    .into_iter()
+                                                    .enumerate()
+                                                    .map(|(i, c)| (proj.clone(), rel.clone(), i as u64, c.text))
+                                                    .collect::<Vec<_>>()
+                                            })
+                                            .unwrap_or_default()
+                                    })
+                                    .collect();
+
+                                // Embed the chunks from this file batch
+                                let mut pos = 0usize;
+                                while pos < chunks.len() {
+                                    let end = (pos + EMBED_BATCH).min(chunks.len());
+                                    let batch = &chunks[pos..end];
+                                    let texts: Vec<&str> = batch.iter().map(|(_, _, _, t)| t.as_str()).collect();
+                                    match service.embed(&texts) {
+                                        Ok(embeddings) => {
+                                            let it = batch.iter().zip(embeddings).map(|((p, r, id, _), emb)| {
+                                                (p.clone(), r.clone(), *id, emb)
+                                            });
+                                            if let Err(e) = store.batch_upsert(it) {
+                                                eprintln!("[alcove] batch upsert failed: {}", e);
+                                                vector_errors += (end - pos) as u64;
+                                            } else {
+                                                vectors_indexed += (end - pos) as u64;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!("[alcove] embed failed: {}", e);
                                             vector_errors += (end - pos) as u64;
-                                        } else {
-                                            vectors_indexed += (end - pos) as u64;
                                         }
                                     }
-                                    Err(e) => {
-                                        eprintln!("[alcove] embed failed: {}", e);
-                                        vector_errors += (end - pos) as u64;
-                                    }
+                                    pos = end;
                                 }
-                                pos = end;
+                                // chunks is dropped here — memory released before next file batch
+                                vpb.inc(file_chunk.len() as u64);
                             }
 
                             vpb.finish_and_clear();
