@@ -8,7 +8,7 @@ use anyhow::Result;
 #[cfg(feature = "alcove-server")]
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::Json,
     routing::{get, post},
     Router,
@@ -20,7 +20,7 @@ use std::net::SocketAddr;
 #[cfg(feature = "alcove-server")]
 use std::sync::Arc;
 #[cfg(feature = "alcove-server")]
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 // ---------------------------------------------------------------------------
 // Request/Response types
@@ -95,8 +95,35 @@ pub struct ErrorResponse {
 #[derive(Clone)]
 pub struct ServerState {
     pub docs_root: std::path::PathBuf,
-    #[allow(dead_code)]
     pub token: Option<String>,
+}
+
+/// Check Bearer token authentication. Returns `Err` with 401 if the token is
+/// set and the request does not supply the correct `Authorization: Bearer <token>`.
+#[cfg(feature = "alcove-server")]
+fn check_auth(
+    state: &ServerState,
+    headers: &HeaderMap,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let Some(expected) = state.token.as_deref() else {
+        return Ok(()); // no token configured → open access
+    };
+    let provided = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    if provided == expected {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Unauthorized".to_string(),
+                code: 401,
+            }),
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -120,8 +147,10 @@ async fn health(State(state): State<Arc<ServerState>>) -> Json<HealthResponse> {
 #[cfg(feature = "alcove-server")]
 async fn search(
     State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
     Query(req): Query<SearchRequest>,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&state, &headers)?;
     // Validate query
     if req.q.trim().is_empty() {
         return Err((
@@ -263,7 +292,11 @@ pub async fn run_server(docs_root: std::path::PathBuf, host: &str, port: u16, to
         .route("/v1/search", post(search)) // OpenAI-compatible endpoint
         .layer(
             CorsLayer::new()
-                .allow_origin(Any)
+                .allow_origin(AllowOrigin::predicate(|origin, _| {
+                    let bytes = origin.as_bytes();
+                    bytes.starts_with(b"http://localhost")
+                        || bytes.starts_with(b"http://127.0.0.1")
+                }))
                 .allow_methods(Any)
                 .allow_headers(Any),
         )
