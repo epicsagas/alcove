@@ -200,6 +200,29 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
             }),
         },
         ToolDescription {
+            name: "get_ir_slice".into(),
+            description: "Return a compact text slice of the IR for a documentation file, optionally filtered by entity ID prefix. Useful for narrowing constraints to a specific topic without loading the full IR.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to the project doc root (e.g. \"CONVENTIONS.md\")"
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Entity ID prefix to filter (e.g. \"auth\"). If omitted, all constraints are returned."
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["compact", "json"],
+                        "description": "Output format: \"compact\" (default) returns a human-readable text slice; \"json\" returns structured JSON."
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
+        ToolDescription {
             name: "list_projects".into(),
             description: "List all projects that have documentation in alcove.".into(),
             input_schema: json!({
@@ -521,6 +544,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         "search_project_docs" => tools::tool_search(&project_root, call.arguments, repo_path),
         "get_doc_file" => tools::tool_get_file(&project_root, call.arguments),
         "get_doc_ir" => tools::tool_get_doc_ir(&project_root, call.arguments),
+        "get_ir_slice" => tools::tool_get_ir_slice(&project_root, call.arguments),
         "audit_project" => tools::tool_audit(&project_root, &resolved.name, repo_path),
         "configure_project" => {
             let rp = repo_path

@@ -211,3 +211,4 @@ $RECYCLE.BIN/
 .collet/.secrets
 .agents/
 .harness/
+.aider*
