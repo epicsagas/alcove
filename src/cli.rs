@@ -626,101 +626,103 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
                     .unwrap_or("MultilingualE5Small")
             });
 
-        // Add back and skip options
-        let mut labels = vec![
-            style("← Go back").yellow().to_string(),
-            style("Skip for now (BM25 only)").dim().to_string(),
-        ];
-        
-        let model_labels: Vec<String> = EMBEDDING_OPTIONS
-            .iter()
-            .map(|(name, desc, dim, size)| {
-                let marker = if *name == current_model { " [current]" } else { "" };
-                if *size == 0 {
-                    format!("{} — {}{}", name, desc, marker)
-                } else {
-                    format!("{} — {} ({}d){}", name, desc, dim, marker)
-                }
-            })
-            .collect();
-        labels.extend(model_labels);
+        loop {
+            // Add back and skip options
+            let mut labels = vec![
+                style("← Go back").yellow().to_string(),
+                style("Skip for now (BM25 only)").dim().to_string(),
+            ];
 
-        let default_idx = EMBEDDING_OPTIONS
-            .iter()
-            .position(|(name, _, _, _)| *name == current_model)
-            .map(|i| i + 2) // +2 for back and skip options
-            .unwrap_or(2);
+            let model_labels: Vec<String> = EMBEDDING_OPTIONS
+                .iter()
+                .map(|(name, desc, dim, size)| {
+                    let marker = if *name == current_model { " [current]" } else { "" };
+                    if *size == 0 {
+                        format!("{} — {}{}", name, desc, marker)
+                    } else {
+                        format!("{} — {} ({}d){}", name, desc, dim, marker)
+                    }
+                })
+                .collect();
+            labels.extend(model_labels);
 
-        let idx = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Select embedding model for hybrid search")
-            .items(&labels)
-            .default(default_idx)
-            .interact()?;
+            let default_idx = EMBEDDING_OPTIONS
+                .iter()
+                .position(|(name, _, _, _)| *name == current_model)
+                .map(|i| i + 2) // +2 for back and skip options
+                .unwrap_or(2);
 
-        // Back
-        if idx == 0 {
-            return Ok(StepResult::Back);
-        }
+            let idx = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Select embedding model for hybrid search")
+                .items(&labels)
+                .default(default_idx)
+                .interact()?;
 
-        // Skip
-        if idx == 1 {
+            // Back
+            if idx == 0 {
+                return Ok(StepResult::Back);
+            }
+
+            // Skip
+            if idx == 1 {
+                println!(
+                    "  {} Embedding skipped. Search will use BM25 only.",
+                    style("✓").green()
+                );
+                state.embedding_section = None;
+                return Ok(StepResult::Continue);
+            }
+
+            let real_idx = idx - 2;
+            let (model_name, _, _, _) = EMBEDDING_OPTIONS[real_idx];
+
+            if model_name == "disabled" {
+                println!(
+                    "  {} Embedding disabled. Search will use BM25 only.",
+                    style("✓").green()
+                );
+                state.embedding_section = Some("\n[embedding]\nenabled = false\n".to_string());
+                return Ok(StepResult::Continue);
+            }
+
+            // Ask about auto-download
+            let auto_labels = vec![
+                style("← Go back").yellow().to_string(),
+                "Yes (recommended)".to_string(),
+                "No — manual download only".to_string(),
+            ];
+
+            let auto_idx = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Download model automatically on first search?")
+                .items(&auto_labels)
+                .default(1)
+                .interact()?;
+
+            if auto_idx == 0 {
+                // Go back to model selection via loop
+                continue;
+            }
+
+            let auto_download = auto_idx == 1;
+
+            // Determine cache directory
+            let cache_dir = dirs::cache_dir()
+                .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
+                .unwrap_or_else(|| "~/.cache/alcove/models".to_string());
+
             println!(
-                "  {} Embedding skipped. Search will use BM25 only.",
-                style("✓").green()
+                "  {} Model: {} (will download on first search)",
+                style("✓").green(),
+                model_name
             );
-            state.embedding_section = None;
+
+            state.embedding_section = Some(format!(
+                "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\ncache_dir = \"{}\"\nenabled = true\n",
+                model_name, auto_download, cache_dir
+            ));
+
             return Ok(StepResult::Continue);
         }
-
-        let real_idx = idx - 2;
-        let (model_name, _, _, _) = EMBEDDING_OPTIONS[real_idx];
-
-        if model_name == "disabled" {
-            println!(
-                "  {} Embedding disabled. Search will use BM25 only.",
-                style("✓").green()
-            );
-            state.embedding_section = Some("\n[embedding]\nenabled = false\n".to_string());
-            return Ok(StepResult::Continue);
-        }
-
-        // Ask about auto-download
-        let auto_labels = vec![
-            style("← Go back").yellow().to_string(),
-            "Yes (recommended)".to_string(),
-            "No — manual download only".to_string(),
-        ];
-        
-        let auto_idx = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Download model automatically on first search?")
-            .items(&auto_labels)
-            .default(1)
-            .interact()?;
-
-        if auto_idx == 0 {
-            // Go back to model selection
-            return step_embedding(state);
-        }
-
-        let auto_download = auto_idx == 1;
-
-        // Determine cache directory
-        let cache_dir = dirs::cache_dir()
-            .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
-            .unwrap_or_else(|| "~/.cache/alcove/models".to_string());
-
-        println!(
-            "  {} Model: {} (will download on first search)",
-            style("✓").green(),
-            model_name
-        );
-
-        state.embedding_section = Some(format!(
-            "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\ncache_dir = \"{}\"\nenabled = true\n",
-            model_name, auto_download, cache_dir
-        ));
-
-        Ok(StepResult::Continue)
     }
 
     #[cfg(not(feature = "alcove-full"))]
@@ -769,40 +771,42 @@ fn step_agents(state: &mut SetupState) -> Result<StepResult> {
     let agent_list = agents();
     let names: Vec<&str> = agent_list.iter().map(|a| a.name).collect();
 
-    // Pre-select previously selected agents or none
-    let defaults: Vec<bool> = if state.selected_agents.is_empty() {
-        vec![false; names.len()]
-    } else {
-        names.iter()
-            .enumerate()
-            .map(|(i, _)| state.selected_agents.contains(&i))
-            .collect()
-    };
+    loop {
+        // Pre-select previously selected agents or none
+        let defaults: Vec<bool> = if state.selected_agents.is_empty() {
+            vec![false; names.len()]
+        } else {
+            names.iter()
+                .enumerate()
+                .map(|(i, _)| state.selected_agents.contains(&i))
+                .collect()
+        };
 
-    let selected = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt(format!("{} (select at least 1)", t!("setup.agents_prompt").as_ref()))
-        .items(&names)
-        .defaults(&defaults)
-        .interact()?;
+        let selected = MultiSelect::with_theme(&ColorfulTheme::default())
+            .with_prompt(format!("{} (select at least 1)", t!("setup.agents_prompt").as_ref()))
+            .items(&names)
+            .defaults(&defaults)
+            .interact()?;
 
-    // Validate at least one selected
-    if selected.is_empty() {
-        println!(
-            "  {} Please select at least one agent to continue.",
-            style("⚠").yellow()
-        );
-        // Re-prompt
-        return step_agents(state);
+        // Validate at least one selected
+        if selected.is_empty() {
+            println!(
+                "  {} Please select at least one agent to continue.",
+                style("⚠").yellow()
+            );
+            // Re-prompt via loop
+            continue;
+        }
+
+        state.selected_agents = selected;
+
+        for &idx in &state.selected_agents {
+            let agent = &agent_list[idx];
+            println!("  {} {}", style("✓").green(), agent.name);
+        }
+
+        return Ok(StepResult::Continue);
     }
-
-    state.selected_agents = selected;
-    
-    for &idx in &state.selected_agents {
-        let agent = &agent_list[idx];
-        println!("  {} {}", style("✓").green(), agent.name);
-    }
-
-    Ok(StepResult::Continue)
 }
 
 /// Step 6: Summary and finalization

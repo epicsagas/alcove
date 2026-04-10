@@ -614,7 +614,8 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
         for (proj, rel, full) in &files_to_index {
             // Update progress message with ETA only after some progress
             let eta_str = if pb.position() > 0 {
-                format!("남은 시간: {eta}", eta = "{eta}")
+                let secs = pb.eta().as_secs();
+                format!("남은 시간: {}초", secs)
             } else {
                 "계산 중...".to_string()
             };
@@ -732,7 +733,8 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                                 }
 
                                 let eta_str = if vpb.position() > 0 {
-                                    format!("남은 시간: {eta}", eta = "{eta}")
+                                    let secs = vpb.eta().as_secs();
+                                    format!("남은 시간: {}초", secs)
                                 } else {
                                     "계산 중...".to_string()
                                 };
@@ -882,7 +884,7 @@ pub fn search_indexed(
         }));
     }
 
-    let (_schema, project_field, file_field, _chunk_id_field, body_field, line_start_field) =
+    let (_schema, project_field, file_field, chunk_id_field, body_field, line_start_field) =
         build_schema();
 
     let index = Index::open_in_dir(&dir).context("Failed to open search index")?;
@@ -951,9 +953,15 @@ pub fn search_indexed(
             .and_then(|v| schema::Value::as_u64(&v))
             .unwrap_or(0);
 
+        let chunk_id = doc
+            .get_first(chunk_id_field)
+            .and_then(|v| schema::Value::as_u64(&v))
+            .unwrap_or(0);
+
         results.push(json!({
             "project": project,
             "file": file,
+            "chunk_id": chunk_id,
             "line_start": line_start,
             "snippet": body,
             "score": (score * 1000.0).round() / 1000.0,
@@ -1008,7 +1016,7 @@ pub fn search_hybrid(
                     Some((
                         m["project"].as_str()?.to_string(),
                         m["file"].as_str()?.to_string(),
-                        m["line_start"].as_u64()?,
+                        m["chunk_id"].as_u64()?,
                         m["score"].as_f64()? as f32,
                     ))
                 })
@@ -1069,14 +1077,15 @@ pub fn search_hybrid(
     let file_field = schema.get_field("file")?;
     let body_field = schema.get_field("body")?;
     let line_start_field = schema.get_field("line_start")?;
-    let _chunk_id_field = schema.get_field("chunk_id")?;
+    let chunk_id_field = schema.get_field("chunk_id")?;
 
     let mut results: Vec<JsonValue> = Vec::new();
 
-    for (project, file, _chunk_id, rrf_score) in fused.into_iter().take(limit) {
-        // Find the document in the index to get snippet
+    for (project, file, chunk_id, rrf_score) in fused.into_iter().take(limit) {
+        // Find the exact chunk in the index using (project, file, chunk_id)
         let file_term = tantivy::Term::from_field_text(file_field, &file);
         let project_term = tantivy::Term::from_field_text(project_field, &project);
+        let chunk_id_term = tantivy::Term::from_field_u64(chunk_id_field, chunk_id);
 
         let file_query = tantivy::query::TermQuery::new(
             file_term,
@@ -1086,10 +1095,15 @@ pub fn search_hybrid(
             project_term,
             tantivy::schema::IndexRecordOption::Basic,
         );
+        let chunk_id_query = tantivy::query::TermQuery::new(
+            chunk_id_term,
+            tantivy::schema::IndexRecordOption::Basic,
+        );
 
         let combined = tantivy::query::BooleanQuery::new(vec![
             (tantivy::query::Occur::Must, Box::new(file_query) as Box<dyn tantivy::query::Query>),
             (tantivy::query::Occur::Must, Box::new(project_query) as Box<dyn tantivy::query::Query>),
+            (tantivy::query::Occur::Must, Box::new(chunk_id_query) as Box<dyn tantivy::query::Query>),
         ]);
 
         let top_docs: Vec<(f32, _)> = searcher.search(&combined, &TopDocs::with_limit(1).order_by_score())?;
@@ -1485,6 +1499,20 @@ mod tests {
         let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
         assert_eq!(result["scope"], "global");
         assert_eq!(result["mode"], "ranked");
+    }
+
+    #[test]
+    fn search_indexed_returns_chunk_id() {
+        // chunk_id must be present in BM25 results so hybrid RRF can join on it
+        let tmp = setup_indexed_root();
+        build_index_unlocked(tmp.path()).unwrap();
+        let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        assert!(!matches.is_empty());
+        for m in matches {
+            assert!(m.get("chunk_id").is_some(), "each match must have a chunk_id field");
+            assert!(m["chunk_id"].is_number(), "chunk_id must be numeric");
+        }
     }
 
     #[test]

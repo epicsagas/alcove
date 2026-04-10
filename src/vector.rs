@@ -41,12 +41,25 @@ pub struct VectorResult {
 // Feature-gated implementation
 // ---------------------------------------------------------------------------
 
+/// Cached HNSW index to avoid rebuilding on every search.
+#[cfg(feature = "alcove-full")]
+struct HnswCache {
+    index: hnsw_rs::prelude::Hnsw<'static, f32, hnsw_rs::prelude::DistCosine>,
+    /// Maps HNSW d_id (= SQLite row `id` as usize) → (project, file, chunk_id)
+    id_map: std::collections::HashMap<usize, (String, String, u64)>,
+    /// Vector count at build time — used to detect staleness.
+    vector_count: i64,
+}
+
 #[cfg(feature = "alcove-full")]
 pub struct VectorStore {
     conn: Connection,
     dimension: usize,
     #[allow(dead_code)]
     model: String,
+    /// Cached HNSW index. `RefCell` is safe because `Connection` is `!Send`,
+    /// so `VectorStore` is already confined to a single thread.
+    hnsw_cache: std::cell::RefCell<Option<HnswCache>>,
 }
 
 #[cfg(feature = "alcove-full")]
@@ -57,7 +70,7 @@ impl VectorStore {
             std::fs::create_dir_all(parent)?;
         }
 
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
 
         // Create tables
         conn.execute_batch(
@@ -97,32 +110,37 @@ impl VectorStore {
             .ok()
             .and_then(|s| s.parse().ok());
 
-        // If model or dimension changed, clear existing vectors
-        if let Some(em) = existing_model {
-            if em != model {
-                conn.execute("DELETE FROM vectors", [])?;
+        // Atomically clear stale vectors and update metadata in one transaction.
+        // This prevents a crash between the DELETE and the metadata UPDATE from
+        // leaving the DB in an inconsistent state.
+        {
+            let tx = conn.transaction()?;
+            if let Some(em) = existing_model {
+                if em != model {
+                    tx.execute("DELETE FROM vectors", [])?;
+                }
             }
-        }
-        if let Some(ed) = existing_dim {
-            if ed != dimension {
-                conn.execute("DELETE FROM vectors", [])?;
+            if let Some(ed) = existing_dim {
+                if ed != dimension {
+                    tx.execute("DELETE FROM vectors", [])?;
+                }
             }
+            tx.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('model', ?1)",
+                params![model],
+            )?;
+            tx.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('dimension', ?1)",
+                params![dimension.to_string()],
+            )?;
+            tx.commit()?;
         }
-
-        // Update metadata
-        conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('model', ?1)",
-            params![model],
-        )?;
-        conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('dimension', ?1)",
-            params![dimension.to_string()],
-        )?;
 
         Ok(Self {
             conn,
             dimension,
             model: model.to_string(),
+            hnsw_cache: std::cell::RefCell::new(None),
         })
     }
 
@@ -145,6 +163,8 @@ impl VectorStore {
             }
         }
         tx.commit()?;
+        // Invalidate cache: new vectors may have been written.
+        *self.hnsw_cache.borrow_mut() = None;
         Ok(())
     }
 
@@ -167,6 +187,8 @@ impl VectorStore {
             params![project, file, chunk_id as i64, blob],
         )?;
 
+        // Invalidate cache.
+        *self.hnsw_cache.borrow_mut() = None;
         Ok(())
     }
 
@@ -187,6 +209,7 @@ impl VectorStore {
             "DELETE FROM vectors WHERE project = ?1 AND file = ?2",
             params![project, file],
         )?;
+        *self.hnsw_cache.borrow_mut() = None;
         Ok(count)
     }
 
@@ -197,6 +220,7 @@ impl VectorStore {
             "DELETE FROM vectors WHERE project = ?1",
             params![project],
         )?;
+        *self.hnsw_cache.borrow_mut() = None;
         Ok(count)
     }
 
@@ -215,27 +239,52 @@ impl VectorStore {
         }
 
         // Fall back to linear search for small datasets
-        self.search_linear(query, limit)
+        self.search_linear(query, limit, None)
     }
 
     /// Linear search (O(n)) - good for small datasets
-    fn search_linear(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT project, file, chunk_id, embedding FROM vectors"
-        )?;
-
-        let rows = stmt.query_map([], |row| {
-            let project: String = row.get(0)?;
-            let file: String = row.get(1)?;
-            let chunk_id: u64 = row.get::<_, i64>(2)? as u64;
-            let blob: Vec<u8> = row.get(3)?;
-            Ok((project, file, chunk_id, blob))
-        })?;
+    ///
+    /// When `project_filter` is `Some`, only rows belonging to that project are
+    /// fetched from SQLite (uses the `idx_vectors_project` index).
+    fn search_linear(
+        &self,
+        query: &[f32],
+        limit: usize,
+        project_filter: Option<&str>,
+    ) -> Result<Vec<VectorResult>> {
+        // Two separate prepare+query branches to keep rusqlite param types clean.
+        let rows: Vec<(String, String, u64, Vec<u8>)> = if let Some(project) = project_filter {
+            let mut stmt = self.conn.prepare(
+                "SELECT project, file, chunk_id, embedding \
+                 FROM vectors WHERE project = ?1",
+            )?;
+            stmt.query_map(params![project], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)? as u64,
+                    row.get::<_, Vec<u8>>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<_>>()?
+        } else {
+            let mut stmt = self.conn.prepare(
+                "SELECT project, file, chunk_id, embedding FROM vectors",
+            )?;
+            stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)? as u64,
+                    row.get::<_, Vec<u8>>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<_>>()?
+        };
 
         let mut results: Vec<VectorResult> = Vec::new();
 
-        for row_result in rows {
-            let (project, file, chunk_id, blob) = row_result?;
+        for (project, file, chunk_id, blob) in rows {
             let embedding = Self::decode_embedding(&blob);
 
             let score = cosine_similarity(query, &embedding);
@@ -256,66 +305,97 @@ impl VectorStore {
         Ok(results)
     }
 
-    /// HNSW search (O(log n)) - good for large datasets
+    /// HNSW search (O(log n)) - good for large datasets.
+    ///
+    /// The HNSW index is cached inside `hnsw_cache` and reused as long as the
+    /// vector count has not changed.  Any write operation (`batch_upsert`,
+    /// `upsert`, `delete_*`, `clear`) sets the cache to `None`, forcing a
+    /// rebuild on the next search.
     #[cfg(feature = "alcove-full")]
     fn search_hnsw(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
         use hnsw_rs::prelude::*;
+        use std::collections::HashMap;
 
-        // Load all vectors from SQLite
-        let mut stmt = self.conn.prepare(
-            "SELECT id, project, file, chunk_id, embedding FROM vectors"
+        // Current vector count — used to detect whether the cache is stale.
+        let current_count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM vectors",
+            [],
+            |row| row.get(0),
         )?;
 
-        let rows = stmt.query_map([], |row| {
-            let id: i64 = row.get(0)?;
-            let project: String = row.get(1)?;
-            let file: String = row.get(2)?;
-            let chunk_id: u64 = row.get::<_, i64>(3)? as u64;
-            let blob: Vec<u8> = row.get(4)?;
-            Ok((id, project, file, chunk_id, blob))
-        })?;
+        // Check whether the existing cache is still valid.
+        let cache_valid = self
+            .hnsw_cache
+            .borrow()
+            .as_ref()
+            .map_or(false, |c| c.vector_count == current_count);
 
-        let mut vectors: Vec<(i64, String, String, u64, Vec<f32>)> = Vec::new();
-        for row_result in rows {
-            let (id, project, file, chunk_id, blob) = row_result?;
-            let embedding = Self::decode_embedding(&blob);
-            vectors.push((id, project, file, chunk_id, embedding));
+        if !cache_valid {
+            // (Re-)build the HNSW index from SQLite.
+            let mut stmt = self.conn.prepare(
+                "SELECT id, project, file, chunk_id, embedding FROM vectors",
+            )?;
+
+            let rows = stmt.query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let project: String = row.get(1)?;
+                let file: String = row.get(2)?;
+                let chunk_id: u64 = row.get::<_, i64>(3)? as u64;
+                let blob: Vec<u8> = row.get(4)?;
+                Ok((id, project, file, chunk_id, blob))
+            })?;
+
+            let mut vectors: Vec<(i64, String, String, u64, Vec<f32>)> = Vec::new();
+            for row_result in rows {
+                let (id, project, file, chunk_id, blob) = row_result?;
+                let embedding = Self::decode_embedding(&blob);
+                vectors.push((id, project, file, chunk_id, embedding));
+            }
+
+            if vectors.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let ef_build = (limit * 2).max(50);
+            let hnsw = Hnsw::<f32, DistCosine>::new(
+                16,                    // max_nb_connection (M), must be <= 256
+                vectors.len().max(1),  // max_elements hint
+                16,                    // max_layer
+                ef_build,              // ef_construction
+                DistCosine {},
+            );
+
+            let mut id_map: HashMap<usize, (String, String, u64)> =
+                HashMap::with_capacity(vectors.len());
+
+            for (id, project, file, chunk_id, embedding) in &vectors {
+                let d_id = *id as usize;
+                hnsw.insert((embedding.as_slice(), d_id));
+                id_map.insert(d_id, (project.clone(), file.clone(), *chunk_id));
+            }
+
+            *self.hnsw_cache.borrow_mut() = Some(HnswCache {
+                index: hnsw,
+                id_map,
+                vector_count: current_count,
+            });
         }
 
-        if vectors.is_empty() {
-            return Ok(Vec::new());
-        }
+        // Use the (possibly just-built) cached index.
+        let cache_ref = self.hnsw_cache.borrow();
+        let cache = cache_ref.as_ref().unwrap();
 
-        // Build HNSW index
         let ef_search = (limit * 2).max(50);
-        let hnsw = Hnsw::<f32, DistCosine>::new(
-            vectors.len().max(1),  // max elements
-            self.dimension,
-            16,                     // M (connectivity)
-            ef_search,              // ef (search parameter)
-            DistCosine {},          // distance function
-        );
+        let neighbors = cache.index.search(query, limit, ef_search);
 
-        // Insert all vectors
-        for (id, _, _, _, embedding) in &vectors {
-            hnsw.insert((embedding.as_slice(), *id as usize));
-        }
-
-        // Search - hnsw_rs API: search(data, knbn, ef_arg)
-        let results = hnsw.search(query, limit, ef_search);
-
-        // Map back to VectorResult
         let mut vector_results: Vec<VectorResult> = Vec::new();
-        for neighbor in results {
-            if let Some((_id, project, file, chunk_id, _)) = vectors
-                .iter()
-                .find(|(vid, _, _, _, _)| *vid as usize == neighbor.d_id)
-            {
+        for neighbor in neighbors {
+            if let Some((project, file, chunk_id)) = cache.id_map.get(&neighbor.d_id) {
                 vector_results.push(VectorResult {
                     project: project.clone(),
                     file: file.clone(),
                     chunk_id: *chunk_id,
-                    score: 1.0 - neighbor.distance, // Convert distance to similarity
+                    score: 1.0 - neighbor.distance,
                 });
             }
         }
@@ -355,6 +435,7 @@ impl VectorStore {
     #[allow(dead_code)]
     pub fn clear(&self) -> Result<()> {
         self.conn.execute("DELETE FROM vectors", [])?;
+        *self.hnsw_cache.borrow_mut() = None;
         Ok(())
     }
 
@@ -471,6 +552,133 @@ mod tests {
         let b = vec![1.0, 0.0, 0.0];
         // cos(45°) ≈ 0.707
         assert!((cosine_similarity(&a, &b) - 0.7071).abs() < 0.01);
+    }
+
+    /// Fix 1: reopening with a different model must clear all vectors atomically.
+    #[cfg(feature = "alcove-full")]
+    #[test]
+    fn test_open_model_change_clears_vectors() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vec.db");
+
+        {
+            let mut store = VectorStore::open(&db_path, "model-a", 3).unwrap();
+            store
+                .batch_upsert(
+                    vec![("proj".into(), "f.md".into(), 0u64, vec![1.0, 0.0, 0.0])].into_iter(),
+                )
+                .unwrap();
+            assert!(!store.is_empty());
+        }
+
+        // Reopen with a different model — vectors must be gone
+        {
+            let store = VectorStore::open(&db_path, "model-b", 3).unwrap();
+            assert!(store.is_empty(), "vectors must be cleared when model changes");
+        }
+    }
+
+    /// Fix 2: search_linear with project_filter must only return matching project rows.
+    #[cfg(feature = "alcove-full")]
+    #[test]
+    fn test_search_linear_project_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vec2.db");
+
+        let mut store = VectorStore::open(&db_path, "test-model", 3).unwrap();
+        store
+            .batch_upsert(
+                vec![
+                    ("proj-a".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0]),
+                    ("proj-b".into(), "b.md".into(), 0u64, vec![1.0, 0.0, 0.0]),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        let results = store
+            .search_linear(&[1.0, 0.0, 0.0], 10, Some("proj-a"))
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].project, "proj-a");
+
+        let all = store.search_linear(&[1.0, 0.0, 0.0], 10, None).unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    /// Cache: second search reuses the HNSW index without rebuilding it.
+    #[cfg(feature = "alcove-full")]
+    #[test]
+    fn test_hnsw_cache_reused_on_second_search() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vec_cache.db");
+
+        // Use dimension 4 and insert enough vectors to force HNSW path (>= 5000).
+        let dim = 4usize;
+        let store = VectorStore::open(&db_path, "cache-model", dim).unwrap();
+
+        // Build 5000 simple unit vectors to cross the HNSW threshold.
+        let embeddings: Vec<(String, String, u64, Vec<f32>)> = (0u64..5000)
+            .map(|i| {
+                let mut v = vec![0.0f32; dim];
+                v[(i as usize) % dim] = 1.0;
+                ("proj".to_string(), format!("file_{}.md", i), i, v)
+            })
+            .collect();
+
+        // batch_upsert takes &mut self, so we need a mut binding.
+        // Re-open as mutable.
+        drop(store);
+        let mut store = VectorStore::open(&db_path, "cache-model", dim).unwrap();
+        store.batch_upsert(embeddings.into_iter()).unwrap();
+
+        // First search — cache is cold (None).
+        {
+            let cache_before = store.hnsw_cache.borrow();
+            assert!(cache_before.is_none(), "cache should be empty before first search");
+        }
+
+        let query = vec![1.0f32, 0.0, 0.0, 0.0];
+        let _r1 = store.search_hnsw(&query, 5).unwrap();
+
+        // After first search the cache must be populated.
+        let count_after_first = {
+            let cache = store.hnsw_cache.borrow();
+            let c = cache.as_ref().expect("cache should be populated after first search");
+            c.vector_count
+        };
+        assert_eq!(count_after_first, 5000);
+
+        // Second search — no vectors added, so cache must be reused (same count).
+        let _r2 = store.search_hnsw(&query, 5).unwrap();
+        let count_after_second = {
+            let cache = store.hnsw_cache.borrow();
+            let c = cache.as_ref().expect("cache must still exist after second search");
+            c.vector_count
+        };
+        assert_eq!(count_after_second, 5000);
+
+        // Insert one more vector — cache must be invalidated and rebuilt.
+        store
+            .batch_upsert(
+                vec![("proj".into(), "extra.md".into(), 9999u64, vec![0.0, 0.0, 0.0, 1.0])]
+                    .into_iter(),
+            )
+            .unwrap();
+
+        // Cache should be None after write.
+        {
+            let cache = store.hnsw_cache.borrow();
+            assert!(cache.is_none(), "cache must be invalidated after insert");
+        }
+
+        // Search rebuilds to 5001.
+        let _r3 = store.search_hnsw(&query, 5).unwrap();
+        let count_after_insert = {
+            let cache = store.hnsw_cache.borrow();
+            cache.as_ref().unwrap().vector_count
+        };
+        assert_eq!(count_after_insert, 5001);
     }
 
     #[test]

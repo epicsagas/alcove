@@ -163,6 +163,11 @@ fn default_embedding_auto_download() -> bool {
 }
 
 #[cfg(feature = "alcove-full")]
+fn default_embedding_enabled() -> bool {
+    true
+}
+
+#[cfg(feature = "alcove-full")]
 fn default_embedding_cache_dir() -> String {
     dirs::cache_dir()
         .map(|p| p.join("alcove").join("models").to_string_lossy().to_string())
@@ -182,7 +187,7 @@ pub struct EmbeddingConfig {
     #[serde(default = "default_embedding_cache_dir")]
     pub cache_dir: String,
     /// Enable embedding (false = BM25 only)
-    #[serde(default)]
+    #[serde(default = "default_embedding_enabled")]
     pub enabled: bool,
 }
 
