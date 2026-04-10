@@ -81,6 +81,7 @@ dependencies = [
  "pdf-extract",
  "quick-xml 0.37.5",
  "rand 0.8.5",
+ "rayon",
  "rusqlite",
  "rust-i18n",
  "serde",
