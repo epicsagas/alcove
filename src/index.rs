@@ -633,6 +633,26 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
             }
 
             if let Ok(content) = read_file_content(full) {
+                // Generate .ir.json sidecar for markdown files (only if stale or missing)
+                if full.extension().and_then(|e| e.to_str()) == Some("md") {
+                    let sidecar_path = full.with_extension("ir.json");
+                    let needs_regen = match (full.metadata(), sidecar_path.metadata()) {
+                        (Ok(md_meta), Ok(ir_meta)) => {
+                            md_meta.modified().ok() > ir_meta.modified().ok()
+                        }
+                        _ => true,
+                    };
+                    if needs_regen {
+                        let ir_doc = ai_ir::Transpiler::from_markdown(
+                            full.to_str().unwrap_or(""),
+                            &content,
+                        );
+                        if let Ok(json) = ir_doc.to_json() {
+                            let _ = std::fs::write(&sidecar_path, json);
+                        }
+                    }
+                }
+
                 for (chunk_idx, chunk) in chunk_content(&content).iter().enumerate() {
                     let mut doc = TantivyDocument::new();
                     doc.add_text(project_field, proj);

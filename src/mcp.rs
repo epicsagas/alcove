@@ -186,6 +186,20 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
             }),
         },
         ToolDescription {
+            name: "get_doc_ir".into(),
+            description: "Return the IR (intermediate representation) sidecar JSON for a documentation file. The sidecar is generated during indexing and contains structured entities, constraints, and dependencies extracted from the markdown.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to the project doc root (e.g. \"PRD.md\" or \"reports/weekly.md\")"
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
+        ToolDescription {
             name: "list_projects".into(),
             description: "List all projects that have documentation in alcove.".into(),
             input_schema: json!({
@@ -500,6 +514,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         ),
         "search_project_docs" => tools::tool_search(&project_root, call.arguments, repo_path),
         "get_doc_file" => tools::tool_get_file(&project_root, call.arguments),
+        "get_doc_ir" => tools::tool_get_doc_ir(&project_root, call.arguments),
         "audit_project" => tools::tool_audit(&project_root, &resolved.name, repo_path),
         "configure_project" => {
             let rp = repo_path

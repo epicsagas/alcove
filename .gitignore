@@ -209,3 +209,5 @@ $RECYCLE.BIN/
 ./alcove.toml
 # collet
 .collet/.secrets
+.agents/
+.harness/

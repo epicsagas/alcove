@@ -625,6 +625,74 @@ pub fn tool_get_file(project_root: &Path, args_value: Value) -> Result<Value> {
 }
 
 // ---------------------------------------------------------------------------
+// Tool: get_doc_ir
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct GetDocIrArgs {
+    path: String,
+}
+
+pub fn tool_get_doc_ir(project_root: &Path, args_value: Value) -> Result<Value> {
+    let args: GetDocIrArgs = serde_json::from_value(args_value)
+        .context("get_doc_ir requires { path }")?;
+
+    let safe_rel = Path::new(&args.path);
+    if safe_rel
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        anyhow::bail!("Path traversal is not allowed");
+    }
+
+    let md_path = project_root.join(safe_rel);
+    let sidecar_path = md_path.with_extension("ir.json");
+
+    // Serve cached sidecar only if it is fresh (md not modified since sidecar was written)
+    let sidecar_fresh = sidecar_path.exists() && {
+        match (md_path.metadata(), sidecar_path.metadata()) {
+            (Ok(md_meta), Ok(ir_meta)) => md_meta.modified().ok() <= ir_meta.modified().ok(),
+            _ => false,
+        }
+    };
+
+    if sidecar_fresh {
+        let content = std::fs::read_to_string(&sidecar_path)?;
+        Ok(json!({
+            "path": args.path,
+            "ir": serde_json::from_str::<serde_json::Value>(&content)
+                .unwrap_or(serde_json::Value::String(content)),
+        }))
+    } else {
+        // Sidecar missing or stale — transpile on-the-fly from source .md
+        let md_fallback = PathBuf::from(
+            sidecar_path
+                .to_str()
+                .unwrap_or("")
+                .replace(".ir.json", ".md"),
+        );
+        if md_fallback.exists() {
+            let md_content = std::fs::read_to_string(&md_fallback)
+                .context("Failed to read markdown file for on-the-fly IR generation")?;
+            let ir_doc = ai_ir::Transpiler::from_markdown(
+                md_fallback.to_str().unwrap_or(""),
+                &md_content,
+            );
+            let json = ir_doc.to_json().context("Failed to serialize on-the-fly IR")?;
+            return Ok(json!({
+                "path": sidecar_path.to_str().unwrap_or(""),
+                "ir": serde_json::from_str::<serde_json::Value>(&json)?,
+                "generated": "on-the-fly"
+            }));
+        }
+        anyhow::bail!(
+            "No IR sidecar found and no source .md file at: {}",
+            md_fallback.display()
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tool: list_projects
 // ---------------------------------------------------------------------------
 
