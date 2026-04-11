@@ -69,6 +69,8 @@ pub const PROJECT_REPO_FILES: &[&str] = &[
     "INSTALL.md",
     "API.md",
     "FAQ.md",
+    // Design system
+    "DESIGN.md",
 ];
 
 // ---------------------------------------------------------------------------
@@ -574,10 +576,17 @@ mod tests {
 
     #[test]
     fn classify_project_repo_files() {
-        let always_public = ["README.md", "CHANGELOG.md"];
+        let always_public = ["README.md", "CHANGELOG.md", "DESIGN.md"];
         for name in always_public {
             assert_eq!(classify_tier(name), "project-repo", "failed for {name}");
         }
+    }
+
+    #[test]
+    fn design_md_is_project_repo_tier() {
+        assert_eq!(classify_tier("DESIGN.md"), "project-repo");
+        // Case-insensitive
+        assert_eq!(classify_tier("design.md"), "project-repo");
     }
 
     #[test]
