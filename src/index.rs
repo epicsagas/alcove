@@ -146,15 +146,62 @@ fn register_ngram_tokenizer(index: &Index) -> Result<()> {
 // Chunking
 // ---------------------------------------------------------------------------
 
-const CHUNK_SIZE: usize = 1500; // chars per chunk
-const CHUNK_OVERLAP: usize = 300; // overlap between chunks
+const CHUNK_SIZE: usize = 1500; // chars per chunk (prose / markdown)
+const CHUNK_OVERLAP: usize = 300; // overlap between chunks (prose)
+
+/// Smaller limits for source-code files — keeps chunks inside function boundaries.
+const CODE_CHUNK_SIZE: usize = 800;
+const CODE_CHUNK_OVERLAP: usize = 150;
+
+/// File extensions that receive code-aware (smaller) chunking.
+fn is_code_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "rs" | "go"
+            | "py"
+            | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "java"
+            | "cpp"
+            | "cc"
+            | "c"
+            | "h"
+            | "hpp"
+            | "cs"
+            | "rb"
+            | "swift"
+            | "kt"
+            | "kts"
+            | "scala"
+            | "ex"
+            | "exs"
+            | "zig"
+            | "lua"
+            | "sh"
+            | "bash"
+            | "zsh"
+    )
+}
 
 struct Chunk {
     text: String,
     line_start: usize,
 }
 
-fn chunk_content(content: &str) -> Vec<Chunk> {
+/// Chunk `content` using sensible size limits for the given file extension.
+///
+/// Code files use smaller chunks (800 chars / 150 overlap) so function
+/// bodies are less likely to be split across chunk boundaries.
+/// All other files use the default prose limits (1 500 / 300).
+fn chunk_content(content: &str, ext: &str) -> Vec<Chunk> {
+    let (chunk_size, overlap_size) = if is_code_ext(ext) {
+        (CODE_CHUNK_SIZE, CODE_CHUNK_OVERLAP)
+    } else {
+        (CHUNK_SIZE, CHUNK_OVERLAP)
+    };
+
     let lines: Vec<&str> = content.lines().collect();
     if lines.is_empty() {
         return vec![];
@@ -167,18 +214,17 @@ fn chunk_content(content: &str) -> Vec<Chunk> {
 
     for (i, line) in lines.iter().enumerate() {
         let line_len = line.chars().count().saturating_add(1);
-        if current_chars + line_len > CHUNK_SIZE && !chunk_lines.is_empty() {
+        if current_chars + line_len > chunk_size && !chunk_lines.is_empty() {
             chunks.push(Chunk {
                 text: chunk_lines.join("\n"),
                 line_start: chunk_start_line + 1,
             });
 
-            let overlap_chars = CHUNK_OVERLAP;
             let mut kept: usize = 0;
             let mut keep_from = chunk_lines.len();
             for (j, cl) in chunk_lines.iter().enumerate().rev() {
                 kept = kept.saturating_add(cl.chars().count().saturating_add(1));
-                if kept >= overlap_chars {
+                if kept >= overlap_size {
                     keep_from = j;
                     break;
                 }
@@ -230,7 +276,11 @@ impl IndexMeta {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, json)?;
+        // Atomic write: write to a temp file then rename so a mid-write crash
+        // never corrupts the existing meta file.
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, &json)?;
+        std::fs::rename(&tmp, &path)?;
         Ok(())
     }
 }
@@ -680,7 +730,8 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                     }
                 }
 
-                for (chunk_idx, chunk) in chunk_content(&content).iter().enumerate() {
+                let file_ext = full.extension().and_then(|e| e.to_str()).unwrap_or("");
+                for (chunk_idx, chunk) in chunk_content(&content, file_ext).iter().enumerate() {
                     let mut doc = TantivyDocument::new();
                     doc.add_text(project_field, proj);
                     doc.add_text(file_field, rel);
@@ -762,26 +813,36 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                             // Parallel file reads caused RSS spikes (large PDFs × N threads).
                             // Bottleneck is ONNX inference, not I/O — sequential reads keep
                             // memory bounded to one file's chunks at a time.
-                            const EMBED_BATCH: usize = 64;
+                            //
+                            // Batch size is tuned to model size:
+                            //   small models (< 100 MB)  → 128  (VRAM/RAM headroom)
+                            //   medium models (≤ 800 MB) → 64   (default)
+                            //   large models  (> 800 MB) → 32   (OOM guard)
+                            let embed_batch: usize = match model.size_mb() {
+                                s if s < 100 => 128,
+                                s if s <= 800 => 64,
+                                _ => 32,
+                            };
                             let mut pending: Vec<(String, String, u64, String)> = Vec::new();
 
                             for (proj, rel, full) in &to_embed {
                                 vpb.set_message(proj.clone());
 
                                 if let Ok(content) = read_file_content(full) {
-                                    for (i, chunk) in chunk_content(&content).into_iter().enumerate() {
+                                    let file_ext = full.extension().and_then(|e| e.to_str()).unwrap_or("");
+                                    for (i, chunk) in chunk_content(&content, file_ext).into_iter().enumerate() {
                                         pending.push((proj.clone(), rel.clone(), i as u64, chunk.text));
 
-                                        if pending.len() >= EMBED_BATCH {
+                                        if pending.len() >= embed_batch {
                                             let texts: Vec<&str> = pending.iter().map(|(_, _, _, t)| t.as_str()).collect();
                                             match service.embed(&texts) {
                                                 Ok(embeddings) => {
                                                     let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
                                                     if let Err(e) = store.batch_upsert(it) {
                                                         eprintln!("[alcove] batch upsert failed: {}", e);
-                                                        vector_errors += EMBED_BATCH as u64;
+                                                        vector_errors += embed_batch as u64;
                                                     } else {
-                                                        vectors_indexed += EMBED_BATCH as u64;
+                                                        vectors_indexed += embed_batch as u64;
                                                     }
                                                 }
                                                 Err(e) => {
@@ -1093,80 +1154,133 @@ pub fn search_hybrid(
         Err(_) => Vec::new(),
     };
 
-    // 7. Combine with RRF
-    let fused = reciprocal_rank_fusion(&bm25_results, &vector_results, 60);
+    // 7. Combine with RRF.
+    // k scales with limit: smaller result sets benefit from a lower k which
+    // spreads scores more aggressively; larger sets use the classic k=60.
+    // Formula: k = max(10, round(60 * sqrt(limit / 50)))
+    let rrf_k = ((60.0 * ((limit as f32) / 50.0).sqrt()).round() as u32).max(10);
+    let fused = reciprocal_rank_fusion(&bm25_results, &vector_results, rrf_k);
 
-    // 8. Build final results with snippets from index
-    let index_path = index_dir(docs_root);
-    let index = Index::open_in_dir(&index_path)?;
-    let reader = index.reader()?;
-    let searcher = reader.searcher();
+    // 8. Build final results with snippets.
+    //
+    // BM25 results already carry `snippet` and `line_start`.  We cache them in
+    // a HashMap so vector-only hits (chunk_ids absent from BM25) can still fall
+    // back to a single Tantivy lookup — but the common case of BM25-overlap hits
+    // requires zero additional index queries.
+    //
+    // Key: (project, file, chunk_id)  →  (snippet, line_start)
+    type SnippetKey = (String, String, u64);
+    let mut snippet_cache: std::collections::HashMap<SnippetKey, (String, u64)> =
+        std::collections::HashMap::new();
 
-    let schema = index.schema();
-    let project_field = schema.get_field("project")?;
-    let file_field = schema.get_field("file")?;
-    let body_field = schema.get_field("body")?;
-    let line_start_field = schema.get_field("line_start")?;
-    let chunk_id_field = schema.get_field("chunk_id")?;
+    if let Some(arr) = bm25_json["matches"].as_array() {
+        for m in arr {
+            if let (Some(proj), Some(file), Some(cid), Some(snip), Some(ls)) = (
+                m["project"].as_str(),
+                m["file"].as_str(),
+                m["chunk_id"].as_u64(),
+                m["snippet"].as_str(),
+                m["line_start"].as_u64(),
+            ) {
+                snippet_cache.insert(
+                    (proj.to_string(), file.to_string(), cid),
+                    (snip.to_string(), ls),
+                );
+            }
+        }
+    }
+
+    // Open Tantivy only if there are vector-only hits that need a fallback lookup.
+    // Lazily initialised below on first cache miss.
+    let mut tantivy_searcher: Option<(
+        tantivy::Searcher,
+        Field,
+        Field,
+        Field,
+        Field,
+        Field,
+    )> = None;
 
     let mut results: Vec<JsonValue> = Vec::new();
 
     for (project, file, chunk_id, rrf_score) in fused.into_iter().take(limit) {
-        // Find the exact chunk in the index using (project, file, chunk_id)
-        let file_term = tantivy::Term::from_field_text(file_field, &file);
-        let project_term = tantivy::Term::from_field_text(project_field, &project);
-        let chunk_id_term = tantivy::Term::from_field_u64(chunk_id_field, chunk_id);
+        let (snippet, line_start) =
+            if let Some(cached) = snippet_cache.get(&(project.clone(), file.clone(), chunk_id)) {
+                cached.clone()
+            } else {
+                // Cache miss: vector-only hit — look up via Tantivy (rare path).
+                let (ref searcher, project_field, file_field, body_field, line_start_field, chunk_id_field) =
+                    *tantivy_searcher.get_or_insert_with(|| {
+                        let index_path = index_dir(docs_root);
+                        let index = Index::open_in_dir(&index_path).expect("open index");
+                        let reader = index.reader().expect("index reader");
+                        let searcher = reader.searcher();
+                        let schema = index.schema();
+                        let pf = schema.get_field("project").expect("project field");
+                        let ff = schema.get_field("file").expect("file field");
+                        let bf = schema.get_field("body").expect("body field");
+                        let lf = schema.get_field("line_start").expect("line_start field");
+                        let cf = schema.get_field("chunk_id").expect("chunk_id field");
+                        (searcher, pf, ff, bf, lf, cf)
+                    });
 
-        let file_query = tantivy::query::TermQuery::new(
-            file_term,
-            tantivy::schema::IndexRecordOption::Basic,
-        );
-        let project_query = tantivy::query::TermQuery::new(
-            project_term,
-            tantivy::schema::IndexRecordOption::Basic,
-        );
-        let chunk_id_query = tantivy::query::TermQuery::new(
-            chunk_id_term,
-            tantivy::schema::IndexRecordOption::Basic,
-        );
+                let combined = tantivy::query::BooleanQuery::new(vec![
+                    (
+                        tantivy::query::Occur::Must,
+                        Box::new(tantivy::query::TermQuery::new(
+                            tantivy::Term::from_field_text(project_field, &project),
+                            tantivy::schema::IndexRecordOption::Basic,
+                        )) as Box<dyn tantivy::query::Query>,
+                    ),
+                    (
+                        tantivy::query::Occur::Must,
+                        Box::new(tantivy::query::TermQuery::new(
+                            tantivy::Term::from_field_text(file_field, &file),
+                            tantivy::schema::IndexRecordOption::Basic,
+                        )),
+                    ),
+                    (
+                        tantivy::query::Occur::Must,
+                        Box::new(tantivy::query::TermQuery::new(
+                            tantivy::Term::from_field_u64(chunk_id_field, chunk_id),
+                            tantivy::schema::IndexRecordOption::Basic,
+                        )),
+                    ),
+                ]);
 
-        let combined = tantivy::query::BooleanQuery::new(vec![
-            (tantivy::query::Occur::Must, Box::new(file_query) as Box<dyn tantivy::query::Query>),
-            (tantivy::query::Occur::Must, Box::new(project_query) as Box<dyn tantivy::query::Query>),
-            (tantivy::query::Occur::Must, Box::new(chunk_id_query) as Box<dyn tantivy::query::Query>),
-        ]);
+                if let Ok(top_docs) =
+                    searcher.search(&combined, &TopDocs::with_limit(1).order_by_score())
+                {
+                    if let Some((_s, addr)) = top_docs.first() {
+                        if let Ok(doc) = searcher.doc::<TantivyDocument>(*addr) {
+                            let body = doc
+                                .get_first(body_field)
+                                .and_then(|v| schema::Value::as_str(&v))
+                                .unwrap_or("")
+                                .to_string();
+                            let ls = doc
+                                .get_first(line_start_field)
+                                .and_then(|v| schema::Value::as_u64(&v))
+                                .unwrap_or(0);
+                            (body, ls)
+                        } else {
+                            (String::new(), 0)
+                        }
+                    } else {
+                        (String::new(), 0)
+                    }
+                } else {
+                    (String::new(), 0)
+                }
+            };
 
-        let top_docs: Vec<(f32, _)> = searcher.search(&combined, &TopDocs::with_limit(1).order_by_score())?;
-
-        if let Some((_score, doc_address)) = top_docs.first() {
-            let doc: TantivyDocument = searcher.doc(*doc_address)?;
-            let body = doc
-                .get_first(body_field)
-                .and_then(|v| schema::Value::as_str(&v))
-                .unwrap_or("")
-                .to_string();
-            let line_start = doc
-                .get_first(line_start_field)
-                .and_then(|v| schema::Value::as_u64(&v))
-                .unwrap_or(0);
-
-            results.push(json!({
-                "project": project,
-                "file": file,
-                "line_start": line_start,
-                "snippet": body,
-                "score": (rrf_score * 1000.0).round() / 1000.0,
-            }));
-        } else {
-            // Fallback: add without snippet
-            results.push(json!({
-                "project": project,
-                "file": file,
-                "line_start": 0,
-                "snippet": "",
-                "score": (rrf_score * 1000.0).round() / 1000.0,
-            }));
-        }
+        results.push(json!({
+            "project": project,
+            "file": file,
+            "line_start": line_start,
+            "snippet": snippet,
+            "score": (rrf_score * 1000.0).round() / 1000.0,
+        }));
     }
 
     Ok(json!({
@@ -1316,7 +1430,7 @@ mod tests {
     #[test]
     fn chunk_content_basic() {
         let content = "line1\nline2\nline3";
-        let chunks = chunk_content(content);
+        let chunks = chunk_content(content, "md");
         assert!(!chunks.is_empty());
         assert_eq!(chunks[0].line_start, 1);
     }
@@ -1333,7 +1447,7 @@ mod tests {
             })
             .collect();
         let content = lines.join("\n");
-        let chunks = chunk_content(&content);
+        let chunks = chunk_content(&content, "md");
         assert!(
             chunks.len() > 1,
             "long content should produce multiple chunks"
@@ -1344,7 +1458,7 @@ mod tests {
 
     #[test]
     fn chunk_content_empty() {
-        let chunks = chunk_content("");
+        let chunks = chunk_content("", "md");
         assert!(chunks.is_empty());
     }
 
@@ -1575,7 +1689,7 @@ mod tests {
 
     #[test]
     fn chunk_content_single_line() {
-        let chunks = chunk_content("Single line document.");
+        let chunks = chunk_content("Single line document.", "md");
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].line_start, 1);
         assert_eq!(chunks[0].text, "Single line document.");

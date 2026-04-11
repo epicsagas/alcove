@@ -302,11 +302,12 @@ impl EmbeddingService {
         }
     }
 
-    /// Ensure model is ready (start download if needed).
+    /// Ensure model is ready (start background download if needed).
     ///
-    /// If a download is already in progress, this method blocks and polls
-    /// until the state transitions to `Ready` or `Failed`, or until the
-    /// 5-minute timeout elapses.
+    /// Spawns a background thread for the download and then polls until the
+    /// state transitions to `Ready` or `Failed`, or until the 5-minute timeout
+    /// elapses.  The spawned thread means the Tokio executor is not starved
+    /// during the download — each 100 ms sleep yields back to the runtime.
     pub fn ensure_model(&self) -> Result<(), String> {
         let state = self
             .state
@@ -315,114 +316,104 @@ impl EmbeddingService {
             .clone();
         match state {
             ModelState::Ready => return Ok(()),
+            ModelState::Failed(e) => return Err(e),
+            ModelState::NotDownloaded | ModelState::Cached => {
+                // Kick off background download then fall through to the poll loop.
+                self.start_download();
+            }
             ModelState::Downloading { .. } => {
-                // Another thread is already downloading; poll until done.
-                let deadline = Instant::now() + Duration::from_secs(300);
-                loop {
-                    // When running inside a Tokio multi-thread runtime (alcove-server),
-                    // use block_in_place so the executor can schedule other tasks on this
-                    // thread while we sleep, instead of parking the OS thread blindly.
-                    #[cfg(feature = "alcove-server")]
-                    tokio::task::block_in_place(|| {
-                        std::thread::sleep(Duration::from_millis(100));
-                    });
-                    #[cfg(not(feature = "alcove-server"))]
-                    std::thread::sleep(Duration::from_millis(100));
+                // Another thread is already downloading; fall through to poll.
+            }
+        }
 
-                    let current = self
-                        .state
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .clone();
-                    match current {
-                        ModelState::Ready => return Ok(()),
-                        ModelState::Failed(e) => return Err(e),
-                        ModelState::Downloading { .. } => {
-                            if Instant::now() >= deadline {
-                                return Err(
-                                    "Timed out waiting for model download to complete".to_string()
-                                );
-                            }
-                        }
-                        // Any other unexpected transition — treat as an error.
-                        other => {
-                            return Err(format!(
-                                "Unexpected model state while waiting for download: {}",
-                                other
-                            ))
-                        }
+        // Poll until Ready or Failed.
+        let deadline = Instant::now() + Duration::from_secs(300);
+        loop {
+            // When running inside a Tokio multi-thread runtime (alcove-server),
+            // use block_in_place so the executor can schedule other tasks on this
+            // thread while we sleep, instead of parking the OS thread blindly.
+            #[cfg(feature = "alcove-server")]
+            tokio::task::block_in_place(|| {
+                std::thread::sleep(Duration::from_millis(100));
+            });
+            #[cfg(not(feature = "alcove-server"))]
+            std::thread::sleep(Duration::from_millis(100));
+
+            let current = self
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            match current {
+                ModelState::Ready => return Ok(()),
+                ModelState::Failed(e) => return Err(e),
+                ModelState::Downloading { .. } => {
+                    if Instant::now() >= deadline {
+                        return Err(
+                            "Timed out waiting for model download to complete".to_string(),
+                        );
                     }
                 }
+                other => {
+                    return Err(format!(
+                        "Unexpected model state while waiting for download: {}",
+                        other
+                    ))
+                }
             }
-            ModelState::Failed(e) => return Err(e),
-            _ => {}
         }
-
-        self.start_download();
-        Ok(())
     }
 
-    /// Start background download if not already running
+    /// Spawn a background thread to download and load the ONNX model.
+    ///
+    /// Returns immediately after transitioning state to `Downloading`.
+    /// Callers that need to wait for completion should poll via `ensure_model`.
     fn start_download(&self) {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        if *state != ModelState::NotDownloaded && *state != ModelState::Cached {
-            return;
-        }
-
-        // For now, we'll do synchronous download in the calling thread
-        // A proper implementation would spawn a background thread
-        *state = ModelState::Downloading { progress_pct: 0 };
-        drop(state);
-
-        let result = self.download_and_load();
-
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        match result {
-            Ok(_) => {
-                *state = ModelState::Ready;
+        {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if *state != ModelState::NotDownloaded && *state != ModelState::Cached {
+                return;
             }
-            Err(e) => {
-                *state = ModelState::Failed(e.to_string());
+            *state = ModelState::Downloading { progress_pct: 0 };
+        }
+
+        // Clone the Arcs so they can be moved into the background thread.
+        let state_arc = Arc::clone(&self.state);
+        let session_arc = Arc::clone(&self.session);
+        let cache_dir = self.internal_config.cache_dir.clone();
+        let model = self.internal_config.model;
+
+        std::thread::spawn(move || {
+            macro_rules! set_state {
+                ($s:expr) => {
+                    *state_arc.lock().unwrap_or_else(|e| e.into_inner()) = $s;
+                };
             }
-        }
-    }
 
-    /// Download model and load ONNX session
-    fn download_and_load(&self) -> Result<()> {
-        // Ensure cache directory exists before fastembed tries to write into it.
-        std::fs::create_dir_all(&self.internal_config.cache_dir)?;
+            if let Err(e) = std::fs::create_dir_all(&cache_dir) {
+                set_state!(ModelState::Failed(e.to_string()));
+                return;
+            }
 
-        // Update progress
-        {
-            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            *state = ModelState::Downloading { progress_pct: 10 };
-        }
+            set_state!(ModelState::Downloading { progress_pct: 10 });
 
-        let options = TextInitOptions::new(self.internal_config.model.as_fastembed_model())
-            .with_cache_dir(self.internal_config.cache_dir.clone())
-            .with_show_download_progress(true);
+            let options = TextInitOptions::new(model.as_fastembed_model())
+                .with_cache_dir(cache_dir)
+                .with_show_download_progress(true);
 
-        // Update progress
-        {
-            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            *state = ModelState::Downloading { progress_pct: 50 };
-        }
+            set_state!(ModelState::Downloading { progress_pct: 50 });
 
-        let embedding = TextEmbedding::try_new(options)?;
-
-        // Update progress
-        {
-            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            *state = ModelState::Downloading { progress_pct: 90 };
-        }
-
-        // Store session
-        {
-            let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
-            *session = Some(embedding);
-        }
-
-        Ok(())
+            match TextEmbedding::try_new(options) {
+                Ok(embedding) => {
+                    set_state!(ModelState::Downloading { progress_pct: 90 });
+                    *session_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(embedding);
+                    set_state!(ModelState::Ready);
+                }
+                Err(e) => {
+                    set_state!(ModelState::Failed(e.to_string()));
+                }
+            }
+        });
     }
 
     /// Generate embeddings for texts
