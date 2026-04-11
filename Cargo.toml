@@ -25,7 +25,6 @@ pkg-fmt = "tgz"
 pkg-fmt = "zip"
 
 [dependencies]
-ai-ir = { path = "../ai-ir" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 dialoguer = { version = "0.12", features = ["fuzzy-select"] }
