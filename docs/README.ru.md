@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://glama.ai/mcp/servers/epicsagas/alcove"><img src="https://glama.ai/mcp/servers/epicsagas/alcove/badges/score.svg" height="20" alt="Glama MCP Score" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/v/alcove.svg" alt="crates.io" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/d/alcove.svg" alt="Downloads" /></a>
   <a href="../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
@@ -327,6 +328,12 @@ cargo install alcove
 alcove uninstall          # удалить навыки и конфигурацию
 cargo uninstall alcove    # удалить бинарный файл
 ```
+
+## Экосистема
+
+### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
+
+Alcove естественно интегрируется с **obsidian-forge** — генератором хранилищ Obsidian и демоном автоматизации. Постройте и укрепите граф знаний в Obsidian с помощью obsidian-forge, затем направьте `DOCS_ROOT` alcove на это хранилище — ваши ИИ-агенты получат ранжированный поиск по всей личной базе знаний без лишнего засорения контекста.
 
 ## Вклад в проект
 

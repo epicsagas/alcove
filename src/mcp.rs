@@ -113,10 +113,21 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
         ToolDescription {
             name: "get_project_docs_overview".into(),
             description: concat!(
-                "List all documentation files for the current project with sizes and classification. ",
-                "Scans both alcove (doc-repo) and project repository. ",
-                "Classifications: doc-repo-required (core private), doc-repo-supplementary (internal extras), ",
-                "project-repo (public-facing), reference (reports/), unrecognized."
+                "List all documentation files for the current project with file sizes and classification labels.\n",
+                "\n",
+                "Call this tool first when the user asks what docs exist, wants a summary of project documentation, ",
+                "or before deciding which files to read. It is read-only and has no side effects.\n",
+                "\n",
+                "Scans two locations: the alcove doc-repo (private/internal docs) and the project repository root + docs/ (public-facing docs).\n",
+                "\n",
+                "Classification labels:\n",
+                "- doc-repo-required: core internal docs required by policy (e.g. PRD, ARCHITECTURE)\n",
+                "- doc-repo-supplementary: optional internal extras\n",
+                "- project-repo: public-facing docs in the project repo (e.g. README, CHANGELOG)\n",
+                "- reference: reports and reference materials\n",
+                "- unrecognized: files not matching any known category\n",
+                "\n",
+                "Returns an empty list if no docs exist yet. Use init_project to create initial docs."
             ).into(),
             input_schema: json!({
                 "type": "object",
@@ -165,7 +176,17 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
         },
         ToolDescription {
             name: "get_doc_file".into(),
-            description: "Read a specific documentation file by its relative path. Supports offset/limit for large files.".into(),
+            description: concat!(
+                "Read the full content of a specific documentation file by its relative path.\n",
+                "\n",
+                "Use this tool when you know the exact file to read — typically after get_project_docs_overview ",
+                "or search_project_docs has identified the relevant file. It is read-only and has no side effects.\n",
+                "\n",
+                "For large files, use offset and limit to read in chunks and avoid exceeding context limits. ",
+                "offset is a character (not line) position. Omit both to read the entire file.\n",
+                "\n",
+                "Returns an error if the file does not exist or the path is outside the doc root."
+            ).into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -175,11 +196,11 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                     },
                     "offset": {
                         "type": "integer",
-                        "description": "Character offset to start reading from (default: 0)"
+                        "description": "Character offset to start reading from (default: 0). Use for paginating large files."
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Max characters to return (default: all)"
+                        "description": "Max characters to return (default: entire file). Use together with offset to read in chunks."
                     }
                 },
                 "required": ["relative_path"]
@@ -187,7 +208,21 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
         },
         ToolDescription {
             name: "list_projects".into(),
-            description: "List all projects that have documentation in alcove.".into(),
+            description: concat!(
+                "List all projects that have documentation stored in the alcove doc-repo.\n",
+                "\n",
+                "Use this tool when:\n",
+                "- The user asks which projects are available or tracked in alcove\n",
+                "- You need to verify a project exists before calling get_project_docs_overview or search_project_docs\n",
+                "- The user wants to switch project context or compare projects\n",
+                "- Before using scope=\"global\" in search_project_docs to understand what will be searched\n",
+                "\n",
+                "It is read-only and has no side effects. Does not require any parameters.\n",
+                "\n",
+                "Returns an array of project names derived from subdirectory names in the alcove doc-repo. ",
+                "Returns an empty array if no projects have been initialized yet — use init_project to create one. ",
+                "Project names are case-sensitive and match the directory names exactly."
+            ).into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {},
@@ -197,11 +232,20 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
         ToolDescription {
             name: "audit_project".into(),
             description: concat!(
-                "Audit project docs across both alcove (doc-repo) and the project repository. ",
-                "Scans: 1) alcove for private/internal docs, 2) project repo root + docs/ for public docs. ",
-                "Suggests: generating missing public docs from internal content, incorporating project repo materials into alcove. ",
-                "NEVER suggests exposing raw internal docs to the project repo. ",
-                "IMPORTANT: Present findings to the user and ask which actions to proceed with. Never auto-execute."
+                "Audit documentation health across both the alcove doc-repo (private/internal) and the project repository (public-facing).\n",
+                "\n",
+                "Use this tool when the user wants to know what docs are missing, outdated, or misplaced — ",
+                "for example: 'audit my docs', 'what docs am I missing?', 'check my documentation health'.\n",
+                "\n",
+                "Scans two locations:\n",
+                "1. alcove doc-repo: checks for missing required internal docs\n",
+                "2. project repo root + docs/: checks for missing public-facing docs\n",
+                "\n",
+                "Suggests actions such as generating missing public docs from internal content, or incorporating ",
+                "project repo materials into alcove. NEVER suggests exposing raw internal docs to the project repo.\n",
+                "\n",
+                "IMPORTANT: This tool only reports findings. Always present the results to the user and ask ",
+                "which actions to proceed with before calling init_project or configure_project."
             ).into(),
             input_schema: json!({
                 "type": "object",
@@ -285,10 +329,20 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
         ToolDescription {
             name: "validate_docs".into(),
             description: concat!(
-                "Validate project docs against team policy (policy.toml). ",
-                "Checks: required files exist, template placeholders filled, ",
-                "required sections present, minimum list items. ",
-                "Returns pass/warn/fail status per file with details."
+                "Validate the current project's documentation against the team policy defined in policy.toml.\n",
+                "\n",
+                "Use this tool when the user asks to check doc quality, run a policy check, or verify docs before a release. ",
+                "It is read-only and does not modify any files.\n",
+                "\n",
+                "Checks performed:\n",
+                "- Required files exist\n",
+                "- Template placeholders (e.g. TODO, FIXME) have been filled in\n",
+                "- Required section headings are present\n",
+                "- Lists meet minimum item counts defined in policy\n",
+                "\n",
+                "Returns a pass/warn/fail status per file with specific details about each violation. ",
+                "If no policy.toml exists, returns a message indicating policy is not configured. ",
+                "Use configure_project or init_project to set up policy."
             ).into(),
             input_schema: json!({
                 "type": "object",
@@ -313,9 +367,17 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
         ToolDescription {
             name: "check_doc_changes".into(),
             description: concat!(
-                "Check which documentation files have been added, modified, or deleted ",
-                "since the last index build. Compares current file timestamps against ",
-                "the index metadata. Optionally triggers an index rebuild if changes are detected."
+                "Check which documentation files have been added, modified, or deleted since the last index build.\n",
+                "\n",
+                "Use this tool before search_project_docs when you want to ensure the index is up to date, ",
+                "or when the user asks whether docs have changed recently. It is safe to call at any time — ",
+                "without auto_rebuild it is read-only and has no side effects.\n",
+                "\n",
+                "Compares current file timestamps against the stored index metadata. ",
+                "Returns a list of changed files grouped by status: added, modified, deleted.\n",
+                "\n",
+                "Set auto_rebuild=true to automatically trigger rebuild_index if any changes are detected, ",
+                "avoiding a separate tool call. If no index exists yet, reports all files as new."
             ).into(),
             input_schema: json!({
                 "type": "object",

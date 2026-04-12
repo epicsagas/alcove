@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://glama.ai/mcp/servers/epicsagas/alcove"><img src="https://glama.ai/mcp/servers/epicsagas/alcove/badges/score.svg" height="20" alt="Glama MCP Score" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/v/alcove.svg" alt="crates.io" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/d/alcove.svg" alt="Downloads" /></a>
   <a href="../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
@@ -341,6 +342,12 @@ cargo install alcove
 alcove uninstall          # 스킬 & 설정 제거
 cargo uninstall alcove    # 바이너리 제거
 ```
+
+## 에코시스템
+
+### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
+
+Alcove는 **obsidian-forge**와 자연스럽게 연동됩니다. obsidian-forge는 Obsidian 볼트 생성기이자 자동화 데몬입니다. obsidian-forge로 지식 그래프를 구축한 뒤, alcove의 `DOCS_ROOT`를 해당 볼트 경로로 설정하면 AI 에이전트가 컨텍스트 낭비 없이 개인 지식 베이스를 랭킹 검색으로 활용할 수 있습니다.
 
 ## 기여
 

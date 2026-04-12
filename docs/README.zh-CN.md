@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://glama.ai/mcp/servers/epicsagas/alcove"><img src="https://glama.ai/mcp/servers/epicsagas/alcove/badges/score.svg" height="20" alt="Glama MCP Score" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/v/alcove.svg" alt="crates.io" /></a>
   <a href="https://crates.io/crates/alcove"><img src="https://img.shields.io/crates/d/alcove.svg" alt="Downloads" /></a>
   <a href="../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
@@ -327,6 +328,12 @@ cargo install alcove
 alcove uninstall          # 移除技能和配置
 cargo uninstall alcove    # 移除二进制文件
 ```
+
+## 生态系统
+
+### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
+
+Alcove 与 **obsidian-forge** 天然集成。obsidian-forge 是一个 Obsidian 笔记库生成器和自动化守护程序。使用 obsidian-forge 构建并强化你的知识图谱后，将 alcove 的 `DOCS_ROOT` 指向该笔记库，AI 智能体即可对整个个人知识库进行有排名的精准搜索，而不会产生上下文膨胀。
 
 ## 贡献
 
