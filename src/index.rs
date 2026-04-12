@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, Duration};
 use std::os::unix::io::AsRawFd;
 
@@ -11,12 +13,75 @@ use tantivy::query::QueryParser;
 use tantivy::schema::{self, *};
 use tantivy::{DocAddress, Score};
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
-use tantivy::{Index, ReloadPolicy, TantivyDocument};
+use tantivy::{Index, IndexReader, ReloadPolicy, TantivyDocument};
 use walkdir::WalkDir;
 
 use crate::config::{effective_config, load_config};
 
 const NGRAM_TOKENIZER: &str = "cjk_ngram";
+
+// ---------------------------------------------------------------------------
+// Process-level IndexReader cache
+// ---------------------------------------------------------------------------
+//
+// Opening a Tantivy index on every search call is expensive: it re-mmaps all
+// segment files and re-initialises the reader.  We keep one Arc<IndexReader>
+// per docs_root path alive for the lifetime of the process (important for the
+// long-lived MCP/HTTP server; harmless for CLI single-shot calls).
+//
+// On `rebuild_index` the entry is evicted so the next search picks up the
+// freshly written segments.
+
+static INDEX_READER_CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<IndexReader>>>> = OnceLock::new();
+
+fn reader_cache() -> &'static Mutex<HashMap<PathBuf, Arc<IndexReader>>> {
+    INDEX_READER_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Maximum number of IndexReaders held in the process-level cache.
+/// Each reader mmaps segment files; an unbounded cache would exhaust memory
+/// in test suites that create many temporary indices.
+const MAX_CACHED_READERS: usize = 4;
+
+/// Return a cached reader for `index_dir`, creating one if absent.
+/// Calls `reload()` so that segments written after the reader was first
+/// created are visible (no-op when nothing changed).
+///
+/// When the cache is full the oldest entry is evicted before inserting the new
+/// one, bounding peak memory usage to `MAX_CACHED_READERS` live readers.
+fn get_cached_reader(index_dir: &Path, index: &Index) -> Result<Arc<IndexReader>> {
+    let mut cache = reader_cache().lock().unwrap();
+    if let Some(reader) = cache.get(index_dir) {
+        // Pick up any new segments committed since the reader was created.
+        let _ = reader.reload();
+        return Ok(Arc::clone(reader));
+    }
+    // Evict an arbitrary entry when at capacity to bound memory usage.
+    if cache.len() >= MAX_CACHED_READERS {
+        if let Some(key) = cache.keys().next().cloned() {
+            cache.remove(&key);
+        }
+    }
+    let reader = Arc::new(
+        index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()
+            .context("Failed to create index reader")?,
+    );
+    cache.insert(index_dir.to_path_buf(), Arc::clone(&reader));
+    Ok(reader)
+}
+
+/// Evict the cached reader for `docs_root`.
+/// Must be called whenever the index is fully rebuilt so the next search
+/// does not read stale segment data.
+fn invalidate_reader_cache(docs_root: &Path) {
+    let dir = index_dir(docs_root);
+    if let Ok(mut cache) = reader_cache().lock() {
+        cache.remove(&dir);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Index lock — prevents concurrent build/search races per docs_root
@@ -584,6 +649,9 @@ pub fn build_index(docs_root: &Path) -> Result<JsonValue> {
 }
 
 pub fn rebuild_index(docs_root: &Path) -> Result<JsonValue> {
+    // Evict the cached reader before wiping the index directory so that any
+    // search initiated after this call opens a fresh reader on the new data.
+    invalidate_reader_cache(docs_root);
     build_index_with_mode(docs_root, true)
 }
 
@@ -692,7 +760,15 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
             Index::open_in_dir(&dir)?
         };
         register_ngram_tokenizer(&index)?;
+        // In test builds use a single writer thread with the minimum heap
+        // (15 MB) so that many parallel test indices don't exhaust RAM.
+        // Tantivy spawns one thread per logical CPU by default; with 147 tests
+        // running concurrently that multiplies to gigabytes of writer buffers.
+        // Production uses all CPUs with the configured buffer size.
+        #[cfg(not(test))]
         let mut writer = index.writer(load_config().index_buffer_bytes())?;
+        #[cfg(test)]
+        let mut writer = index.writer_with_num_threads(1, 15_000_000)?;
 
         for (proj, rel, full) in &files_to_index {
             let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("md").to_lowercase();
@@ -953,7 +1029,23 @@ pub fn search_indexed(
 
     let index = Index::open_in_dir(&dir).context("Failed to open search index")?;
     register_ngram_tokenizer(&index)?;
+    search_with_index(docs_root, query, &sanitized, limit, project_filter, &index)
+}
 
+/// Inner BM25 search — accepts a pre-opened `Index` so callers (e.g. hybrid
+/// search) can reuse a single open/reader across multiple search phases.
+///
+/// `sanitized` must already be the output of `sanitize_query(query)` and
+/// must be non-empty.
+fn search_with_index(
+    docs_root: &Path,
+    query: &str,
+    sanitized: &str,
+    limit: usize,
+    project_filter: Option<&str>,
+    index: &Index,
+) -> Result<JsonValue> {
+    let dir = index_dir(docs_root);
     let schema = index.schema();
     let project_field = schema.get_field("project").context("missing 'project' field")?;
     let file_field = schema.get_field("file").context("missing 'file' field")?;
@@ -961,27 +1053,26 @@ pub fn search_indexed(
     let body_field = schema.get_field("body").context("missing 'body' field")?;
     let line_start_field = schema.get_field("line_start").context("missing 'line_start' field")?;
 
-    let reader = index
-        .reader_builder()
-        .reload_policy(ReloadPolicy::Manual)
-        .try_into()
-        .context("Failed to create index reader")?;
-
+    // Use the process-level cached reader (creates one on first call per path).
+    let reader = get_cached_reader(&dir, index)?;
     let searcher = reader.searcher();
 
-    let query_parser = QueryParser::for_index(&index, vec![body_field]);
+    let query_parser = QueryParser::for_index(index, vec![body_field]);
     let parsed_query = query_parser
-        .parse_query(&sanitized)
+        .parse_query(sanitized)
         .context("Failed to parse search query")?;
 
-    // Fetch more candidates for deduplication
+    // Fetch 3× candidates for per-file deduplication.
+    // Using 3× instead of 5× reduces wasted doc fetches while still giving
+    // enough headroom to deduplicate down to `limit` unique files.
     let top_docs: Vec<(Score, DocAddress)> = searcher
-        .search(&parsed_query, &TopDocs::with_limit(limit * 5).order_by_score())
+        .search(&parsed_query, &TopDocs::with_limit(limit * 3).order_by_score())
         .context("Search failed")?;
 
-    // Deduplicate: keep only the best-scoring chunk per (project, file) pair
-    let mut seen: std::collections::HashMap<(String, String), usize> =
-        std::collections::HashMap::new();
+    // Deduplicate: keep only the best-scoring chunk per (project, file) pair.
+    // We use a HashSet<(&str, &str)> built from owned strings held in `results`
+    // to avoid double-allocating keys for the "already seen" fast path.
+    let mut seen: HashMap<(String, String), usize> = HashMap::new();
     let mut results = Vec::new();
 
     for (score, doc_address) in top_docs {
@@ -1006,12 +1097,14 @@ pub fn search_indexed(
             .unwrap_or("")
             .to_string();
 
-        // Skip if we already have a better chunk from this file
-        let key = (project.clone(), file.clone());
-        if seen.contains_key(&key) {
+        // Skip if we already have a better chunk from this file.
+        // `entry` avoids a redundant key clone on the insert path.
+        use std::collections::hash_map::Entry;
+        if let Entry::Vacant(e) = seen.entry((project.clone(), file.clone())) {
+            e.insert(results.len());
+        } else {
             continue;
         }
-        seen.insert(key, results.len());
 
         let body = doc
             .get_first(body_field)
@@ -1057,8 +1150,11 @@ pub fn search_indexed(
 // Hybrid Search (BM25 + Vector)
 // ---------------------------------------------------------------------------
 
-/// Perform hybrid search combining BM25 and vector similarity
-/// Returns results ranked by Reciprocal Rank Fusion (RRF)
+/// Perform hybrid search combining BM25 and vector similarity.
+/// Returns results ranked by Reciprocal Rank Fusion (RRF).
+///
+/// The Tantivy index is opened **once** and reused across the BM25 phase and
+/// any vector-only cache-miss lookups, eliminating the previous double-open.
 #[cfg(feature = "alcove-full")]
 pub fn search_hybrid(
     docs_root: &Path,
@@ -1072,13 +1168,31 @@ pub fn search_hybrid(
     // 1. Ensure index is fresh
     ensure_index_fresh(docs_root);
 
-    // 2. Check embedding model state
+    // 2. Check embedding model state; trigger load if only cached
+    if embedding_service.state() == crate::embedding::ModelState::Cached {
+        let _ = embedding_service.ensure_model();
+    }
     let model_state = embedding_service.state();
     let model_ready = model_state == crate::embedding::ModelState::Ready;
 
-    // 3. Get BM25 results first (always available)
-    let bm25_json = search_indexed(docs_root, query, limit * 2, project_filter)?;
+    // 3. Open the Tantivy index ONCE — reused for BM25 and cache-miss lookups.
+    let dir = index_dir(docs_root);
+    if !dir.exists() {
+        anyhow::bail!("Search index not found. Run index rebuild first.");
+    }
+    let sanitized = sanitize_query(query);
+    let index = Index::open_in_dir(&dir).context("Failed to open search index")?;
+    register_ngram_tokenizer(&index)?;
 
+    // 4. BM25 search (uses cached reader via search_with_index)
+    let bm25_json = if sanitized.is_empty() {
+        json!({ "matches": [], "truncated": false })
+    } else {
+        search_with_index(docs_root, query, &sanitized, limit * 2, project_filter, &index)?
+    };
+
+    // Extract BM25 tuples for RRF — read directly from the JSON values produced
+    // above; avoids a second pass through Tantivy for the same data.
     let bm25_results: Vec<(String, String, u64, f32)> = bm25_json["matches"]
         .as_array()
         .map(|arr| {
@@ -1095,7 +1209,7 @@ pub fn search_hybrid(
         })
         .unwrap_or_default();
 
-    // 4. If model not ready, return BM25-only with status
+    // 5. If model not ready, return BM25-only with status
     if !model_ready {
         return Ok(json!({
             "query": query,
@@ -1107,7 +1221,7 @@ pub fn search_hybrid(
         }));
     }
 
-    // 5. Generate query embedding
+    // 6. Generate query embedding
     let query_embedding = match embedding_service.embed(&[query]) {
         Ok(emb) => emb.into_iter().next().unwrap_or_default(),
         Err(e) => {
@@ -1122,7 +1236,7 @@ pub fn search_hybrid(
         }
     };
 
-    // 6. Open vector store and search
+    // 7. Open vector store and search
     let vector_path = docs_root.join(".alcove").join("vectors.db");
     let store = VectorStore::open(&vector_path, embedding_service.model_name(), embedding_service.dimension());
 
@@ -1134,24 +1248,23 @@ pub fn search_hybrid(
         Err(_) => Vec::new(),
     };
 
-    // 7. Combine with RRF.
+    // 8. Combine with RRF.
     // k scales with limit: smaller result sets benefit from a lower k which
     // spreads scores more aggressively; larger sets use the classic k=60.
     // Formula: k = max(10, round(60 * sqrt(limit / 50)))
     let rrf_k = ((60.0 * ((limit as f32) / 50.0).sqrt()).round() as u32).max(10);
     let fused = reciprocal_rank_fusion(&bm25_results, &vector_results, rrf_k);
 
-    // 8. Build final results with snippets.
+    // 9. Build final results with snippets.
     //
     // BM25 results already carry `snippet` and `line_start`.  We cache them in
     // a HashMap so vector-only hits (chunk_ids absent from BM25) can still fall
     // back to a single Tantivy lookup — but the common case of BM25-overlap hits
     // requires zero additional index queries.
     //
-    // Key: (project, file, chunk_id)  →  (snippet, line_start)
+    // Key: (project, file, chunk_id) → (snippet, line_start)
     type SnippetKey = (String, String, u64);
-    let mut snippet_cache: std::collections::HashMap<SnippetKey, (String, u64)> =
-        std::collections::HashMap::new();
+    let mut snippet_cache: HashMap<SnippetKey, (String, u64)> = HashMap::new();
 
     if let Some(arr) = bm25_json["matches"].as_array() {
         for m in arr {
@@ -1170,16 +1283,17 @@ pub fn search_hybrid(
         }
     }
 
-    // Open Tantivy only if there are vector-only hits that need a fallback lookup.
-    // Lazily initialised below on first cache miss.
-    let mut tantivy_searcher: Option<(
-        tantivy::Searcher,
-        Field,
-        Field,
-        Field,
-        Field,
-        Field,
-    )> = None;
+    // For vector-only cache misses we need a Tantivy searcher.  We reuse the
+    // already-open `index` instead of calling Index::open_in_dir a second time.
+    // The reader is fetched from the process-level cache (same as BM25 above).
+    let miss_reader = get_cached_reader(&dir, &index)?;
+    let miss_searcher = miss_reader.searcher();
+    let miss_schema = index.schema();
+    let miss_project_field = miss_schema.get_field("project").context("missing 'project' field")?;
+    let miss_file_field = miss_schema.get_field("file").context("missing 'file' field")?;
+    let miss_body_field = miss_schema.get_field("body").context("missing 'body' field")?;
+    let miss_line_start_field = miss_schema.get_field("line_start").context("missing 'line_start' field")?;
+    let miss_chunk_id_field = miss_schema.get_field("chunk_id").context("missing 'chunk_id' field")?;
 
     let mut results: Vec<JsonValue> = Vec::new();
 
@@ -1189,57 +1303,43 @@ pub fn search_hybrid(
                 cached.clone()
             } else {
                 // Cache miss: vector-only hit — look up via Tantivy (rare path).
-                let (ref searcher, project_field, file_field, body_field, line_start_field, chunk_id_field) =
-                    *tantivy_searcher.get_or_insert_with(|| {
-                        let index_path = index_dir(docs_root);
-                        let index = Index::open_in_dir(&index_path).expect("open index");
-                        let reader = index.reader().expect("index reader");
-                        let searcher = reader.searcher();
-                        let schema = index.schema();
-                        let pf = schema.get_field("project").expect("project field");
-                        let ff = schema.get_field("file").expect("file field");
-                        let bf = schema.get_field("body").expect("body field");
-                        let lf = schema.get_field("line_start").expect("line_start field");
-                        let cf = schema.get_field("chunk_id").expect("chunk_id field");
-                        (searcher, pf, ff, bf, lf, cf)
-                    });
-
+                // Uses the reader already obtained above; no second index open.
                 let combined = tantivy::query::BooleanQuery::new(vec![
                     (
                         tantivy::query::Occur::Must,
                         Box::new(tantivy::query::TermQuery::new(
-                            tantivy::Term::from_field_text(project_field, &project),
+                            tantivy::Term::from_field_text(miss_project_field, &project),
                             tantivy::schema::IndexRecordOption::Basic,
                         )) as Box<dyn tantivy::query::Query>,
                     ),
                     (
                         tantivy::query::Occur::Must,
                         Box::new(tantivy::query::TermQuery::new(
-                            tantivy::Term::from_field_text(file_field, &file),
+                            tantivy::Term::from_field_text(miss_file_field, &file),
                             tantivy::schema::IndexRecordOption::Basic,
                         )),
                     ),
                     (
                         tantivy::query::Occur::Must,
                         Box::new(tantivy::query::TermQuery::new(
-                            tantivy::Term::from_field_u64(chunk_id_field, chunk_id),
+                            tantivy::Term::from_field_u64(miss_chunk_id_field, chunk_id),
                             tantivy::schema::IndexRecordOption::Basic,
                         )),
                     ),
                 ]);
 
                 if let Ok(top_docs) =
-                    searcher.search(&combined, &TopDocs::with_limit(1).order_by_score())
+                    miss_searcher.search(&combined, &TopDocs::with_limit(1).order_by_score())
                 {
                     if let Some((_s, addr)) = top_docs.first() {
-                        if let Ok(doc) = searcher.doc::<TantivyDocument>(*addr) {
+                        if let Ok(doc) = miss_searcher.doc::<TantivyDocument>(*addr) {
                             let body = doc
-                                .get_first(body_field)
+                                .get_first(miss_body_field)
                                 .and_then(|v| schema::Value::as_str(&v))
                                 .unwrap_or("")
                                 .to_string();
                             let ls = doc
-                                .get_first(line_start_field)
+                                .get_first(miss_line_start_field)
                                 .and_then(|v| schema::Value::as_u64(&v))
                                 .unwrap_or(0);
                             (body, ls)
