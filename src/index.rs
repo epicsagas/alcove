@@ -606,7 +606,22 @@ fn read_file_content(path: &Path) -> Result<String> {
                 libc::close(saved_stdout);
                 libc::close(saved_stderr);
             }
-            result
+            // Fallback to pdftotext if pdf_extract failed or returned empty content
+            match result {
+                Ok(text) if !text.trim().is_empty() => Ok(text),
+                _ => std::process::Command::new("pdftotext")
+                    .args([path.as_os_str(), std::ffi::OsStr::new("-")])
+                    .output()
+                    .map_err(|e| anyhow::anyhow!("pdftotext not available: {}", e))
+                    .and_then(|out| {
+                        if out.status.success() {
+                            String::from_utf8(out.stdout)
+                                .map_err(|e| anyhow::anyhow!("pdftotext output not UTF-8: {}", e))
+                        } else {
+                            Err(anyhow::anyhow!("pdftotext failed"))
+                        }
+                    }),
+            }
         }
         #[cfg(feature = "alcove-full")]
         "docx" | "pptx" => {
@@ -696,6 +711,10 @@ pub fn rebuild_index(docs_root: &Path) -> Result<JsonValue> {
 }
 
 fn build_index_with_mode(docs_root: &Path, force_rebuild: bool) -> Result<JsonValue> {
+    build_index_with_options(docs_root, force_rebuild, false)
+}
+
+fn build_index_with_options(docs_root: &Path, force_rebuild: bool, skip_embedding: bool) -> Result<JsonValue> {
     if !try_acquire_lock(docs_root) {
         return Ok(json!({
             "status": "skipped",
@@ -717,17 +736,23 @@ fn build_index_with_mode(docs_root: &Path, force_rebuild: bool) -> Result<JsonVa
             std::fs::remove_file(&vectors_path)?;
         }
     }
-    let result = build_index_inner(docs_root);
+    let result = build_index_inner(docs_root, skip_embedding);
     release_lock(docs_root);
     result
 }
 
-#[cfg(test)]
-pub fn build_index_unlocked(docs_root: &Path) -> Result<JsonValue> {
-    build_index_inner(docs_root)
+/// Build only the BM25 (Tantivy) index, skipping vector embedding entirely.
+/// Used by the MCP server startup to avoid blocking on ONNX model loading.
+pub fn build_index_bm25_only(docs_root: &Path) -> Result<JsonValue> {
+    build_index_with_options(docs_root, false, true)
 }
 
-fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
+#[cfg(test)]
+pub fn build_index_unlocked(docs_root: &Path) -> Result<JsonValue> {
+    build_index_inner(docs_root, false)
+}
+
+fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue> {
     let dir = index_dir(docs_root);
     std::fs::create_dir_all(&dir)?;
 
@@ -847,16 +872,16 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
     }
 
     // ---------------------------------------------------------------------------
-    // Vector indexing (alcove-full feature)
+    // Vector indexing (alcove-full feature) — skipped when skip_embedding=true
     // ---------------------------------------------------------------------------
 
-    let mut vector_status = "disabled".to_string();
+    let mut vector_status = if skip_embedding { "skipped".to_string() } else { "disabled".to_string() };
     let mut vectors_indexed = 0u64;
     let mut vector_errors = 0u64;
     let mut embedding_model = String::new();
 
     #[cfg(feature = "alcove-full")]
-    {
+    if !skip_embedding {
         use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
         use crate::vector::VectorStore;
         use crate::config::load_config;
@@ -873,6 +898,7 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                 auto_download: emb_cfg.auto_download,
                 cache_dir: emb_cfg.cache_dir.clone(),
                 enabled: true,
+                query_cache_size: emb_cfg.query_cache_size,
             });
 
             // Ensure model is loaded (and downloaded if auto_download is enabled)
@@ -975,6 +1001,10 @@ fn build_index_inner(docs_root: &Path) -> Result<JsonValue> {
                             }
 
                             vpb.finish_and_clear();
+                        }
+                        // Always report total vectors in store (not just this run's delta)
+                        if let Ok(meta) = store.meta() {
+                            vectors_indexed = meta.count as u64;
                         }
                     }
                     Err(e) => {
@@ -1205,13 +1235,7 @@ pub fn search_hybrid(
 ) -> Result<JsonValue> {
     use crate::vector::{reciprocal_rank_fusion, VectorStore};
 
-    // 1. Ensure index is fresh
-    ensure_index_fresh(docs_root);
-
-    // 2. Check embedding model state; trigger load if only cached
-    if embedding_service.state() == crate::embedding::ModelState::Cached {
-        let _ = embedding_service.ensure_model();
-    }
+    // 1. Check embedding model state
     let model_state = embedding_service.state();
     let model_ready = model_state == crate::embedding::ModelState::Ready;
 
@@ -1971,5 +1995,27 @@ mod tests {
         let result = search_indexed(tmp.path(), "认证", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty(), "should find Chinese text '认证'");
+    }
+
+    #[cfg(feature = "alcove-full")]
+    #[test]
+    fn search_hybrid_returns_bm25_only_when_embedding_not_ready() {
+        use crate::embedding::EmbeddingService;
+        use crate::config::EmbeddingConfig;
+
+        let tmp = setup_indexed_root();
+        build_index_unlocked(tmp.path()).unwrap();
+
+        // Create an EmbeddingService with embedding disabled — state will be Disabled (non-Ready)
+        let svc = EmbeddingService::new(EmbeddingConfig {
+            model: "snowflake-arctic-embed-xs".to_string(),
+            auto_download: false,
+            cache_dir: tmp.path().join(".alcove/models").to_string_lossy().to_string(),
+            enabled: false,
+            query_cache_size: 64,
+        });
+
+        let result = search_hybrid(tmp.path(), "OAuth", &svc, 5, None).unwrap();
+        assert_eq!(result["mode"], "bm25-only", "expected bm25-only when embedding is not ready");
     }
 }

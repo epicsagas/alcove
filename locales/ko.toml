@@ -58,3 +58,7 @@ doctor.index_no_root = "docs_root 없이 인덱스를 확인할 수 없음."
 
 # about
 about = "프로젝트 문서 관리 & MCP 서버"
+
+doctor.pdftotext = "PDF 지원"
+doctor.pdftotext_available = "pdftotext 발견 — PDF 전문 추출 활성화."
+doctor.pdftotext_missing = "pdftotext 없음. PDF 텍스트 추출을 위해 poppler 설치 필요 (macOS: brew install poppler, Linux: apt/dnf install poppler-utils)"

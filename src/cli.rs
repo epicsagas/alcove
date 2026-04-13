@@ -1585,7 +1585,23 @@ pub fn cmd_doctor(format: &str) -> Result<()> {
         "message": idx_msg,
     }));
 
-    // 6. Binary
+    // 6. PDF support (pdftotext)
+    let (pdf_status, pdf_msg) = if std::process::Command::new("pdftotext")
+        .arg("-v")
+        .output()
+        .is_ok()
+    {
+        ("ok", t!("doctor.pdftotext_available").to_string())
+    } else {
+        ("warn", t!("doctor.pdftotext_missing").to_string())
+    };
+    checks.push(serde_json::json!({
+        "check": "pdftotext",
+        "status": pdf_status,
+        "message": pdf_msg,
+    }));
+
+    // 7. Binary
     let bin_path = std::env::current_exe()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "unknown".to_string());
@@ -2273,6 +2289,7 @@ fn cmd_model_download() -> Result<()> {
                 .map(|h| cfg.cache_dir.replacen('~', &h, 1))
                 .unwrap_or_else(|| cfg.cache_dir.clone()),
             enabled: true,
+            query_cache_size: cfg.query_cache_size,
         });
 
         println!(

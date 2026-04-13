@@ -224,12 +224,15 @@ fn main() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn serve() -> Result<()> {
-    // Background index build on server start
+    // Background BM25-only index build on server start.
+    // Vector embedding is deferred until the first hybrid search request
+    // when the model is already loaded — avoids blocking server readiness
+    // and unnecessary ONNX model loading on startup.
     std::thread::spawn(|| {
         if let Some(docs_root) = config::load_config().docs_root()
             && docs_root.is_dir()
         {
-            let _ = index::build_index(&docs_root);
+            let _ = index::build_index_bm25_only(&docs_root);
         }
     });
 

@@ -343,6 +343,7 @@ pub fn tool_search(
                             .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
                             .unwrap_or_else(|| emb_cfg.cache_dir.clone()),
                     enabled: true,
+                    query_cache_size: emb_cfg.query_cache_size,
                 });
 
                 // Use hybrid search

@@ -119,6 +119,14 @@ make install
 alcove setup
 ```
 
+**선택적 의존성**
+
+| 도구 | 목적 | 설치 |
+|---|---|---|
+| `pdftotext` (poppler) | PDF 전문 텍스트 추출 — PDF 검색에 필요 | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+`pdftotext` 없이도 동작하지만, 일부 PDF는 내장 파서로 추출에 실패할 수 있습니다. `alcove doctor`로 설치 상태를 확인하세요.
+
 이것만 하면 됩니다. `setup`이 대화형으로 모든 것을 안내합니다:
 
 1. 문서가 어디에 있는지

@@ -200,6 +200,68 @@ impl std::fmt::Display for EmbeddingModelChoice {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Inline LRU cache (no external crate)
+// ---------------------------------------------------------------------------
+
+/// A simple LRU cache backed by `HashMap` (O(1) lookup) and `VecDeque`
+/// (eviction order). When `capacity` is 0 the cache is effectively disabled —
+/// every `get` returns `None` and `insert` is a no-op.
+pub struct QueryEmbedCache {
+    capacity: usize,
+    map: std::collections::HashMap<String, Vec<f32>>,
+    order: std::collections::VecDeque<String>,
+}
+
+impl QueryEmbedCache {
+    /// Create a new cache with the given capacity.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            map: std::collections::HashMap::new(),
+            order: std::collections::VecDeque::new(),
+        }
+    }
+
+    /// Return a reference to the cached vector for `key`, or `None`.
+    /// Accessing an entry promotes it to the most-recently-used position.
+    pub fn get(&mut self, key: &str) -> Option<&Vec<f32>> {
+        if self.capacity == 0 || !self.map.contains_key(key) {
+            return None;
+        }
+        // Promote to MRU: remove from current position and push to back.
+        if let Some(pos) = self.order.iter().position(|k| k == key) {
+            self.order.remove(pos);
+        }
+        self.order.push_back(key.to_string());
+        self.map.get(key)
+    }
+
+    /// Insert or update an entry. Evicts the LRU entry when at capacity.
+    pub fn insert(&mut self, key: String, value: Vec<f32>) {
+        if self.capacity == 0 {
+            return;
+        }
+        if self.map.contains_key(&key) {
+            // Update existing entry and promote it.
+            self.map.insert(key.clone(), value);
+            if let Some(pos) = self.order.iter().position(|k| k == &key) {
+                self.order.remove(pos);
+            }
+            self.order.push_back(key);
+            return;
+        }
+        // Evict LRU if at capacity.
+        if self.map.len() >= self.capacity {
+            if let Some(oldest) = self.order.pop_front() {
+                self.map.remove(&oldest);
+            }
+        }
+        self.map.insert(key.clone(), value);
+        self.order.push_back(key);
+    }
+}
+
 // Feature-gated implementation
 // ---------------------------------------------------------------------------
 
@@ -216,6 +278,8 @@ pub struct EmbeddingService {
     previous_dimension: Arc<Mutex<Option<usize>>>,
     /// Timestamp of the last successful `embed()` call — used for idle unload.
     last_embed_at: Arc<Mutex<Instant>>,
+    /// Per-query embedding LRU cache to skip redundant ONNX inference.
+    query_cache: Arc<Mutex<QueryEmbedCache>>,
 }
 
 /// Internal embedding configuration (not part of public API)
@@ -250,12 +314,15 @@ impl EmbeddingService {
             ModelState::Disabled
         };
 
+        let query_cache_size = config.query_cache_size;
+
         Self {
             state: Arc::new(Mutex::new(initial_state)),
             internal_config,
             session: Arc::new(Mutex::new(None)),
             previous_dimension: Arc::new(Mutex::new(None)),
             last_embed_at: Arc::new(Mutex::new(Instant::now())),
+            query_cache: Arc::new(Mutex::new(QueryEmbedCache::new(query_cache_size))),
         }
     }
 
@@ -504,18 +571,54 @@ impl EmbeddingService {
             return Err(format!("Model not ready: {}", state));
         }
 
+        // --- cache lookup (partial-hit support) ---
+        // Collect cache hits; build a miss list with original indices.
+        let mut results: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
+        let mut miss_indices: Vec<usize> = Vec::new();
+        {
+            let mut cache = self.query_cache.lock().unwrap_or_else(|e| e.into_inner());
+            for (i, text) in texts.iter().enumerate() {
+                if let Some(cached) = cache.get(text) {
+                    results[i] = Some(cached.clone());
+                } else {
+                    miss_indices.push(i);
+                }
+            }
+        }
+
+        // If all texts were cached, return immediately without touching the session.
+        if miss_indices.is_empty() {
+            return Ok(results.into_iter().flatten().collect());
+        }
+
         let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
         let session = session
             .as_mut()
             .ok_or_else(|| "Session not loaded".to_string())?;
 
-        let texts_vec: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
-        let result = session.embed(texts_vec, None).map_err(|e| e.to_string())?;
+        let miss_texts: Vec<String> = miss_indices
+            .iter()
+            .map(|&i| texts[i].to_string())
+            .collect();
+        let inferred = session
+            .embed(miss_texts.clone(), None)
+            .map_err(|e| e.to_string())?;
+
+        // Store newly inferred vectors back into the cache and fill results.
+        {
+            let mut cache = self.query_cache.lock().unwrap_or_else(|e| e.into_inner());
+            for (miss_text, vec) in miss_texts.iter().zip(inferred.iter()) {
+                cache.insert(miss_text.clone(), vec.clone());
+            }
+        }
+        for (slot, vec) in miss_indices.iter().zip(inferred.into_iter()) {
+            results[*slot] = Some(vec);
+        }
 
         // Update last-used timestamp on success.
         *self.last_embed_at.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
 
-        Ok(result)
+        Ok(results.into_iter().flatten().collect())
     }
 
     /// Remove cached model.
@@ -766,6 +869,50 @@ mod tests {
             let val = concurrent.await.expect("concurrent task failed");
             assert_eq!(val, 42);
         });
+    }
+
+    /// QueryEmbedCache: basic get/insert and LRU eviction when capacity is exceeded.
+    #[test]
+    fn test_embedding_cache_hit_skips_inference() {
+        let mut cache = super::QueryEmbedCache::new(2);
+
+        // Empty cache returns None
+        assert!(cache.get("hello").is_none());
+
+        // Insert and retrieve
+        cache.insert("hello".to_string(), vec![1.0, 2.0]);
+        assert_eq!(cache.get("hello"), Some(&vec![1.0, 2.0]));
+
+        // Insert second entry
+        cache.insert("world".to_string(), vec![3.0, 4.0]);
+        assert_eq!(cache.get("world"), Some(&vec![3.0, 4.0]));
+        assert_eq!(cache.get("hello"), Some(&vec![1.0, 2.0]));
+
+        // Insert third entry — "hello" was least-recently-used and must be evicted
+        // (after the get above "world" becomes LRU; but we did get("hello") last so
+        //  "world" is now the LRU entry — it should be evicted)
+        cache.insert("foo".to_string(), vec![5.0, 6.0]);
+        // "world" was LRU (oldest insertion order after "hello" was accessed)
+        assert!(cache.get("world").is_none(), "world should have been evicted");
+        assert!(cache.get("hello").is_some(), "hello should still be present");
+        assert!(cache.get("foo").is_some(), "foo should be present");
+    }
+
+    /// LRU eviction: the entry not accessed most recently is evicted first.
+    #[test]
+    fn test_embedding_cache_lru_order() {
+        let mut cache = super::QueryEmbedCache::new(2);
+        cache.insert("a".to_string(), vec![1.0]);
+        cache.insert("b".to_string(), vec![2.0]);
+
+        // Access "a" so "b" becomes LRU
+        let _ = cache.get("a");
+
+        // Insert "c" — "b" should be evicted
+        cache.insert("c".to_string(), vec![3.0]);
+        assert!(cache.get("b").is_none(), "b should be evicted as LRU");
+        assert!(cache.get("a").is_some());
+        assert!(cache.get("c").is_some());
     }
 
     /// Fix 2: polling must return a timeout error when state never changes.

@@ -58,3 +58,7 @@ doctor.index_no_root = "无 docs_root，无法检查索引。"
 
 # about
 about = "项目文档管理与 MCP 服务器"
+
+doctor.pdftotext = "PDF 支持"
+doctor.pdftotext_available = "已找到 pdftotext — PDF 文本提取已启用。"
+doctor.pdftotext_missing = "未找到 pdftotext。如需 PDF 文本提取，请安装 poppler (macOS: brew install poppler, Linux: apt/dnf install poppler-utils)"

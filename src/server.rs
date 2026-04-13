@@ -380,6 +380,7 @@ pub async fn run_server(
                 auto_download: emb_cfg.auto_download,
                 cache_dir: cache_dir.to_string_lossy().into_owned(),
                 enabled: true,
+                query_cache_size: emb_cfg.query_cache_size,
             })))
         } else {
             None

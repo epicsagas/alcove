@@ -199,6 +199,14 @@ pub struct EmbeddingConfig {
     /// Enable embedding (false = BM25 only)
     #[serde(default = "default_embedding_enabled")]
     pub enabled: bool,
+    /// Number of query embeddings to keep in LRU cache (0 = disabled, default 64)
+    #[serde(default = "default_query_cache_size")]
+    pub query_cache_size: usize,
+}
+
+#[cfg(feature = "alcove-full")]
+fn default_query_cache_size() -> usize {
+    64
 }
 
 #[cfg(feature = "alcove-full")]
@@ -209,6 +217,7 @@ impl Default for EmbeddingConfig {
             auto_download: default_embedding_auto_download(),
             cache_dir: default_embedding_cache_dir(),
             enabled: true,
+            query_cache_size: default_query_cache_size(),
         }
     }
 }

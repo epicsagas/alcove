@@ -58,3 +58,7 @@ doctor.index_no_root = "Impossible de vérifier l'index sans docs_root."
 
 # about
 about = "Gestion de documentation de projet et serveur MCP"
+
+doctor.pdftotext = "Support PDF"
+doctor.pdftotext_available = "pdftotext trouvé — extraction de texte PDF activée."
+doctor.pdftotext_missing = "pdftotext introuvable. Installez poppler pour l'extraction PDF (macOS: brew install poppler, Linux: apt/dnf install poppler-utils)"

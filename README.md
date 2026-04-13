@@ -135,6 +135,14 @@ make install
 alcove setup
 ```
 
+**Optional dependencies**
+
+| Tool | Purpose | Install |
+|---|---|---|
+| `pdftotext` (poppler) | Full PDF text extraction — required for PDF search | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+Without `pdftotext`, Alcove falls back to a built-in PDF parser which may fail on some files. Run `alcove doctor` to check your setup.
+
 > **Note**: Pre-built binaries are available for Linux (x86\_64), macOS (Apple Silicon & Intel), and Windows.
 
 `setup` walks you through everything interactively:
