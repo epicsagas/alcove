@@ -76,7 +76,7 @@ pub struct SearchResponse {
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
-    pub docs_root: String,
+    pub docs_root_configured: bool,
     pub projects: usize,
 }
 
@@ -200,9 +200,9 @@ async fn handle_search(
 
     // Try hybrid search first if available
     #[cfg(feature = "alcove-full")]
-    if use_hybrid {
-        if let Some(service_arc) = state.embedding_service.clone() {
-            if crate::index::index_exists(&docs_root) {
+    if use_hybrid
+        && let Some(service_arc) = state.embedding_service.clone()
+            && crate::index::index_exists(&docs_root) {
                 let docs_root2 = docs_root.clone();
                 let q2 = q.clone();
                 let pf = project_filter_owned.clone();
@@ -211,7 +211,7 @@ async fn handle_search(
                     crate::index::search_hybrid(
                         &docs_root2,
                         &q2,
-                        &*service_arc,
+                        &service_arc,
                         limit,
                         pf.as_deref(),
                     )
@@ -225,38 +225,41 @@ async fn handle_search(
                     }),
                 ))?;
 
-                if let Ok(json) = result {
-                    let results: Vec<SearchResult> = json["matches"]
-                        .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|m| {
-                                    Some(SearchResult {
-                                        project: m["project"].as_str()?.to_string(),
-                                        file: m["file"].as_str()?.to_string(),
-                                        line: m["line_start"].as_u64()?,
-                                        snippet: m["snippet"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string(),
-                                        score: m["score"].as_f64().unwrap_or(0.0),
-                                        source: "hybrid".to_string(),
+                match result {
+                    Ok(json) => {
+                        let results: Vec<SearchResult> = json["matches"]
+                            .as_array()
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|m| {
+                                        Some(SearchResult {
+                                            project: m["project"].as_str()?.to_string(),
+                                            file: m["file"].as_str()?.to_string(),
+                                            line: m["line_start"].as_u64()?,
+                                            snippet: m["snippet"]
+                                                .as_str()
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            score: m["score"].as_f64().unwrap_or(0.0),
+                                            source: "hybrid".to_string(),
+                                        })
                                     })
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default();
+                                    .collect()
+                            })
+                            .unwrap_or_default();
 
-                    return Ok(Json(SearchResponse {
-                        query: req.q,
-                        results,
-                        mode: "hybrid".to_string(),
-                        truncated: json["truncated"].as_bool().unwrap_or(false),
-                    }));
+                        return Ok(Json(SearchResponse {
+                            query: req.q,
+                            results,
+                            mode: "hybrid".to_string(),
+                            truncated: json["truncated"].as_bool().unwrap_or(false),
+                        }));
+                    }
+                    Err(err) => {
+                        eprintln!("[alcove] hybrid search error, falling back to BM25: {err}");
+                    }
                 }
             }
-        }
-    }
 
     // Fall back to BM25 search
     if crate::index::index_exists(&docs_root) {
@@ -340,7 +343,7 @@ async fn health(
     Ok(Json(HealthResponse {
         status: "ok".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        docs_root: state.docs_root.to_string_lossy().to_string(),
+        docs_root_configured: true,
         projects,
     }))
 }

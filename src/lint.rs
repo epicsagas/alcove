@@ -192,12 +192,6 @@ fn resolve_link(
 // ---------------------------------------------------------------------------
 
 fn current_year() -> i32 {
-    // Use ALCOVE_CURRENT_YEAR env override for testing
-    if let Ok(v) = std::env::var("ALCOVE_CURRENT_YEAR") {
-        if let Ok(y) = v.parse::<i32>() {
-            return y;
-        }
-    }
     // Fall back to system time
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
@@ -213,6 +207,10 @@ fn current_year() -> i32 {
 // ---------------------------------------------------------------------------
 
 pub fn lint(docs_root: &Path, project_filter: Option<&str>) -> LintReport {
+    lint_with_year(docs_root, project_filter, current_year())
+}
+
+fn lint_with_year(docs_root: &Path, project_filter: Option<&str>, now_year: i32) -> LintReport {
     let files = collect_doc_files(docs_root, project_filter);
     let filename_map = build_filename_map(&files);
     let files_scanned = files.len();
@@ -239,8 +237,6 @@ pub fn lint(docs_root: &Path, project_filter: Option<&str>) -> LintReport {
     // False positives in URLs and version strings (e.g. `/2023/`, `2023.1.0`)
     // are filtered out in the match loop below by inspecting the surrounding chars.
     let stale_date_re = Regex::new(r"\b(20\d{2}|19\d{2})\b").unwrap();
-
-    let now_year = current_year();
 
     for file_path in &files {
         let content = match std::fs::read_to_string(file_path) {
@@ -277,7 +273,7 @@ pub fn lint(docs_root: &Path, project_filter: Option<&str>) -> LintReport {
         file_links.push((file_path.clone(), links));
 
         // --- stale-marker ---
-        if let Some(cap) = stale_marker_re.captures(&content) {
+        for cap in stale_marker_re.captures_iter(&content) {
             let marker = cap[1].to_uppercase();
             issues.push(LintIssue {
                 severity: LintSeverity::Warning,
@@ -302,8 +298,8 @@ pub fn lint(docs_root: &Path, project_filter: Option<&str>) -> LintReport {
                 continue; // version string or date continuation
             }
 
-            if let Ok(year) = cap[1].parse::<i32>() {
-                if now_year - year >= 2 {
+            if let Ok(year) = cap[1].parse::<i32>()
+                && now_year - year >= 2 {
                     issues.push(LintIssue {
                         severity: LintSeverity::Info,
                         kind: "stale-date",
@@ -316,7 +312,6 @@ pub fn lint(docs_root: &Path, project_filter: Option<&str>) -> LintReport {
                     });
                     break; // one issue per file
                 }
-            }
         }
     }
 
@@ -335,7 +330,7 @@ pub fn lint(docs_root: &Path, project_filter: Option<&str>) -> LintReport {
                 severity: LintSeverity::Info,
                 kind: "orphan",
                 file: rel.clone(),
-                message: format!("No other document links to this file"),
+                message: "No other document links to this file".to_string(),
             });
         }
     }
@@ -515,10 +510,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         // Use year that is definitely 2+ years ago from any reasonable current year
         write(tmp.path(), "proj/note.md", "# Note\nAs of 2018, this was true.\n");
-        // Override current year so the test is deterministic
-        unsafe { std::env::set_var("ALCOVE_CURRENT_YEAR", "2026"); }
-        let report = lint(tmp.path(), None);
-        unsafe { std::env::remove_var("ALCOVE_CURRENT_YEAR"); }
+        // Inject year directly — no env mutation, safe under parallel test execution
+        let report = lint_with_year(tmp.path(), None, 2026);
         let dated: Vec<_> = report
             .issues
             .iter()
@@ -532,9 +525,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         // 2025 is within 2 years of 2026
         write(tmp.path(), "proj/note.md", "# Note\nUpdated in 2025.\n");
-        unsafe { std::env::set_var("ALCOVE_CURRENT_YEAR", "2026"); }
-        let report = lint(tmp.path(), None);
-        unsafe { std::env::remove_var("ALCOVE_CURRENT_YEAR"); }
+        // Inject year directly — no env mutation, safe under parallel test execution
+        let report = lint_with_year(tmp.path(), None, 2026);
         let dated: Vec<_> = report
             .issues
             .iter()
@@ -618,6 +610,27 @@ mod tests {
             .filter(|i| i.kind == "stale-marker")
             .collect();
         assert!(!stale.is_empty());
+    }
+
+    #[test]
+    fn test_stale_marker_multiple_in_one_file() {
+        let tmp = TempDir::new().unwrap();
+        // File contains both TODO and FIXME — both must be reported
+        write(
+            tmp.path(),
+            "proj/note.md",
+            "# Note\nTODO: do something\nFIXME: broken logic\n",
+        );
+        let report = lint(tmp.path(), None);
+        let stale: Vec<_> = report
+            .issues
+            .iter()
+            .filter(|i| i.kind == "stale-marker")
+            .collect();
+        assert_eq!(stale.len(), 2, "expected two stale-marker issues, one per match");
+        let messages: Vec<&str> = stale.iter().map(|i| i.message.as_str()).collect();
+        assert!(messages.iter().any(|m| m.contains("TODO")));
+        assert!(messages.iter().any(|m| m.contains("FIXME")));
     }
 
     #[test]

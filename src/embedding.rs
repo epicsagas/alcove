@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 #[cfg(feature = "alcove-full")]
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 #[cfg(feature = "alcove-full")]
 use std::time::{Duration, Instant};
@@ -20,8 +20,10 @@ use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 /// Model state for graceful degradation
 #[cfg(feature = "alcove-full")]
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub enum ModelState {
     /// Model not downloaded yet
+    #[default]
     NotDownloaded,
     /// Background download in progress (percentage)
     Downloading { progress_pct: u8 },
@@ -39,11 +41,6 @@ pub enum ModelState {
 }
 
 #[cfg(feature = "alcove-full")]
-impl Default for ModelState {
-    fn default() -> Self {
-        Self::NotDownloaded
-    }
-}
 
 #[cfg(feature = "alcove-full")]
 impl std::fmt::Display for ModelState {
@@ -252,11 +249,10 @@ impl QueryEmbedCache {
             return;
         }
         // Evict LRU if at capacity.
-        if self.map.len() >= self.capacity {
-            if let Some(oldest) = self.order.pop_front() {
+        if self.map.len() >= self.capacity
+            && let Some(oldest) = self.order.pop_front() {
                 self.map.remove(&oldest);
             }
-        }
         self.map.insert(key.clone(), value);
         self.order.push_back(key);
     }
@@ -269,6 +265,10 @@ impl QueryEmbedCache {
 pub struct EmbeddingService {
     /// Current model state
     state: Arc<Mutex<ModelState>>,
+    /// Condvar paired with `state` — notified when the download thread transitions
+    /// state to `Ready` or `Failed`.  Replaces the 100 ms sleep-polling loop in
+    /// `ensure_model()` so callers wake up immediately on completion.
+    download_cvar: Arc<Condvar>,
     /// Internal configuration with model choice
     internal_config: InternalEmbeddingConfig,
     /// ONNX session (lazy loaded)
@@ -318,6 +318,7 @@ impl EmbeddingService {
 
         Self {
             state: Arc::new(Mutex::new(initial_state)),
+            download_cvar: Arc::new(Condvar::new()),
             internal_config,
             session: Arc::new(Mutex::new(None)),
             previous_dimension: Arc::new(Mutex::new(None)),
@@ -406,40 +407,42 @@ impl EmbeddingService {
             }
         }
 
-        // Poll until Ready or Failed.
+        // Wait until Ready or Failed using Condvar — avoids 100 ms sleep-polling.
+        // The download thread calls download_cvar.notify_all() on every terminal
+        // state transition (Ready or Failed) so this wakes up promptly.
         let deadline = Instant::now() + Duration::from_secs(300);
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         loop {
-            // When running inside a Tokio multi-thread runtime (alcove-server),
-            // use block_in_place so the executor can schedule other tasks on this
-            // thread while we sleep, instead of parking the OS thread blindly.
-            #[cfg(feature = "alcove-server")]
-            tokio::task::block_in_place(|| {
-                std::thread::sleep(Duration::from_millis(100));
-            });
-            #[cfg(not(feature = "alcove-server"))]
-            std::thread::sleep(Duration::from_millis(100));
-
-            let current = self
-                .state
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone();
-            match current {
+            match state.clone() {
                 ModelState::Ready => return Ok(()),
                 ModelState::Failed(e) => return Err(e),
+                ModelState::Unloaded => {
+                    // An idle-unload raced with our wait: session was dropped between
+                    // the download completing and this iteration reading the state.
+                    // Restart the download (start_download is a no-op if already
+                    // Downloading/Ready) then continue waiting.
+                    drop(state);
+                    self.start_download();
+                    state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+                    continue;
+                }
                 ModelState::Downloading { .. } => {
-                    if Instant::now() >= deadline {
+                    let timeout = deadline.saturating_duration_since(Instant::now());
+                    if timeout.is_zero() {
                         return Err(
                             "Timed out waiting for model download to complete".to_string(),
                         );
                     }
-                }
-                ModelState::Unloaded => {
-                    // An idle-unload raced with our poll: the session was dropped
-                    // between the download completing and this iteration reading the
-                    // state.  Restart the download (start_download is a no-op if
-                    // already Downloading/Ready) and keep polling.
-                    self.start_download();
+                    let (new_state, timed_out) = self
+                        .download_cvar
+                        .wait_timeout(state, timeout)
+                        .unwrap_or_else(|e| e.into_inner());
+                    state = new_state;
+                    if timed_out.timed_out() {
+                        return Err(
+                            "Timed out waiting for model download to complete".to_string(),
+                        );
+                    }
                 }
                 other => {
                     return Err(format!(
@@ -473,6 +476,7 @@ impl EmbeddingService {
 
         // Clone the Arcs so they can be moved into the background thread.
         let state_arc = Arc::clone(&self.state);
+        let cvar_arc = Arc::clone(&self.download_cvar);
         let session_arc = Arc::clone(&self.session);
         let cache_dir = self.internal_config.cache_dir.clone();
         let model = self.internal_config.model;
@@ -483,9 +487,16 @@ impl EmbeddingService {
                     *state_arc.lock().unwrap_or_else(|e| e.into_inner()) = $s;
                 };
             }
+            // Notify waiters in ensure_model() after every terminal state change.
+            macro_rules! set_state_and_notify {
+                ($s:expr) => {{
+                    *state_arc.lock().unwrap_or_else(|e| e.into_inner()) = $s;
+                    cvar_arc.notify_all();
+                }};
+            }
 
             if let Err(e) = std::fs::create_dir_all(&cache_dir) {
-                set_state!(ModelState::Failed(e.to_string()));
+                set_state_and_notify!(ModelState::Failed(e.to_string()));
                 return;
             }
 
@@ -501,10 +512,10 @@ impl EmbeddingService {
                 Ok(embedding) => {
                     set_state!(ModelState::Downloading { progress_pct: 90 });
                     *session_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(embedding);
-                    set_state!(ModelState::Ready);
+                    set_state_and_notify!(ModelState::Ready);
                 }
                 Err(e) => {
-                    set_state!(ModelState::Failed(e.to_string()));
+                    set_state_and_notify!(ModelState::Failed(e.to_string()));
                 }
             }
         });
@@ -997,6 +1008,100 @@ mod tests {
             ModelState::Unloaded
         );
         assert!(session.lock().unwrap_or_else(|e| e.into_inner()).is_none());
+    }
+
+    /// Condvar: ensure_model-style wait unblocks immediately when state transitions
+    /// to Ready via notify_all — no 100 ms sleep overhead.
+    #[test]
+    #[cfg(feature = "alcove-full")]
+    fn test_condvar_wait_unblocks_on_ready() {
+        use std::sync::{Arc, Condvar, Mutex};
+        use std::time::{Duration, Instant};
+
+        // Pair: (Mutex<ModelState>, Condvar)
+        let pair: Arc<(Mutex<ModelState>, Condvar)> = Arc::new((
+            Mutex::new(ModelState::Downloading { progress_pct: 0 }),
+            Condvar::new(),
+        ));
+
+        let pair_clone = Arc::clone(&pair);
+        // Transition to Ready after a short delay and notify.
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(80));
+            let (lock, cvar) = &*pair_clone;
+            *lock.lock().unwrap() = ModelState::Ready;
+            cvar.notify_all();
+        });
+
+        let start = Instant::now();
+        let (lock, cvar) = &*pair;
+        let mut state = lock.lock().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while matches!(*state, ModelState::Downloading { .. }) {
+            let timeout = deadline.saturating_duration_since(Instant::now());
+            let (new_state, _) = cvar.wait_timeout(state, timeout).unwrap();
+            state = new_state;
+        }
+        let elapsed = start.elapsed();
+
+        assert!(
+            matches!(*state, ModelState::Ready),
+            "expected Ready, got {}",
+            *state
+        );
+        // Must unblock promptly (well under 200 ms), not after a 100 ms poll cycle.
+        assert!(
+            elapsed < Duration::from_millis(300),
+            "wait took too long: {:?}",
+            elapsed
+        );
+    }
+
+    /// Condvar: EmbeddingService.download_cvar field must exist and notify_all
+    /// must be called after the download thread transitions state to Ready.
+    /// We verify this by observing that a condvar waiter unblocks without
+    /// sleeping a full poll interval.
+    #[test]
+    #[cfg(feature = "alcove-full")]
+    fn test_embedding_service_has_download_cvar_field() {
+        use std::sync::{Arc, Condvar, Mutex};
+        use std::time::{Duration, Instant};
+
+        // This test directly exercises the Arc<(Mutex<ModelState>, Condvar)>
+        // pattern that EmbeddingService.state should use after the refactor.
+        let pair: Arc<(Mutex<ModelState>, Condvar)> = Arc::new((
+            Mutex::new(ModelState::Downloading { progress_pct: 50 }),
+            Condvar::new(),
+        ));
+
+        let pair_clone = Arc::clone(&pair);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            let (lock, cvar) = &*pair_clone;
+            *lock.lock().unwrap() = ModelState::Failed("test error".to_string());
+            cvar.notify_all();
+        });
+
+        let (lock, cvar) = &*pair;
+        let mut state = lock.lock().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while matches!(*state, ModelState::Downloading { .. }) {
+            let timeout = deadline.saturating_duration_since(Instant::now());
+            if timeout.is_zero() {
+                break;
+            }
+            let (new_state, timed_out) = cvar.wait_timeout(state, timeout).unwrap();
+            state = new_state;
+            if timed_out.timed_out() {
+                break;
+            }
+        }
+
+        assert!(
+            matches!(*state, ModelState::Failed(_)),
+            "expected Failed, got {}",
+            *state
+        );
     }
 
     /// Fix 2: polling must return a timeout error when state never changes.

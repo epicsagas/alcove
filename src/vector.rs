@@ -149,16 +149,14 @@ impl VectorStore {
         // Atomically clear stale vectors and update metadata in one transaction.
         {
             let tx = conn.transaction()?;
-            if let Some(em) = existing_model {
-                if em != model {
+            if let Some(em) = existing_model
+                && em != model {
                     tx.execute("DELETE FROM vectors", [])?;
                 }
-            }
-            if let Some(ed) = existing_dim {
-                if ed != dimension {
+            if let Some(ed) = existing_dim
+                && ed != dimension {
                     tx.execute("DELETE FROM vectors", [])?;
                 }
-            }
             tx.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('model', ?1)",
                 params![model],
@@ -336,53 +334,59 @@ impl VectorStore {
         limit: usize,
         project_filter: Option<&str>,
     ) -> Result<Vec<VectorResult>> {
+        // Process rows one at a time to avoid loading all embeddings into memory.
+        // We maintain a top-K buffer: collect all candidates then sort+truncate.
+        // The key improvement is that we do not collect() the full row set before
+        // scoring — each blob is decoded, scored, and discarded immediately.
+        let mut results: Vec<VectorResult> = Vec::new();
+
         // Two separate prepare+query branches to keep rusqlite param types clean.
-        let rows: Vec<(String, String, u64, Vec<u8>)> = if let Some(project) = project_filter {
+        // Rows are processed one at a time: each blob is decoded, scored, and
+        // dropped immediately — no full-set collect() before scoring.
+        if let Some(project) = project_filter {
             let mut stmt = self.conn.prepare(
                 "SELECT project, file, chunk_id, embedding \
                  FROM vectors WHERE project = ?1",
             )?;
-            stmt.query_map(params![project], |row| {
+            let mapped = stmt.query_map(params![project], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, i64>(2)? as u64,
                     row.get::<_, Vec<u8>>(3)?,
                 ))
-            })?
-            .collect::<rusqlite::Result<_>>()?
+            })?;
+            for row_result in mapped {
+                let (project, file, chunk_id, blob) = row_result?;
+                let embedding = Self::decode_embedding(&blob);
+                let score = cosine_similarity(query, &embedding);
+                if score > 0.0 {
+                    results.push(VectorResult { project, file, chunk_id, score });
+                }
+            }
         } else {
             let mut stmt = self.conn.prepare(
                 "SELECT project, file, chunk_id, embedding FROM vectors",
             )?;
-            stmt.query_map([], |row| {
+            let mapped = stmt.query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, i64>(2)? as u64,
                     row.get::<_, Vec<u8>>(3)?,
                 ))
-            })?
-            .collect::<rusqlite::Result<_>>()?
-        };
-
-        let mut results: Vec<VectorResult> = Vec::new();
-
-        for (project, file, chunk_id, blob) in rows {
-            let embedding = Self::decode_embedding(&blob);
-
-            let score = cosine_similarity(query, &embedding);
-            if score > 0.0 {
-                results.push(VectorResult {
-                    project,
-                    file,
-                    chunk_id,
-                    score,
-                });
+            })?;
+            for row_result in mapped {
+                let (project, file, chunk_id, blob) = row_result?;
+                let embedding = Self::decode_embedding(&blob);
+                let score = cosine_similarity(query, &embedding);
+                if score > 0.0 {
+                    results.push(VectorResult { project, file, chunk_id, score });
+                }
             }
         }
 
-        // Sort by score descending
+        // Sort by score descending and keep only top-K results.
         results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         results.truncate(limit);
 
@@ -480,9 +484,14 @@ impl VectorStore {
             }
 
             // Enforce LRU size cap before inserting.
+            // Prefer the runtime config value; fall back to the compile-time constant.
             {
+                let max_entries = crate::config::load_config()
+                    .memory
+                    .as_ref()
+                    .map_or(HNSW_CACHE_MAX_ENTRIES, |m| m.max_hnsw_cache);
                 let mut cache = self.hnsw_cache.borrow_mut();
-                if cache.len() >= HNSW_CACHE_MAX_ENTRIES {
+                if cache.len() >= max_entries {
                     // Drop the least-recently-used entry.
                     if let Some(lru_key) = cache
                         .iter()
@@ -544,14 +553,13 @@ impl VectorStore {
 
     /// Check if store is empty
     #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> Result<bool> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM vectors",
             [],
             |row| row.get(0),
-        )
-        .unwrap_or(0);
-        count == 0
+        )?;
+        Ok(count == 0)
     }
 
     /// Clear all vectors
@@ -691,13 +699,13 @@ mod tests {
                     vec![("proj".into(), "f.md".into(), 0u64, vec![1.0, 0.0, 0.0])].into_iter(),
                 )
                 .unwrap();
-            assert!(!store.is_empty());
+            assert!(!store.is_empty().unwrap());
         }
 
         // Reopen with a different model — vectors must be gone
         {
             let store = VectorStore::open(&db_path, "model-b", 3).unwrap();
-            assert!(store.is_empty(), "vectors must be cleared when model changes");
+            assert!(store.is_empty().unwrap(), "vectors must be cleared when model changes");
         }
     }
 

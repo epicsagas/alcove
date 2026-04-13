@@ -3,8 +3,6 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "alcove-full")]
-
 // ---------------------------------------------------------------------------
 // Document tier classification constants
 // ---------------------------------------------------------------------------

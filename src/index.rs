@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, Duration, Instant};
+#[cfg(all(unix, feature = "alcove-full"))]
 use std::os::unix::io::AsRawFd;
 
 use anyhow::{Context, Result};
@@ -435,12 +436,17 @@ pub fn check_doc_changes(docs_root: &Path) -> JsonValue {
             continue;
         }
         let proj_cfg = effective_config(&path);
+        let docs_root_canonical = docs_root.canonicalize().unwrap_or_else(|_| docs_root.to_path_buf());
         for walk_entry in WalkDir::new(&path)
             .into_iter()
             .filter_map(std::result::Result::ok)
             .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path()))
         {
             let file_path = walk_entry.path();
+            if let Ok(canonical) = file_path.canonicalize()
+                && !canonical.starts_with(&docs_root_canonical) {
+                    continue;
+                }
             let rel = file_path
                 .strip_prefix(docs_root)
                 .unwrap_or(file_path)
@@ -506,12 +512,18 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
             continue;
         }
         let proj_cfg = effective_config(&path);
+        let docs_root_canonical = docs_root.canonicalize().unwrap_or_else(|_| docs_root.to_path_buf());
         for walk_entry in WalkDir::new(&path)
             .into_iter()
             .filter_map(std::result::Result::ok)
             .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path()))
         {
             let file_path = walk_entry.path();
+            if let Ok(canonical) = file_path.canonicalize() {
+                if !canonical.starts_with(&docs_root_canonical) {
+                    continue;
+                }
+            }
             let rel = file_path
                 .strip_prefix(docs_root)
                 .unwrap_or(file_path)
@@ -586,26 +598,50 @@ fn read_file_content(path: &Path) -> Result<String> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
     
     match ext.as_str() {
-        #[cfg(feature = "alcove-full")]
+        #[cfg(all(unix, feature = "alcove-full"))]
         "pdf" => {
-            // pdf_extract prints unicode fallback noise to both stdout and stderr — suppress both
+            // pdf_extract prints unicode fallback noise to both stdout and stderr — suppress both.
+            // FdGuard restores original fds on drop, protecting against panics.
+            #[cfg(all(unix, feature = "alcove-full"))]
+            struct FdGuard {
+                saved_stdout: libc::c_int,
+                saved_stderr: libc::c_int,
+            }
+            #[cfg(all(unix, feature = "alcove-full"))]
+            impl Drop for FdGuard {
+                fn drop(&mut self) {
+                    unsafe {
+                        if self.saved_stdout >= 0 {
+                            libc::dup2(self.saved_stdout, libc::STDOUT_FILENO);
+                            libc::close(self.saved_stdout);
+                        }
+                        if self.saved_stderr >= 0 {
+                            libc::dup2(self.saved_stderr, libc::STDERR_FILENO);
+                            libc::close(self.saved_stderr);
+                        }
+                    }
+                }
+            }
             let devnull = std::fs::File::open("/dev/null")
                 .map_err(|e| anyhow::anyhow!("Failed to open /dev/null: {}", e))?;
             let devnull_fd = devnull.as_raw_fd();
             let saved_stdout = unsafe { libc::dup(libc::STDOUT_FILENO) };
+            if saved_stdout < 0 {
+                return Err(anyhow::anyhow!("dup(STDOUT_FILENO) failed"));
+            }
             let saved_stderr = unsafe { libc::dup(libc::STDERR_FILENO) };
+            if saved_stderr < 0 {
+                unsafe { libc::close(saved_stdout); }
+                return Err(anyhow::anyhow!("dup(STDERR_FILENO) failed"));
+            }
+            let _guard = FdGuard { saved_stdout, saved_stderr };
             unsafe {
                 libc::dup2(devnull_fd, libc::STDOUT_FILENO);
                 libc::dup2(devnull_fd, libc::STDERR_FILENO);
             }
             let result = pdf_extract::extract_text(path)
                 .map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e));
-            unsafe {
-                libc::dup2(saved_stdout, libc::STDOUT_FILENO);
-                libc::dup2(saved_stderr, libc::STDERR_FILENO);
-                libc::close(saved_stdout);
-                libc::close(saved_stderr);
-            }
+            // _guard drops here, restoring stdout/stderr automatically
             // Fallback to pdftotext if pdf_extract failed or returned empty content.
             // Uses spawn + try_wait with a 30-second deadline to prevent DoS via
             // a malformed PDF that makes pdftotext loop indefinitely.
@@ -807,8 +843,14 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
         project_count += 1;
 
         let proj_cfg = effective_config(&path);
+        let docs_root_canonical = docs_root.canonicalize().unwrap_or_else(|_| docs_root.to_path_buf());
         for walk_entry in WalkDir::new(&path).into_iter().flatten().filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())) {
             let file_path = walk_entry.path().to_path_buf();
+            if let Ok(canonical) = file_path.canonicalize() {
+                if !canonical.starts_with(&docs_root_canonical) {
+                    continue;
+                }
+            }
             let rel_to_project = file_path.strip_prefix(&path).unwrap_or(&file_path).to_string_lossy().to_string();
             all_files.push((name.clone(), rel_to_project, file_path));
         }

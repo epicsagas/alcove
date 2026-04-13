@@ -362,6 +362,7 @@ enum StepResult {
 }
 
 /// Holds all state collected during the setup wizard
+#[derive(Default)]
 struct SetupState {
     docs_root: Option<PathBuf>,
     core_files: Vec<String>,
@@ -372,19 +373,6 @@ struct SetupState {
     selected_agents: Vec<usize>,
 }
 
-impl Default for SetupState {
-    fn default() -> Self {
-        Self {
-            docs_root: None,
-            core_files: Vec::new(),
-            team_files: Vec::new(),
-            public_files: Vec::new(),
-            diagram_format: None,
-            embedding_section: None,
-            selected_agents: Vec::new(),
-        }
-    }
-}
 
 /// Print step header with progress indicator
 fn print_step_header(step: &Step) {
@@ -432,7 +420,7 @@ fn adjust_index_for_back(idx: usize) -> usize {
 fn step_docs_root(state: &mut SetupState) -> Result<StepResult> {
     print_step_header(&Step::DocsRoot);
     
-    let current = state.docs_root.clone().or_else(|| saved_docs_root());
+    let current = state.docs_root.clone().or_else(saved_docs_root);
     
     // Show current value as default
     let theme = ColorfulTheme::default();

@@ -51,11 +51,10 @@ fn score_match(source_path: &Path, content: &str, project_name: &str) -> usize {
     let mut score = 0usize;
 
     // File name contains project name
-    if let Some(stem) = source_path.file_stem().and_then(|s| s.to_str()) {
-        if stem.to_lowercase().contains(&name_lower) {
+    if let Some(stem) = source_path.file_stem().and_then(|s| s.to_str())
+        && stem.to_lowercase().contains(&name_lower) {
             score += 3;
         }
-    }
 
     // Parent directory names in the source path contain project name
     for component in source_path.components() {
