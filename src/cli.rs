@@ -225,6 +225,7 @@ fn write_json_mcp(
     server_key: &str,
     binary: &Path,
     docs_root: &Path,
+    server_url: Option<&str>,
 ) -> Result<()> {
     let mut config: serde_json::Value = if config_path.exists() {
         let content = fs::read_to_string(config_path)?;
@@ -233,13 +234,19 @@ fn write_json_mcp(
         serde_json::json!({})
     };
 
-    let server_entry = serde_json::json!({
-        "command": binary.to_string_lossy(),
-        "args": [],
-        "env": {
-            "DOCS_ROOT": docs_root.to_string_lossy()
-        }
-    });
+    let server_entry = if let Some(url) = server_url {
+        serde_json::json!({
+            "url": url
+        })
+    } else {
+        serde_json::json!({
+            "command": binary.to_string_lossy(),
+            "args": [],
+            "env": {
+                "DOCS_ROOT": docs_root.to_string_lossy()
+            }
+        })
+    };
 
     config[server_key]["alcove"] = server_entry;
 
@@ -250,7 +257,7 @@ fn write_json_mcp(
     Ok(())
 }
 
-fn write_opencode_mcp(config_path: &Path, binary: &Path, docs_root: &Path) -> Result<()> {
+fn write_opencode_mcp(config_path: &Path, binary: &Path, docs_root: &Path, server_url: Option<&str>) -> Result<()> {
     let mut config: serde_json::Value = if config_path.exists() {
         let content = fs::read_to_string(config_path)?;
         serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
@@ -258,13 +265,20 @@ fn write_opencode_mcp(config_path: &Path, binary: &Path, docs_root: &Path) -> Re
         serde_json::json!({})
     };
 
-    config["mcp"]["alcove"] = serde_json::json!({
-        "type": "local",
-        "command": [binary.to_string_lossy()],
-        "environment": {
-            "DOCS_ROOT": docs_root.to_string_lossy()
-        }
-    });
+    if let Some(url) = server_url {
+        config["mcp"]["alcove"] = serde_json::json!({
+            "type": "remote",
+            "url": url
+        });
+    } else {
+        config["mcp"]["alcove"] = serde_json::json!({
+            "type": "local",
+            "command": [binary.to_string_lossy()],
+            "environment": {
+                "DOCS_ROOT": docs_root.to_string_lossy()
+            }
+        });
+    }
 
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)?;
@@ -273,12 +287,19 @@ fn write_opencode_mcp(config_path: &Path, binary: &Path, docs_root: &Path) -> Re
     Ok(())
 }
 
-fn write_codex_mcp(config_path: &Path, binary: &Path, docs_root: &Path) -> Result<()> {
-    let entry = format!(
-        "\n[mcp_servers.alcove]\ncommand = \"{}\"\nargs = []\n\n[mcp_servers.alcove.env]\nDOCS_ROOT = \"{}\"\n",
-        binary.display(),
-        docs_root.display(),
-    );
+fn write_codex_mcp(config_path: &Path, binary: &Path, docs_root: &Path, server_url: Option<&str>) -> Result<()> {
+    let entry = if let Some(url) = server_url {
+        format!(
+            "\n[mcp_servers.alcove]\ntype = \"remote\"\nurl = \"{}\"\n",
+            url
+        )
+    } else {
+        format!(
+            "\n[mcp_servers.alcove]\ncommand = \"{}\"\nargs = []\n\n[mcp_servers.alcove.env]\nDOCS_ROOT = \"{}\"\n",
+            binary.display(),
+            docs_root.display(),
+        )
+    };
 
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)?;
@@ -972,6 +993,22 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
     let agent_list = agents();
     let bin = binary_path();
 
+    // Compute MCP connection mode: enable_server → HTTP direct, else stdio
+    let server_url: Option<String> = if state.enable_server {
+        state.server_section.as_ref()
+            .and_then(|s| {
+                let host = s.lines()
+                    .find_map(|l| l.strip_prefix("host = ").map(|v| v.trim_matches('"')));
+                let port = s.lines()
+                    .find_map(|l| l.strip_prefix("port = ").map(|v| v.trim()));
+                host.zip(port)
+            })
+            .map(|(h, p)| format!("http://{}:{}/mcp", h, p))
+            .or_else(|| Some("http://127.0.0.1:8080/mcp".to_string()))
+    } else {
+        None
+    };
+
     for &idx in &state.selected_agents {
         let agent = &agent_list[idx];
         println!();
@@ -981,29 +1018,32 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
         match &agent.mcp_config {
             McpConfig::Json { path, server_key } => {
                 let p = expand_path(path);
-                write_json_mcp(&p, server_key, &bin, &docs_root)?;
+                write_json_mcp(&p, server_key, &bin, &docs_root, server_url.as_deref())?;
                 println!(
-                    "  {} {}",
+                    "  {} {} ({})",
                     style("✓").green(),
-                    t!("setup.mcp_set", path = path)
+                    t!("setup.mcp_set", path = path),
+                    if server_url.is_some() { "HTTP" } else { "stdio" }
                 );
             }
             McpConfig::OpenCode { path } => {
                 let p = expand_path(path);
-                write_opencode_mcp(&p, &bin, &docs_root)?;
+                write_opencode_mcp(&p, &bin, &docs_root, server_url.as_deref())?;
                 println!(
-                    "  {} {}",
+                    "  {} {} ({})",
                     style("✓").green(),
-                    t!("setup.mcp_set", path = path)
+                    t!("setup.mcp_set", path = path),
+                    if server_url.is_some() { "HTTP" } else { "stdio" }
                 );
             }
             McpConfig::Codex { path } => {
                 let p = expand_path(path);
-                write_codex_mcp(&p, &bin, &docs_root)?;
+                write_codex_mcp(&p, &bin, &docs_root, server_url.as_deref())?;
                 println!(
-                    "  {} {}",
+                    "  {} {} ({})",
                     style("✓").green(),
-                    t!("setup.mcp_set", path = path)
+                    t!("setup.mcp_set", path = path),
+                    if server_url.is_some() { "HTTP" } else { "stdio" }
                 );
             }
         }
