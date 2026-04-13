@@ -208,6 +208,12 @@ alcove promote      외부 볼트의 노트를 doc-repo에 가져오기
 alcove index        검색 인덱스 업데이트 (증분 — 변경된 파일만)
 alcove rebuild      검색 인덱스 전체 재구축 (스키마 변경 후 사용)
 alcove search       터미널에서 문서 검색
+alcove serve        HTTP RAG 서버 시작 (외부 접근용)
+alcove enable       macOS 로그인 항목으로 등록 및 백그라운드 서버 시작
+alcove disable      로그인 항목 해제 및 서버 중지
+alcove start        백그라운드 서버 시작
+alcove stop         백그라운드 서버 중지
+alcove restart      백그라운드 서버 재시작
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
 ```
 
@@ -247,6 +253,39 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 일치하는 프로젝트가 없는 파일은 수동 검토를 위해 `inbox/`에 저장됩니다.
+
+### 백그라운드 서버
+
+Alcove를 REST API로 접근 가능한 상주 HTTP RAG 서버로 실행할 수 있습니다. 외부 통합, 대시보드, 또는 비-MCP 클라이언트에 유용합니다.
+
+```bash
+# 포그라운드에서 서버 시작
+alcove serve                       # 기본: 127.0.0.1:8080
+alcove serve --port 9090           # 포트 지정
+alcove serve --token my-secret     # Bearer 토큰 인증
+alcove serve --host 0.0.0.0       # 전체 인터페이스에서 수신
+```
+
+#### macOS 로그인 항목 (launchd)
+
+Alcove를 macOS 로그인 항목으로 등록하면 로그인 시 자동으로 HTTP 서버가 시작되고 백그라운드에서 계속 실행됩니다:
+
+```bash
+# 등록 및 시작 (재부팅 후에도 유지)
+alcove enable
+
+# 라이프사이클 관리
+alcove stop         # 서버 중지
+alcove start        # 다시 시작
+alcove restart      # 중지 후 시작
+
+# 등록 해제 (서버 중지 + 로그인 항목 제거)
+alcove disable
+```
+
+LaunchAgent가 `~/Library/LaunchAgents/com.epicsagas.alcove.plist`에 설치됩니다. 로그는 `~/.alcove/logs/`에 기록됩니다.
+
+> **참고:** MCP 서버(stdio)는 Claude Code 세션 시작 시 자동으로 시작됩니다 — `enable`은 필요 없습니다. `enable`은 외부 접근을 위한 HTTP RAG 서버를 상시 실행하려는 경우에만 사용하세요.
 
 ## 검색
 

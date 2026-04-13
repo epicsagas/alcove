@@ -232,6 +232,12 @@ alcove promote      Bring a file from an external vault into your doc-repo
 alcove index        Update the search index (incremental — only changed files)
 alcove rebuild      Rebuild the search index from scratch (use after schema changes)
 alcove search       Search docs from the terminal
+alcove serve        Start HTTP RAG server for external access
+alcove enable       Register as macOS login item and start background server
+alcove disable      Unregister from login items and stop server
+alcove start        Start the background server
+alcove stop         Stop the background server
+alcove restart      Restart the background server
 alcove uninstall    Remove skills, config, and legacy files
 ```
 
@@ -271,6 +277,39 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 Files with no matching project land in `inbox/` for manual review.
+
+### Background Server
+
+Alcove can run as a persistent HTTP RAG server, accessible via REST API. This is useful for external integrations, dashboards, or non-MCP clients.
+
+```bash
+# Start the server in the foreground
+alcove serve                       # default: 127.0.0.1:8080
+alcove serve --port 9090           # custom port
+alcove serve --token my-secret     # require Bearer token
+alcove serve --host 0.0.0.0       # listen on all interfaces
+```
+
+#### macOS Login Item (launchd)
+
+Register Alcove as a macOS login item so the HTTP server starts automatically on login and stays running in the background:
+
+```bash
+# Register and start (persists across reboots)
+alcove enable
+
+# Lifecycle management
+alcove stop         # stop the server
+alcove start        # start it again
+alcove restart      # stop + start
+
+# Unregister (stops server and removes login item)
+alcove disable
+```
+
+This installs a LaunchAgent at `~/Library/LaunchAgents/com.epicsagas.alcove.plist`. Logs are written to `~/.alcove/logs/`.
+
+> **Tip:** The MCP server (stdio) starts automatically when Claude Code launches a session — you don't need `enable` for that. Use `enable` only if you want the HTTP RAG server running persistently for external access.
 
 ## Search
 
