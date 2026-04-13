@@ -1446,6 +1446,56 @@ pub fn slice_content(content: &str, offset: Option<usize>, limit: Option<usize>)
 }
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Tool: lint_project
+// ---------------------------------------------------------------------------
+
+pub fn tool_lint_project(docs_root: &Path, args: Value) -> Result<Value> {
+    let project_filter = args
+        .get("project")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let report = crate::lint::lint(docs_root, project_filter.as_deref());
+    Ok(crate::lint::lint_to_json(&report))
+}
+
+// ---------------------------------------------------------------------------
+// Tool: promote_document
+// ---------------------------------------------------------------------------
+
+pub fn tool_promote_document(docs_root: &Path, args: Value) -> Result<Value> {
+    let source_str = args
+        .get("source")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing required argument: source"))?;
+
+    let project = args
+        .get("project")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let copy = args
+        .get("copy")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true); // default: copy (safe)
+
+    let opts = crate::promote::PromoteOptions {
+        source: PathBuf::from(source_str),
+        project,
+        copy,
+    };
+
+    let result = crate::promote::promote(docs_root, opts)?;
+
+    Ok(json!({
+        "source": result.source.to_string_lossy(),
+        "destination": result.destination.to_string_lossy(),
+        "project": result.project,
+        "action": result.action,
+    }))
+}
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -2461,54 +2511,4 @@ mod tests {
         assert_eq!(cfg.core_files(), vec!["SPEC.md"]);
     }
 
-}
-
-// ---------------------------------------------------------------------------
-// Tool: lint_project
-// ---------------------------------------------------------------------------
-
-pub fn tool_lint_project(docs_root: &Path, args: Value) -> Result<Value> {
-    let project_filter = args
-        .get("project")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    let report = crate::lint::lint(docs_root, project_filter.as_deref());
-    Ok(crate::lint::lint_to_json(&report))
-}
-
-// ---------------------------------------------------------------------------
-// Tool: promote_document
-// ---------------------------------------------------------------------------
-
-pub fn tool_promote_document(docs_root: &Path, args: Value) -> Result<Value> {
-    let source_str = args
-        .get("source")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing required argument: source"))?;
-
-    let project = args
-        .get("project")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    let copy = args
-        .get("copy")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true); // default: copy (safe)
-
-    let opts = crate::promote::PromoteOptions {
-        source: PathBuf::from(source_str),
-        project,
-        copy,
-    };
-
-    let result = crate::promote::promote(docs_root, opts)?;
-
-    Ok(json!({
-        "source": result.source.to_string_lossy(),
-        "destination": result.destination.to_string_lossy(),
-        "project": result.project,
-        "action": result.action,
-    }))
 }

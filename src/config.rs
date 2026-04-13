@@ -387,6 +387,7 @@ impl DocConfig {
         None
     }
 
+    #[cfg_attr(test, allow(dead_code))]
     pub fn index_buffer_bytes(&self) -> usize {
         self.index
             .as_ref()

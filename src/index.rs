@@ -17,7 +17,9 @@ use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
 use tantivy::{Index, IndexReader, ReloadPolicy, TantivyDocument};
 use walkdir::WalkDir;
 
-use crate::config::{effective_config, load_config};
+use crate::config::effective_config;
+#[cfg(not(test))]
+use crate::config::load_config;
 
 const NGRAM_TOKENIZER: &str = "cjk_ngram";
 

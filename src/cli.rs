@@ -1780,6 +1780,353 @@ fn save_full_config_to(
 }
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Model subcommand (alcove-full feature)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "alcove-full")]
+pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
+    use crate::ModelCommands;
+
+    match subcmd {
+        ModelCommands::List => cmd_model_list(),
+        ModelCommands::Download => cmd_model_download(),
+        ModelCommands::Remove => cmd_model_remove(),
+        ModelCommands::Set { model } => cmd_model_set(&model),
+        ModelCommands::Status => cmd_model_status(),
+    }
+}
+
+#[cfg(feature = "alcove-full")]
+fn cmd_model_list() -> Result<()> {
+    use crate::embedding::EmbeddingModelChoice;
+    
+    println!("{}", style("Available embedding models:").bold());
+    println!();
+    println!(
+        "{:<30} {:<8} {:<10} {}",
+        style("Model").bold(),
+        style("Dim").bold(),
+        style("Size").bold(),
+        style("Description").bold()
+    );
+    println!("{}", "-".repeat(80));
+
+    let current = load_config()
+        .embedding
+        .as_ref()
+        .map(|e| e.model.as_str())
+        .unwrap_or("MultilingualE5Small");
+
+    for model in EmbeddingModelChoice::all() {
+        let marker = if model.as_str() == current { " [current]" } else { "" };
+        let desc = match model {
+            EmbeddingModelChoice::SnowflakeArcticEmbedXS => "Mobile/low-spec, fastest",
+            EmbeddingModelChoice::SnowflakeArcticEmbedXSQ => "Quantized XS, smallest",
+            EmbeddingModelChoice::MultilingualE5Small => "Default, balanced (100+ langs)",
+            EmbeddingModelChoice::SnowflakeArcticEmbedS => "Quality/size balance",
+            EmbeddingModelChoice::SnowflakeArcticEmbedSQ => "Quantized S",
+            EmbeddingModelChoice::MultilingualE5Base => "Large scale docs",
+            EmbeddingModelChoice::SnowflakeArcticEmbedM => "Medium, 768d",
+            EmbeddingModelChoice::SnowflakeArcticEmbedMQ => "Quantized M",
+            EmbeddingModelChoice::MultilingualE5Large => "Best quality, heavy",
+            EmbeddingModelChoice::BGEM3 => "Dense+Sparse+ColBERT",
+        };
+        println!(
+            "{:<30} {:<8} {:<10} {}{}",
+            model.as_str(),
+            model.dimension(),
+            format!("~{}MB", model.size_mb()),
+            desc,
+            style(marker).cyan()
+        );
+    }
+
+    println!();
+    println!("Change model: alcove model set <ModelName>");
+    println!("Check status: alcove model status");
+
+    Ok(())
+}
+
+#[cfg(feature = "alcove-full")]
+fn cmd_model_download() -> Result<()> {
+    #[cfg(feature = "alcove-full")]
+    {
+        use crate::embedding::EmbeddingService;
+        
+        let cfg = load_config().embedding_config_with_defaults();
+        let service = EmbeddingService::new(crate::config::EmbeddingConfig {
+            model: crate::embedding::EmbeddingModelChoice::parse(&cfg.model).unwrap_or_default().as_str().to_string(),
+            auto_download: true,
+            cache_dir: cfg.cache_dir.starts_with('~')
+                .then(|| std::env::var("HOME").ok())
+                .flatten()
+                .map(|h| cfg.cache_dir.replacen('~', &h, 1))
+                .unwrap_or_else(|| cfg.cache_dir.clone()),
+            enabled: true,
+            query_cache_size: cfg.query_cache_size,
+        });
+
+        println!(
+            "{} Downloading embedding model: {}",
+            style("⏳").yellow(),
+            style(&cfg.model).cyan()
+        );
+        println!("This may take a few minutes on first run...");
+        
+        let pb = indicatif::ProgressBar::new_spinner();
+        pb.set_style(indicatif::ProgressStyle::default_spinner().template("{spinner:.green} {msg}")?);
+        pb.set_message("Downloading and loading model...");
+        pb.enable_steady_tick(std::time::Duration::from_millis(100));
+
+        service.ensure_model().map_err(|e| anyhow::anyhow!("{}", e))?;
+        
+        pb.finish_and_clear();
+
+        println!(
+            "{} Model downloaded and ready: {}",
+            style("✓").green(),
+            style(&cfg.model).cyan()
+        );
+        println!("Cache location: {}", cfg.cache_dir);
+    }
+
+    #[cfg(not(feature = "alcove-full"))]
+    {
+        println!(
+            "{} The 'alcove-full' feature is required for embedding support.",
+            style("✗").red()
+        );
+        println!("Install with: cargo install alcove --features alcove-full");
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "alcove-full")]
+fn cmd_model_remove() -> Result<()> {
+    let cfg = load_config().embedding_config_with_defaults();
+    let cache_dir = std::path::PathBuf::from(
+        cfg.cache_dir.starts_with('~')
+            .then(|| std::env::var("HOME").ok())
+            .flatten()
+            .map(|h| cfg.cache_dir.replacen('~', &h, 1))
+            .unwrap_or_else(|| cfg.cache_dir.clone())
+    );
+
+    let model_dir = cache_dir.join(&cfg.model);
+
+    if model_dir.exists() {
+        // Calculate size before removal
+        let size_mb: u64 = walkdir::WalkDir::new(&model_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter_map(|e| e.metadata().ok())
+            .map(|m| m.len())
+            .sum::<u64>()
+            / 1_000_000;
+
+        fs::remove_dir_all(&model_dir)?;
+        println!(
+            "{} Removed model cache: {} (freed ~{}MB)",
+            style("✓").green(),
+            style(&cfg.model).cyan(),
+            size_mb
+        );
+    } else {
+        println!(
+            "{} No cached model found at: {}",
+            style("!").yellow(),
+            model_dir.display()
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "alcove-full")]
+fn cmd_model_set(model_name: &str) -> Result<()> {
+    use crate::embedding::EmbeddingModelChoice;
+    
+    // Validate model name
+    let model = EmbeddingModelChoice::parse(model_name)
+        .ok_or_else(|| anyhow::anyhow!("Unknown model: {}. Run 'alcove model list' to see available models.", model_name))?;
+
+    // Read current config
+    let config_file = config_path();
+    let mut content = if config_file.exists() {
+        fs::read_to_string(&config_file)?
+    } else {
+        String::new()
+    };
+
+    // Update or add [embedding] section
+    let embedding_section = format!(
+        "[embedding]\nmodel = \"{}\"\nauto_download = true\n",
+        model_name
+    );
+
+    if content.contains("[embedding]") {
+        // Replace existing embedding section
+        let start = content.find("[embedding]").unwrap();
+        let end = content[start..]
+            .find("\n[")
+            .map(|i| start + i)
+            .unwrap_or(content.len());
+        
+        // Find the actual end of the embedding section (before next section or EOF)
+        let section_end = content[start..].find("\n\n[").map(|i| start + i).unwrap_or(end);
+        
+        content = format!("{}{}{}", &content[..start], embedding_section.trim_end(), &content[section_end..]);
+    } else {
+        // Add new embedding section
+        if !content.ends_with('\n') && !content.is_empty() {
+            content.push('\n');
+        }
+        content.push('\n');
+        content.push_str(&embedding_section);
+    }
+
+    fs::write(&config_file, content)?;
+
+    println!(
+        "{} Model set to: {} ({}d, ~{}MB)",
+        style("✓").green(),
+        style(model_name).cyan(),
+        model.dimension(),
+        model.size_mb()
+    );
+    println!();
+    println!("Run 'alcove model download' to download the model.");
+    println!("Run 'alcove index' to rebuild the vector index with the new model.");
+
+    Ok(())
+}
+
+#[cfg(feature = "alcove-full")]
+fn cmd_model_status() -> Result<()> {
+    let cfg = load_config();
+    let emb_cfg = cfg.embedding_config_with_defaults();
+
+    println!("{}", style("Embedding Model Status").bold());
+    println!("{}", "-".repeat(40));
+    println!(
+        "{:<20} {}",
+        style("Configured model:").dim(),
+        style(&emb_cfg.model).cyan()
+    );
+    
+    let model_choice = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
+        .unwrap_or_default();
+
+    println!(
+        "{:<20} {}d",
+        style("Dimension:").dim(),
+        model_choice.dimension()
+    );
+    println!(
+        "{:<20} ~{}MB",
+        style("Size:").dim(),
+        model_choice.size_mb()
+    );
+    println!(
+        "{:<20} {}",
+        style("Auto-download:").dim(),
+        emb_cfg.auto_download
+    );
+    println!(
+        "{:<20} {}",
+        style("Cache dir:").dim(),
+        emb_cfg.cache_dir
+    );
+
+    let cache_path = expand_path(&emb_cfg.cache_dir);
+    let model_id = model_choice.model_id();
+    let folder_name = format!("models--{}", model_id.replace('/', "--"));
+    let model_dir = cache_path.join(folder_name);
+
+    println!();
+    if model_dir.exists() {
+        println!(
+            "{} Model cached and ready!",
+            style("✓").green()
+        );
+        println!("  Location: {}", model_dir.display());
+    } else {
+        println!(
+            "{} Model not cached locally.",
+            style("⏳").yellow()
+        );
+        println!("  Run 'alcove model download' to prepare for hybrid search.");
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// alcove lint
+// ---------------------------------------------------------------------------
+
+pub fn cmd_lint(format: &str) -> Result<()> {
+    use crate::lint;
+    use crate::tools;
+
+    let docs_root = match saved_docs_root() {
+        Some(p) => p,
+        None => {
+            anyhow::bail!("docs_root is not configured. Run `alcove setup` first.");
+        }
+    };
+
+    let project_filter = tools::resolve_project(&docs_root).map(|r| r.name);
+    let report = lint::lint(&docs_root, project_filter.as_deref());
+
+    if format == "json" {
+        let json = lint::lint_to_json(&report);
+        println!("{}", serde_json::to_string_pretty(&json)?);
+    } else {
+        let project_label = project_filter.as_deref().unwrap_or("(all projects)");
+        lint::print_lint_human(&report, project_label);
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// alcove promote
+// ---------------------------------------------------------------------------
+
+pub fn cmd_promote(source: &std::path::Path, project: Option<&str>, mv: bool) -> Result<()> {
+    use crate::promote;
+
+    let docs_root = match saved_docs_root() {
+        Some(p) => p,
+        None => {
+            anyhow::bail!("docs_root is not configured. Run `alcove setup` first.");
+        }
+    };
+
+    let opts = promote::PromoteOptions {
+        source: source.to_path_buf(),
+        project: project.map(|s| s.to_string()),
+        copy: !mv,
+    };
+
+    let result = promote::promote(&docs_root, opts)?;
+
+    println!(
+        "{} {} → {}  (project: {})",
+        style(result.action).green().bold(),
+        result.source.display(),
+        result.destination.display(),
+        style(&result.project).cyan(),
+    );
+
+    Ok(())
+}
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -2190,351 +2537,4 @@ mod tests {
         assert!(content.contains("[diagram]"));
         assert!(content.contains("format = \"mermaid\""));
     }
-}
-
-// ---------------------------------------------------------------------------
-// Model subcommand (alcove-full feature)
-// ---------------------------------------------------------------------------
-
-#[cfg(feature = "alcove-full")]
-pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
-    use crate::ModelCommands;
-
-    match subcmd {
-        ModelCommands::List => cmd_model_list(),
-        ModelCommands::Download => cmd_model_download(),
-        ModelCommands::Remove => cmd_model_remove(),
-        ModelCommands::Set { model } => cmd_model_set(&model),
-        ModelCommands::Status => cmd_model_status(),
-    }
-}
-
-#[cfg(feature = "alcove-full")]
-fn cmd_model_list() -> Result<()> {
-    use crate::embedding::EmbeddingModelChoice;
-    
-    println!("{}", style("Available embedding models:").bold());
-    println!();
-    println!(
-        "{:<30} {:<8} {:<10} {}",
-        style("Model").bold(),
-        style("Dim").bold(),
-        style("Size").bold(),
-        style("Description").bold()
-    );
-    println!("{}", "-".repeat(80));
-
-    let current = load_config()
-        .embedding
-        .as_ref()
-        .map(|e| e.model.as_str())
-        .unwrap_or("MultilingualE5Small");
-
-    for model in EmbeddingModelChoice::all() {
-        let marker = if model.as_str() == current { " [current]" } else { "" };
-        let desc = match model {
-            EmbeddingModelChoice::SnowflakeArcticEmbedXS => "Mobile/low-spec, fastest",
-            EmbeddingModelChoice::SnowflakeArcticEmbedXSQ => "Quantized XS, smallest",
-            EmbeddingModelChoice::MultilingualE5Small => "Default, balanced (100+ langs)",
-            EmbeddingModelChoice::SnowflakeArcticEmbedS => "Quality/size balance",
-            EmbeddingModelChoice::SnowflakeArcticEmbedSQ => "Quantized S",
-            EmbeddingModelChoice::MultilingualE5Base => "Large scale docs",
-            EmbeddingModelChoice::SnowflakeArcticEmbedM => "Medium, 768d",
-            EmbeddingModelChoice::SnowflakeArcticEmbedMQ => "Quantized M",
-            EmbeddingModelChoice::MultilingualE5Large => "Best quality, heavy",
-            EmbeddingModelChoice::BGEM3 => "Dense+Sparse+ColBERT",
-        };
-        println!(
-            "{:<30} {:<8} {:<10} {}{}",
-            model.as_str(),
-            model.dimension(),
-            format!("~{}MB", model.size_mb()),
-            desc,
-            style(marker).cyan()
-        );
-    }
-
-    println!();
-    println!("Change model: alcove model set <ModelName>");
-    println!("Check status: alcove model status");
-
-    Ok(())
-}
-
-#[cfg(feature = "alcove-full")]
-fn cmd_model_download() -> Result<()> {
-    #[cfg(feature = "alcove-full")]
-    {
-        use crate::embedding::EmbeddingService;
-        
-        let cfg = load_config().embedding_config_with_defaults();
-        let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-            model: crate::embedding::EmbeddingModelChoice::parse(&cfg.model).unwrap_or_default().as_str().to_string(),
-            auto_download: true,
-            cache_dir: cfg.cache_dir.starts_with('~')
-                .then(|| std::env::var("HOME").ok())
-                .flatten()
-                .map(|h| cfg.cache_dir.replacen('~', &h, 1))
-                .unwrap_or_else(|| cfg.cache_dir.clone()),
-            enabled: true,
-            query_cache_size: cfg.query_cache_size,
-        });
-
-        println!(
-            "{} Downloading embedding model: {}",
-            style("⏳").yellow(),
-            style(&cfg.model).cyan()
-        );
-        println!("This may take a few minutes on first run...");
-        
-        let pb = indicatif::ProgressBar::new_spinner();
-        pb.set_style(indicatif::ProgressStyle::default_spinner().template("{spinner:.green} {msg}")?);
-        pb.set_message("Downloading and loading model...");
-        pb.enable_steady_tick(std::time::Duration::from_millis(100));
-
-        service.ensure_model().map_err(|e| anyhow::anyhow!("{}", e))?;
-        
-        pb.finish_and_clear();
-
-        println!(
-            "{} Model downloaded and ready: {}",
-            style("✓").green(),
-            style(&cfg.model).cyan()
-        );
-        println!("Cache location: {}", cfg.cache_dir);
-    }
-
-    #[cfg(not(feature = "alcove-full"))]
-    {
-        println!(
-            "{} The 'alcove-full' feature is required for embedding support.",
-            style("✗").red()
-        );
-        println!("Install with: cargo install alcove --features alcove-full");
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "alcove-full")]
-fn cmd_model_remove() -> Result<()> {
-    let cfg = load_config().embedding_config_with_defaults();
-    let cache_dir = std::path::PathBuf::from(
-        cfg.cache_dir.starts_with('~')
-            .then(|| std::env::var("HOME").ok())
-            .flatten()
-            .map(|h| cfg.cache_dir.replacen('~', &h, 1))
-            .unwrap_or_else(|| cfg.cache_dir.clone())
-    );
-
-    let model_dir = cache_dir.join(&cfg.model);
-
-    if model_dir.exists() {
-        // Calculate size before removal
-        let size_mb: u64 = walkdir::WalkDir::new(&model_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .filter_map(|e| e.metadata().ok())
-            .map(|m| m.len())
-            .sum::<u64>()
-            / 1_000_000;
-
-        fs::remove_dir_all(&model_dir)?;
-        println!(
-            "{} Removed model cache: {} (freed ~{}MB)",
-            style("✓").green(),
-            style(&cfg.model).cyan(),
-            size_mb
-        );
-    } else {
-        println!(
-            "{} No cached model found at: {}",
-            style("!").yellow(),
-            model_dir.display()
-        );
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "alcove-full")]
-fn cmd_model_set(model_name: &str) -> Result<()> {
-    use crate::embedding::EmbeddingModelChoice;
-    
-    // Validate model name
-    let model = EmbeddingModelChoice::parse(model_name)
-        .ok_or_else(|| anyhow::anyhow!("Unknown model: {}. Run 'alcove model list' to see available models.", model_name))?;
-
-    // Read current config
-    let config_file = config_path();
-    let mut content = if config_file.exists() {
-        fs::read_to_string(&config_file)?
-    } else {
-        String::new()
-    };
-
-    // Update or add [embedding] section
-    let embedding_section = format!(
-        "[embedding]\nmodel = \"{}\"\nauto_download = true\n",
-        model_name
-    );
-
-    if content.contains("[embedding]") {
-        // Replace existing embedding section
-        let start = content.find("[embedding]").unwrap();
-        let end = content[start..]
-            .find("\n[")
-            .map(|i| start + i)
-            .unwrap_or(content.len());
-        
-        // Find the actual end of the embedding section (before next section or EOF)
-        let section_end = content[start..].find("\n\n[").map(|i| start + i).unwrap_or(end);
-        
-        content = format!("{}{}{}", &content[..start], embedding_section.trim_end(), &content[section_end..]);
-    } else {
-        // Add new embedding section
-        if !content.ends_with('\n') && !content.is_empty() {
-            content.push('\n');
-        }
-        content.push('\n');
-        content.push_str(&embedding_section);
-    }
-
-    fs::write(&config_file, content)?;
-
-    println!(
-        "{} Model set to: {} ({}d, ~{}MB)",
-        style("✓").green(),
-        style(model_name).cyan(),
-        model.dimension(),
-        model.size_mb()
-    );
-    println!();
-    println!("Run 'alcove model download' to download the model.");
-    println!("Run 'alcove index' to rebuild the vector index with the new model.");
-
-    Ok(())
-}
-
-#[cfg(feature = "alcove-full")]
-fn cmd_model_status() -> Result<()> {
-    let cfg = load_config();
-    let emb_cfg = cfg.embedding_config_with_defaults();
-
-    println!("{}", style("Embedding Model Status").bold());
-    println!("{}", "-".repeat(40));
-    println!(
-        "{:<20} {}",
-        style("Configured model:").dim(),
-        style(&emb_cfg.model).cyan()
-    );
-    
-    let model_choice = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
-        .unwrap_or_default();
-
-    println!(
-        "{:<20} {}d",
-        style("Dimension:").dim(),
-        model_choice.dimension()
-    );
-    println!(
-        "{:<20} ~{}MB",
-        style("Size:").dim(),
-        model_choice.size_mb()
-    );
-    println!(
-        "{:<20} {}",
-        style("Auto-download:").dim(),
-        emb_cfg.auto_download
-    );
-    println!(
-        "{:<20} {}",
-        style("Cache dir:").dim(),
-        emb_cfg.cache_dir
-    );
-
-    let cache_path = expand_path(&emb_cfg.cache_dir);
-    let model_id = model_choice.model_id();
-    let folder_name = format!("models--{}", model_id.replace('/', "--"));
-    let model_dir = cache_path.join(folder_name);
-
-    println!();
-    if model_dir.exists() {
-        println!(
-            "{} Model cached and ready!",
-            style("✓").green()
-        );
-        println!("  Location: {}", model_dir.display());
-    } else {
-        println!(
-            "{} Model not cached locally.",
-            style("⏳").yellow()
-        );
-        println!("  Run 'alcove model download' to prepare for hybrid search.");
-    }
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// alcove lint
-// ---------------------------------------------------------------------------
-
-pub fn cmd_lint(format: &str) -> Result<()> {
-    use crate::lint;
-    use crate::tools;
-
-    let docs_root = match saved_docs_root() {
-        Some(p) => p,
-        None => {
-            anyhow::bail!("docs_root is not configured. Run `alcove setup` first.");
-        }
-    };
-
-    let project_filter = tools::resolve_project(&docs_root).map(|r| r.name);
-    let report = lint::lint(&docs_root, project_filter.as_deref());
-
-    if format == "json" {
-        let json = lint::lint_to_json(&report);
-        println!("{}", serde_json::to_string_pretty(&json)?);
-    } else {
-        let project_label = project_filter.as_deref().unwrap_or("(all projects)");
-        lint::print_lint_human(&report, project_label);
-    }
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// alcove promote
-// ---------------------------------------------------------------------------
-
-pub fn cmd_promote(source: &std::path::Path, project: Option<&str>, mv: bool) -> Result<()> {
-    use crate::promote;
-
-    let docs_root = match saved_docs_root() {
-        Some(p) => p,
-        None => {
-            anyhow::bail!("docs_root is not configured. Run `alcove setup` first.");
-        }
-    };
-
-    let opts = promote::PromoteOptions {
-        source: source.to_path_buf(),
-        project: project.map(|s| s.to_string()),
-        copy: !mv,
-    };
-
-    let result = promote::promote(&docs_root, opts)?;
-
-    println!(
-        "{} {} → {}  (project: {})",
-        style(result.action).green().bold(),
-        result.source.display(),
-        result.destination.display(),
-        style(&result.project).cyan(),
-    );
-
-    Ok(())
 }
