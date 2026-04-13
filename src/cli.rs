@@ -375,6 +375,7 @@ struct SetupState {
     diagram_format: Option<String>,
     embedding_section: Option<String>,
     server_section: Option<String>,
+    enable_server: bool,
     selected_agents: Vec<usize>,
 }
 
@@ -854,6 +855,52 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
             port
         );
 
+        // ── Enable as background service ──
+        #[cfg(all(feature = "alcove-server", target_os = "macos"))]
+        {
+            let already_enabled = crate::launchd::is_loaded();
+            let enable_labels = vec![
+                style("← Go back").yellow().to_string(),
+                if already_enabled {
+                    "Keep current (already registered)".to_string()
+                } else {
+                    "Yes — register as login item and start now".to_string()
+                },
+                "No — I'll run `alcove serve` manually".to_string(),
+            ];
+
+            let enable_default = if already_enabled { 1 } else { 2 };
+
+            let enable_idx = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Register alcove serve as a macOS login item?")
+                .items(&enable_labels)
+                .default(enable_default)
+                .interact()?;
+
+            if is_back_selection(enable_idx) {
+                continue; // Re-start server config loop
+            }
+
+            state.enable_server = enable_idx == 1;
+
+            if state.enable_server {
+                println!(
+                    "  {} Background service will be registered in Summary step.",
+                    style("✓").green()
+                );
+            }
+        }
+
+        #[cfg(not(all(feature = "alcove-server", target_os = "macos")))]
+        {
+            println!(
+                "  {} Start manually with: alcove serve --host {} --port {}",
+                style("ℹ").dim(),
+                selected_host,
+                port
+            );
+        }
+
         return Ok(StepResult::Continue);
     }
 }
@@ -973,6 +1020,27 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
         }
     }
 
+    // Enable background service if requested
+    #[cfg(all(feature = "alcove-server", target_os = "macos"))]
+    if state.enable_server {
+        println!();
+        println!("  {}", style("Background Service").cyan());
+        match crate::launchd::enable() {
+            Ok(()) => {}
+            Err(e) => {
+                println!(
+                    "  {} Failed to register login item: {}",
+                    style("⚠").yellow(),
+                    e
+                );
+                println!(
+                    "  {} You can run `alcove enable` manually later.",
+                    style("ℹ").dim()
+                );
+            }
+        }
+    }
+
     // Print summary
     println!();
     println!("{}", style("── Configuration Summary ──").bold());
@@ -1017,11 +1085,29 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                 .find_map(|l| l.strip_prefix("host = ").map(|v| v.trim_matches('"')));
             let port = section.lines()
                 .find_map(|l| l.strip_prefix("port = ").map(|v| v.trim()));
-            println!(
-                "  Server: {}:{}",
-                host.unwrap_or("127.0.0.1"),
-                port.unwrap_or("8080")
-            );
+
+            #[cfg(all(feature = "alcove-server", target_os = "macos"))]
+            {
+                let service_status = if state.enable_server {
+                    "enabled (login item)"
+                } else {
+                    "manual only"
+                };
+                println!(
+                    "  Server: {}:{} ({})",
+                    host.unwrap_or("127.0.0.1"),
+                    port.unwrap_or("8080"),
+                    service_status
+                );
+            }
+            #[cfg(not(all(feature = "alcove-server", target_os = "macos")))]
+            {
+                println!(
+                    "  Server: {}:{}",
+                    host.unwrap_or("127.0.0.1"),
+                    port.unwrap_or("8080")
+                );
+            }
         }
         None => {
             println!("  Server: default (127.0.0.1:8080)");
