@@ -302,7 +302,7 @@ fn write_codex_mcp(config_path: &Path, binary: &Path, docs_root: &Path) -> Resul
 // ---------------------------------------------------------------------------
 
 /// Total number of setup steps (for progress indicator)
-const SETUP_STEPS: usize = 6;
+const SETUP_STEPS: usize = 7;
 
 /// Setup wizard steps
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -311,8 +311,9 @@ enum Step {
     Categories = 1,
     Diagram = 2,
     Embedding = 3,
-    Agents = 4,
-    Summary = 5,
+    Server = 4,
+    Agents = 5,
+    Summary = 6,
 }
 
 impl Step {
@@ -324,6 +325,7 @@ impl Step {
             Step::Categories => t!("setup.categories"),
             Step::Diagram => t!("setup.diagram"),
             Step::Embedding => Cow::Borrowed("Embedding Model (Hybrid Search)"),
+            Step::Server => Cow::Borrowed("HTTP RAG Server"),
             Step::Agents => t!("setup.agents"),
             Step::Summary => t!("setup.done"),
         };
@@ -335,7 +337,8 @@ impl Step {
             Step::DocsRoot => Some(Step::Categories),
             Step::Categories => Some(Step::Diagram),
             Step::Diagram => Some(Step::Embedding),
-            Step::Embedding => Some(Step::Agents),
+            Step::Embedding => Some(Step::Server),
+            Step::Server => Some(Step::Agents),
             Step::Agents => Some(Step::Summary),
             Step::Summary => None,
         }
@@ -347,7 +350,8 @@ impl Step {
             Step::Categories => Some(Step::DocsRoot),
             Step::Diagram => Some(Step::Categories),
             Step::Embedding => Some(Step::Diagram),
-            Step::Agents => Some(Step::Embedding),
+            Step::Server => Some(Step::Embedding),
+            Step::Agents => Some(Step::Server),
             Step::Summary => Some(Step::Agents),
         }
     }
@@ -370,6 +374,7 @@ struct SetupState {
     public_files: Vec<String>,
     diagram_format: Option<String>,
     embedding_section: Option<String>,
+    server_section: Option<String>,
     selected_agents: Vec<usize>,
 }
 
@@ -751,7 +756,109 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
     }
 }
 
-/// Step 5: Agent selection
+// ---------------------------------------------------------------------------
+// Server configuration
+// ---------------------------------------------------------------------------
+
+/// Server host options for setup wizard
+const SERVER_HOST_OPTIONS: &[(&str, &str)] = &[
+    ("127.0.0.1", "Localhost only (default, secure)"),
+    ("0.0.0.0", "All interfaces (allows remote access)"),
+];
+
+/// Step 5: Server configuration (HTTP RAG server)
+fn step_server(state: &mut SetupState) -> Result<StepResult> {
+    print_step_header(&Step::Server);
+
+    // Resolve current values: existing state > config.toml > defaults
+    let (current_host, current_port) = state.server_section.as_ref()
+        .and_then(|s| {
+            let host = s.lines()
+                .find_map(|l| l.strip_prefix("host = ").map(|v| v.trim_matches('"').to_string()));
+            let port = s.lines()
+                .find_map(|l| l.strip_prefix("port = ").map(|v| v.trim().to_string()));
+            host.zip(port)
+        })
+        .unwrap_or_else(|| {
+            let cfg = load_fresh_config();
+            cfg.as_ref()
+                .and_then(|c| c.server.as_ref())
+                .map(|s| (s.host.clone(), s.port.to_string()))
+                .unwrap_or_else(|| ("127.0.0.1".to_string(), "8080".to_string()))
+        });
+
+    loop {
+        // ── Host selection ──
+        let mut host_labels = vec![style("← Go back").yellow().to_string()];
+        host_labels.extend(
+            SERVER_HOST_OPTIONS
+                .iter()
+                .map(|(addr, desc)| {
+                    let marker = if *addr == current_host { " [current]" } else { "" };
+                    format!("{} — {}{}", addr, desc, marker)
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        let host_default = SERVER_HOST_OPTIONS
+            .iter()
+            .position(|(k, _)| *k == current_host)
+            .map(|i| i + 1) // +1 for back option
+            .unwrap_or(1);
+
+        let host_idx = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Select bind address")
+            .items(&host_labels)
+            .default(host_default)
+            .interact()?;
+
+        if is_back_selection(host_idx) {
+            return Ok(StepResult::Back);
+        }
+
+        let selected_host = SERVER_HOST_OPTIONS[host_idx - 1].0;
+
+        // ── Port input ──
+        println!("{}", style("  (Press Enter to confirm, or '..' to go back)").dim());
+        let port_input: String = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Listen port")
+            .default(current_port.clone())
+            .interact_text()?;
+
+        if port_input.trim() == ".." {
+            continue; // Re-start server config loop
+        }
+
+        let port: u16 = match port_input.trim().parse() {
+            Ok(p) => p,
+            Err(_) => {
+                println!("  {} Invalid port number. Please enter 1-65535.", style("⚠").yellow());
+                continue;
+            }
+        };
+
+        if port == 0 {
+            println!("  {} Port 0 is not valid. Please enter 1-65535.", style("⚠").yellow());
+            continue;
+        }
+
+        state.server_section = Some(format!(
+            "\n[server]\nhost = \"{}\"\nport = {}\n",
+            selected_host, port
+        ));
+
+        println!(
+            "  {} Server will bind to {}:{}",
+            style("✓").green(),
+            selected_host,
+            port
+        );
+
+        return Ok(StepResult::Continue);
+    }
+}
+
+/// Step 6: Agent selection
 fn step_agents(state: &mut SetupState) -> Result<StepResult> {
     print_step_header(&Step::Agents);
 
@@ -811,6 +918,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
         &state.team_files,
         &state.public_files,
         state.embedding_section.as_deref(),
+        state.server_section.as_deref(),
     )?;
 
     // Install agent configs
@@ -902,6 +1010,24 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
         }
     }
 
+    // Show server status
+    match &state.server_section {
+        Some(section) => {
+            let host = section.lines()
+                .find_map(|l| l.strip_prefix("host = ").map(|v| v.trim_matches('"')));
+            let port = section.lines()
+                .find_map(|l| l.strip_prefix("port = ").map(|v| v.trim()));
+            println!(
+                "  Server: {}:{}",
+                host.unwrap_or("127.0.0.1"),
+                port.unwrap_or("8080")
+            );
+        }
+        None => {
+            println!("  Server: default (127.0.0.1:8080)");
+        }
+    }
+
     println!();
     println!("  {}", style(t!("setup.hint_update").to_string()).dim());
     println!("  {}", style(t!("setup.hint_uninstall").to_string()).dim());
@@ -989,6 +1115,7 @@ pub fn cmd_setup() -> Result<()> {
             Step::Categories => step_categories(&mut state)?,
             Step::Diagram => step_diagram(&mut state)?,
             Step::Embedding => step_embedding(&mut state)?,
+            Step::Server => step_server(&mut state)?,
             Step::Agents => step_agents(&mut state)?,
             Step::Summary => {
                 step_summary(&mut state)?;
@@ -1724,6 +1851,7 @@ fn save_full_config(
     team_files: &[String],
     public_files: &[String],
     embedding_section: Option<&str>,
+    server_section: Option<&str>,
 ) -> Result<()> {
     let cfg_path = config_path();
     save_full_config_to(
@@ -1734,6 +1862,7 @@ fn save_full_config(
         team_files,
         public_files,
         embedding_section,
+        server_section,
     )?;
     println!(
         "  {} {}",
@@ -1751,6 +1880,7 @@ fn save_full_config_to(
     team_files: &[String],
     public_files: &[String],
     embedding_section: Option<&str>,
+    server_section: Option<&str>,
 ) -> Result<()> {
     fs::create_dir_all(cfg_path.parent().unwrap())?;
 
@@ -1772,6 +1902,10 @@ fn save_full_config_to(
     );
 
     if let Some(section) = embedding_section {
+        content.push_str(section);
+    }
+
+    if let Some(section) = server_section {
         content.push_str(section);
     }
 
@@ -2520,7 +2654,7 @@ mod tests {
             &core,
             &team,
             &public,
-            #[cfg(feature = "alcove-full")]
+            None,
             None,
         );
         assert!(result.is_ok());
