@@ -62,7 +62,7 @@ fn get_cached_reader(index_dir: &Path, index: &Index) -> Result<Arc<IndexReader>
     } else {
         None
     };
-    let max_readers = mem_cfg.max_cached_readers.max(1).min(4);
+    let max_readers = mem_cfg.max_cached_readers.clamp(1, 4);
 
     let mut cache = reader_cache().lock().unwrap();
 
@@ -519,10 +519,10 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
             .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path()))
         {
             let file_path = walk_entry.path();
-            if let Ok(canonical) = file_path.canonicalize() {
-                if !canonical.starts_with(&docs_root_canonical) {
-                    continue;
-                }
+            if let Ok(canonical) = file_path.canonicalize()
+                && !canonical.starts_with(&docs_root_canonical)
+            {
+                continue;
             }
             let rel = file_path
                 .strip_prefix(docs_root)
@@ -582,7 +582,7 @@ fn extract_xml_text(content: &str, tag_name: &[u8]) -> Result<String> {
 }
 
 /// Ensure index is up-to-date, rebuilding in background if stale.
-
+///
 /// Returns true if a rebuild was triggered.
 pub fn ensure_index_fresh(docs_root: &Path) -> bool {
     if !is_index_stale(docs_root) {
@@ -846,10 +846,10 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
         let docs_root_canonical = docs_root.canonicalize().unwrap_or_else(|_| docs_root.to_path_buf());
         for walk_entry in WalkDir::new(&path).into_iter().flatten().filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())) {
             let file_path = walk_entry.path().to_path_buf();
-            if let Ok(canonical) = file_path.canonicalize() {
-                if !canonical.starts_with(&docs_root_canonical) {
-                    continue;
-                }
+            if let Ok(canonical) = file_path.canonicalize()
+                && !canonical.starts_with(&docs_root_canonical)
+            {
+                continue;
             }
             let rel_to_project = file_path.strip_prefix(&path).unwrap_or(&file_path).to_string_lossy().to_string();
             all_files.push((name.clone(), rel_to_project, file_path));

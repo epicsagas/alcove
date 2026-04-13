@@ -106,19 +106,40 @@ fn is_index_file(path: &Path) -> bool {
     )
 }
 
+/// Replace fenced code blocks (``` … ```) and inline `code` spans with spaces,
+/// preserving character positions so other offsets remain valid.
+/// This prevents TOML `[[table]]` syntax inside code fences from being parsed
+/// as Obsidian-style wikilinks.
+fn strip_code_blocks(content: &str) -> String {
+    // Fenced blocks: ```optional-lang\n ... ``` (non-greedy, dotall)
+    let fence_re = Regex::new(r"(?s)```[^\n]*\n.*?```").unwrap();
+    let after_fences = fence_re.replace_all(content, |caps: &regex::Captures| {
+        " ".repeat(caps[0].len())
+    });
+    // Inline code: `...` (single backtick, no newlines)
+    let inline_re = Regex::new(r"`[^`\n]+`").unwrap();
+    inline_re
+        .replace_all(&after_fences, |caps: &regex::Captures| {
+            " ".repeat(caps[0].len())
+        })
+        .into_owned()
+}
+
 /// Extract all wikilinks `[[target]]` and markdown links `[text](path)` from content.
 fn extract_links(content: &str) -> Vec<String> {
     let mut links = Vec::new();
+    // Strip code blocks first so TOML [[table]] syntax isn't treated as wikilinks.
+    let prose = strip_code_blocks(content);
 
     // Wikilinks: [[target]] or [[target|alias]]
     let wiki_re = Regex::new(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]").unwrap();
-    for cap in wiki_re.captures_iter(content) {
+    for cap in wiki_re.captures_iter(&prose) {
         links.push(cap[1].trim().to_string());
     }
 
     // Markdown links: [text](path) — skip http/https/mailto
     let md_re = Regex::new(r"\[(?:[^\]]*)\]\(([^)]+)\)").unwrap();
-    for cap in md_re.captures_iter(content) {
+    for cap in md_re.captures_iter(&prose) {
         let target = cap[1].trim();
         if !target.starts_with("http://")
             && !target.starts_with("https://")
@@ -179,11 +200,7 @@ fn resolve_link(
         return true;
     }
     // Also try stripping .md suffix for stem lookup
-    let stem = if filename_part.ends_with(".md") {
-        &filename_part[..filename_part.len() - 3]
-    } else {
-        filename_part
-    };
+    let stem = filename_part.strip_suffix(".md").unwrap_or(filename_part);
     filename_map.contains_key(stem)
 }
 
@@ -237,6 +254,7 @@ fn lint_with_year(docs_root: &Path, project_filter: Option<&str>, now_year: i32)
     // False positives in URLs and version strings (e.g. `/2023/`, `2023.1.0`)
     // are filtered out in the match loop below by inspecting the surrounding chars.
     let stale_date_re = Regex::new(r"\b(20\d{2}|19\d{2})\b").unwrap();
+    let wikilink_re = Regex::new(r"\[\[[^\]]+\]\]").unwrap();
 
     for file_path in &files {
         let content = match std::fs::read_to_string(file_path) {
@@ -273,7 +291,17 @@ fn lint_with_year(docs_root: &Path, project_filter: Option<&str>, now_year: i32)
         file_links.push((file_path.clone(), links));
 
         // --- stale-marker ---
-        for cap in stale_marker_re.captures_iter(&content) {
+        // Strip code blocks and wikilink targets so that e.g. [[deprecated/note]]
+        // doesn't trigger a false-positive DEPRECATED marker hit.
+        let prose_for_markers = {
+            let no_code = strip_code_blocks(&content);
+            wikilink_re
+                .replace_all(&no_code, |caps: &regex::Captures| {
+                    " ".repeat(caps[0].len())
+                })
+                .into_owned()
+        };
+        for cap in stale_marker_re.captures_iter(&prose_for_markers) {
             let marker = cap[1].to_uppercase();
             issues.push(LintIssue {
                 severity: LintSeverity::Warning,
@@ -641,5 +669,51 @@ mod tests {
         let json = lint_to_json(&report);
         assert!(json["files_scanned"].as_u64().unwrap() >= 1);
         assert!(json["issues"].as_array().is_some());
+    }
+
+    #[test]
+    fn test_wikilink_in_code_fence_not_broken_link() {
+        // [[policy.required]] inside a TOML code block must NOT be treated
+        // as a wikilink — this was the SPEC_DOC_POLICY.md false-positive bug.
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "proj/spec.md",
+            "# Spec\n\n```toml\n[[policy.required]]\nname = \"PRD.md\"\n```\n",
+        );
+        let report = lint(tmp.path(), None);
+        let broken: Vec<_> = report
+            .issues
+            .iter()
+            .filter(|i| i.kind == "broken-link")
+            .collect();
+        assert!(
+            broken.is_empty(),
+            "[[...]] inside code fence should not be a broken-link: {broken:?}"
+        );
+    }
+
+    #[test]
+    fn test_deprecated_wikilink_path_not_stale_marker() {
+        // [[deprecated/some-note]] uses "deprecated" as a path component.
+        // The word should NOT trigger a stale-marker warning — only prose
+        // occurrences of DEPRECATED should count.
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "proj/some-note.md",
+            "# Note\nSee also [[deprecated/some-note]].\n",
+        );
+        write(tmp.path(), "deprecated/some-note.md", "# Old note\n");
+        let report = lint(tmp.path(), None);
+        let markers: Vec<_> = report
+            .issues
+            .iter()
+            .filter(|i| i.kind == "stale-marker")
+            .collect();
+        assert!(
+            markers.is_empty(),
+            "wikilink path 'deprecated/...' should not trigger stale-marker: {markers:?}"
+        );
     }
 }

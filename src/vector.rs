@@ -547,7 +547,7 @@ impl VectorStore {
         Ok(VectorMeta {
             model: self.model.clone(),
             dimension: self.dimension,
-            count: count.try_into().unwrap(),
+            count,
         })
     }
 

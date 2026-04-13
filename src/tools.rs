@@ -361,14 +361,14 @@ pub fn tool_search(
                         .as_array()
                         .map(|arr| {
                             arr.iter()
-                                .filter_map(|m| {
-                                    Some(json!({
+                                .map(|m| {
+                                    json!({
                                         "file": m["file"].as_str().unwrap_or("?"),
                                         "line": m["line_start"].as_u64().unwrap_or(0),
                                         "snippet": m["snippet"].as_str().unwrap_or(""),
                                         "source": "hybrid",
                                         "score": m["score"].as_f64().unwrap_or(0.0),
-                                    }))
+                                    })
                                 })
                                 .collect()
                         })

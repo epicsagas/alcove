@@ -41,8 +41,6 @@ pub enum ModelState {
 }
 
 #[cfg(feature = "alcove-full")]
-
-#[cfg(feature = "alcove-full")]
 impl std::fmt::Display for ModelState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
