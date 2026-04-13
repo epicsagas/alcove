@@ -4,7 +4,7 @@ description: >
   Grounds the agent in authoritative internal project documentation stored in a private Alcove docs repository.
   Covers project design, architecture, requirements, progress tracking, coding conventions,
   technical debt, secrets mapping, and environment configuration.
-  Also initializes, organizes, audits, and validates project documentation.
+  Also initializes, organizes, audits, validates, lints, and promotes project documentation.
   Activates whenever the agent needs authoritative project information — regardless of input language.
 ---
 
@@ -20,6 +20,8 @@ description: >
 /alcove decisions                Review architecture decision records
 /alcove debt                     List known issues and technical debt
 /alcove search auth flow         Search docs for a specific topic
+/alcove lint                     Check for broken links, orphans, stale markers
+/alcove promote ~/path/note.md   Bring an external note into the doc-repo
 /alcove what conventions apply?  Ask a doc question directly
 ```
 
@@ -37,6 +39,8 @@ description: >
 - User asks to **validate docs against policy** (required sections, placeholders, completeness)
 - User asks to **rebuild or refresh the search index** after bulk doc changes
 - User asks to **check what changed** in docs since the last index build
+- User asks to **lint docs** — find broken links, orphan files, stale WIP/DRAFT markers, or outdated date claims
+- User wants to **bring in a note from Obsidian or another vault** into the doc-repo
 - **The answer may exist in project docs** — check alcove before answering, not after
 
 ## How It Works
@@ -77,6 +81,8 @@ MCP server `alcove` via stdio. Auto-detects active project by matching CWD path 
 | `check_doc_changes` | Detect changes since last index build |
 | `rebuild_index` | Rebuild BM25 search index after bulk changes |
 | `validate_docs` | Validate against `policy.toml`. Returns pass/warn/fail per file |
+| `lint_project` | Semantic lint — broken wikilinks, orphan files, stale WIP/DRAFT markers, stale date claims |
+| `promote_document` | Copy or move a file from an external vault into the alcove doc-repo |
 | `configure_project` | Create/update `alcove.toml` in CWD. Preserves unmentioned fields |
 | `init_project` | Initialize docs from template. Auto-rebuilds index |
 
@@ -99,6 +105,26 @@ MCP server `alcove` via stdio. Auto-detects active project by matching CWD path 
 - `project_path` (optional) — abs path to project repo for public docs
 - `overwrite` (optional, default: false)
 - `files` (optional) — specific files to create; omit for all required docs
+
+### `lint_project` params & returns
+- Param: `project` (optional) — project name; defaults to CWD-detected project
+- Param: `format` (optional) — `"human"` (default) | `"json"`
+- Returns: list of issues, each with `severity` (`error` | `warning`), `check` type, `file`, and `message`
+
+Check types:
+| Check | What it catches |
+|-------|----------------|
+| `broken-link` | `[[wikilinks]]` or `[text](path)` pointing to missing files |
+| `orphan` | Files not linked by any other document |
+| `stale-marker` | WIP / TODO / FIXME / DRAFT / DEPRECATED in headings or callouts |
+| `stale-date` | Year mentions 2+ years old (e.g. "as of 2022") |
+
+### `promote_document` params
+- `source_path` (required) — absolute path to the file to import
+- `project` (optional) — target project name; auto-detected from filename/content if omitted
+- `mv` (optional, default: false) — move instead of copy
+
+Files with no matching project land in `inbox/` for manual review.
 
 ### `search_project_docs` scope rules
 - **Default: current project only.** Do NOT scan all projects unless user explicitly requests it.
@@ -186,10 +212,42 @@ When the user asks about doc status, health, or state — pick the right tool:
 | User intent | Tool | Signal words |
 |-------------|------|--------------|
 | Pass/fail against policy rules | `validate_docs` | validate, pass, fail, policy, compliance, required sections |
+| Broken links / orphans / stale markers | `lint_project` | lint, broken link, orphan, stale, WIP, DRAFT, outdated |
 | Overall file inventory + cross-repo analysis | `audit_project` | audit, organize, cleanup, what's missing, inventory |
 | What changed since last index | `check_doc_changes` | changed, modified, stale, out of date, new files, diff |
 
 If still ambiguous, prefer `audit_project` as the broadest starting point.
+
+### Linting docs
+
+Triggers: user asks to "lint", "check links", "find broken links", "find orphans", "check for stale markers", or "clean up docs".
+
+**Do NOT ask clarifying questions. Act immediately.**
+
+1. `lint_project` (project defaults to CWD) → get issues list
+2. Group by check type and present a summary:
+   - `broken-link`: list each file + the offending link
+   - `orphan`: list each unreferenced file
+   - `stale-marker`: list file + marker text
+   - `stale-date`: list file + the stale year claim
+3. If `errors: 0`, report clean. If issues exist, offer to fix them (update links, remove orphans, replace markers).
+4. **Never auto-fix without confirmation.**
+
+### Promoting external notes
+
+Triggers: user says "promote", "import this note", "add this to my docs", "bring in from Obsidian", or provides a file path to copy into the doc-repo.
+
+**Do NOT ask clarifying questions if a path is provided. Act immediately.**
+
+1. `promote_document(source_path: "<path>")` — Alcove auto-routes to the matching project
+2. If routing was ambiguous (landed in `inbox/`), show the user and ask which project to move it to
+3. After promotion, suggest running `rebuild_index` so the file is searchable
+
+To target a specific project:
+```
+promote_document(source_path: "~/brain/auth-notes.md", project: "my-app")
+promote_document(source_path: "~/brain/auth-notes.md", mv: true)  # move instead of copy
+```
 
 ### Before writing code
 Always check `CONVENTIONS.md` first to ensure generated code follows project-specific rules (naming, error handling, import order, forbidden patterns).
