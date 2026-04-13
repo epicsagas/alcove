@@ -267,6 +267,23 @@ alcove model download
 alcove model status
 ```
 
+#### 모델 선택
+
+| 모델 | 디스크 | 차원 | 언어 지원 | 추천 용도 |
+|------|--------|------|-----------|-----------|
+| `SnowflakeArcticEmbedXSQ` | 15 MB | 384 | 영어 | CI, 리소스 제약 환경 |
+| `SnowflakeArcticEmbedXS` | 30 MB | 384 | 영어 | 빠른 영어 전용 인덱싱 |
+| `SnowflakeArcticEmbedSQ` | 65 MB | 384 | 영어 | 품질·용량 균형 (영어) |
+| `SnowflakeArcticEmbedS` | 130 MB | 384 | 영어 | 영어 검색 품질 |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ 언어** | **기본값 — 다국어·혼합 언어 프로젝트** |
+| `SnowflakeArcticEmbedMQ` | 200 MB | 768 | 영어 | 고품질, 양자화 |
+| `SnowflakeArcticEmbedM` | 400 MB | 768 | 영어 | 최고 영어 품질 |
+| `MultilingualE5Base` | 555 MB | 768 | 100+ 언어 | 다국어 품질 향상 |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ 언어 | 최고 다국어 품질 |
+| `BGEM3` | 2.3 GB | 1024 | 100+ 언어 | 최첨단 다국어 |
+
+**Q (양자화) 변형**은 int8 양자화를 사용합니다 — 디스크 ~50% 절감, 약간의 recall 저하, 일반 문서 검색에서는 실질적인 정확도 손실 없음. 메모리가 제한적인 환경에서는 XSQ/SQ/MQ 변형을 사용하세요.
+
 모델이 준비되면 Alcove는 CLI 검색과 에이전트 기반 MCP 도구 모두에서 자동으로 하이브리드 검색을 사용합니다. 이는 다국어 프로젝트나 복잡한 의미론적 쿼리에 특히 효과적입니다.
 
 ```bash
@@ -280,6 +297,43 @@ alcove search "FR-023" --mode grep
 인덱스는 MCP 서버 시작 시 백그라운드에서 자동으로 빌드되며, 파일 변경을 감지하면 자동으로 재빌드합니다. 크론 잡도, 수동 작업도 필요 없습니다.
 
 **에이전트 사용법:** 에이전트는 쿼리로 `search_project_docs`를 호출하기만 하면 됩니다. Alcove가 랭킹, 중복 제거(파일당 하나의 결과), 크로스 프로젝트 검색, 폴백을 모두 처리합니다. 에이전트가 검색 모드를 선택할 필요가 없습니다.
+
+#### 인덱스 생명주기
+
+`alcove index`와 `alcove rebuild`의 차이:
+
+| 명령어 | 동작 | 사용 시점 |
+|--------|------|-----------|
+| `alcove index` | 증분 업데이트 — 새 파일·변경 파일만 처리 | 기본: 문서 추가·수정 후 |
+| `alcove rebuild` | 전체 재구축 — 모든 인덱스 데이터 삭제 후 재생성 | 모델 변경 후, 인덱스 손상 시 |
+
+**최초 설정:**
+
+```bash
+# 1단계: 설정 직후 BM25 검색 즉시 사용 가능
+alcove index            # 전문 검색 인덱스 빌드 (모델 불필요)
+
+# 2단계: 하이브리드 검색 활성화 (선택 사항이지만 권장)
+alcove model set MultilingualE5Small
+alcove model download   # ~235 MB 다운로드
+
+# 3단계: 기존 문서 전체 벡터 인덱스 빌드
+alcove rebuild          # 최초 1회 전체 재빌드
+                        # ⚠ 피크 RAM = 모델 크기 + corpus 벡터 (아래 참고)
+
+# 이후: 증분 업데이트만으로 충분
+alcove index            # 빠름 — 변경 파일만 재임베딩
+```
+
+**모델 변경:**
+
+```bash
+alcove model set SnowflakeArcticEmbedS   # 모델 변경
+alcove rebuild                            # 필수: 벡터는 모델별로 호환 불가
+```
+
+**rebuild 시 메모리:**  
+피크 RAM = 모델 크기 + HNSW 그래프 구성을 위해 RAM에 올라가는 모든 문서 벡터. `MultilingualE5Small` 기준 ~3,500개 문서 기준 피크 약 700 MB. 구조적으로 불가피하며, rebuild 완료 후 `[memory]` 설정에 따라 평상시 50–200 MB로 감소합니다.
 
 ## 프로젝트 감지
 

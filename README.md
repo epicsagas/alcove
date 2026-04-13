@@ -291,6 +291,23 @@ alcove model download
 alcove model status
 ```
 
+#### Choosing a model
+
+| Model | Disk | Dim | Languages | Best for |
+|-------|------|-----|-----------|----------|
+| `SnowflakeArcticEmbedXSQ` | 15 MB | 384 | English | CI, resource-constrained environments |
+| `SnowflakeArcticEmbedXS` | 30 MB | 384 | English | Fast English-only indexing |
+| `SnowflakeArcticEmbedSQ` | 65 MB | 384 | English | Balanced quality + size (English) |
+| `SnowflakeArcticEmbedS` | 130 MB | 384 | English | Good English recall |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ languages** | **Default — multilingual / mixed-language projects** |
+| `SnowflakeArcticEmbedMQ` | 200 MB | 768 | English | High quality, quantized |
+| `SnowflakeArcticEmbedM` | 400 MB | 768 | English | Best English recall |
+| `MultilingualE5Base` | 555 MB | 768 | 100+ languages | Better multilingual quality |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ languages | Maximum multilingual quality |
+| `BGEM3` | 2.3 GB | 1024 | 100+ languages | State-of-the-art multilingual |
+
+**Q (quantized) variants** use int8 quantization — ~50% smaller on disk, slightly lower recall, no meaningful accuracy loss for typical document search. Use the XSQ/SQ/MQ variants when memory is a constraint.
+
 Once a model is downloaded and ready, Alcove will automatically use Hybrid Search for both CLI search and agent-based MCP tools. This is particularly effective for multilingual projects and complex semantic queries.
 
 ```bash
@@ -304,6 +321,43 @@ alcove search "FR-023" --mode grep
 The index builds automatically in the background when the MCP server starts, and rebuilds when it detects file changes. No cron jobs, no manual steps.
 
 **How it works for agents:** agents just call `search_project_docs` with a query. Alcove handles the rest — ranking, deduplication (one result per file), cross-project search, and fallback. The agent never needs to choose a search mode.
+
+#### Index lifecycle
+
+Understanding when to run `alcove index` vs `alcove rebuild`:
+
+| Command | What it does | When to use |
+|---------|-------------|-------------|
+| `alcove index` | Incremental update — only processes new/changed files | Default: run after adding or editing docs |
+| `alcove rebuild` | Full rebuild — drops and recreates all index data | After changing embedding models, or after index corruption |
+
+**First-time setup:**
+
+```bash
+# Step 1: BM25 search is ready immediately after setup
+alcove index            # builds full-text index (no model needed)
+
+# Step 2: Enable Hybrid Search (optional but recommended)
+alcove model set MultilingualE5Small
+alcove model download   # ~235 MB download
+
+# Step 3: Build vector index for all existing docs
+alcove rebuild          # one-time full rebuild with embeddings
+                        # ⚠ peak RAM = model size + corpus vectors (see note below)
+
+# After this: incremental updates just work
+alcove index            # fast — only re-embeds changed files
+```
+
+**Switching models:**
+
+```bash
+alcove model set SnowflakeArcticEmbedS   # change model
+alcove rebuild                            # required: vectors are model-specific
+```
+
+**Memory during rebuild:**  
+Peak RAM = model size + all document vectors held in RAM while building the HNSW graph. For `MultilingualE5Small` with ~3,500 docs, expect ~700 MB peak. This is structural — after rebuild completes, steady-state drops to ~50–200 MB depending on your `[memory]` config. You can reduce steady-state further with lower `max_hnsw_cache` and shorter `model_unload_secs`.
 
 ### Global search
 
