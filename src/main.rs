@@ -247,21 +247,58 @@ fn main() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// MCP server — stdio JSON-RPC loop
+// MCP server — stdio JSON-RPC loop (hybrid: proxy or direct)
 // ---------------------------------------------------------------------------
 
-fn serve() -> Result<()> {
-    // Background BM25-only index build on server start.
-    // Vector embedding is deferred until the first hybrid search request
-    // when the model is already loaded — avoids blocking server readiness
-    // and unnecessary ONNX model loading on startup.
-    std::thread::spawn(|| {
-        if let Some(docs_root) = config::load_config().docs_root()
-            && docs_root.is_dir()
-        {
-            let _ = index::build_index_bm25_only(&docs_root);
+/// Check if the background HTTP server is alive and return its base URL.
+fn detect_proxy_target() -> Option<String> {
+    let cfg = config::load_config();
+    let (host, port) = cfg
+        .server
+        .as_ref()
+        .map(|s| (s.host.as_str(), s.port))
+        .unwrap_or(("127.0.0.1", 8080));
+    let base = format!("http://{host}:{port}");
+
+    match ureq::get(&format!("{base}/health")).call() {
+        Ok(resp) if resp.status() == 200 => {
+            eprintln!("[alcove] proxy mode → {base}");
+            Some(base)
         }
-    });
+        _ => None,
+    }
+}
+
+/// Forward a raw JSON-RPC line to the HTTP server's /mcp endpoint.
+fn proxy_request(base: &str, line: &str, token: Option<&str>) -> Option<String> {
+    let url = format!("{base}/mcp");
+    let mut req = ureq::post(&url).header("Content-Type", "application/json");
+    if let Some(t) = token {
+        req = req.header("Authorization", &format!("Bearer {t}"));
+    }
+    match req.send(line) {
+        Ok(mut resp) if resp.status() == 200 => resp.body_mut().read_to_string().ok(),
+        Ok(resp) if resp.status() == 204 => None, // notification, no response
+        _ => None,
+    }
+}
+
+fn serve() -> Result<()> {
+    let proxy_base = detect_proxy_target();
+    // Token is only available via CLI flag or env; not stored in config.
+    let token: Option<String> = std::env::var("ALCOVE_TOKEN").ok();
+
+    // In direct mode, build BM25 index in background
+    if proxy_base.is_none() {
+        eprintln!("[alcove] direct mode (no background server detected)");
+        std::thread::spawn(|| {
+            if let Some(docs_root) = config::load_config().docs_root()
+                && docs_root.is_dir()
+            {
+                let _ = index::build_index_bm25_only(&docs_root);
+            }
+        });
+    }
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -272,6 +309,19 @@ fn serve() -> Result<()> {
             continue;
         }
 
+        // Proxy mode: forward to HTTP server
+        if let Some(ref base) = proxy_base {
+            if let Some(resp_body) = proxy_request(base, &line, token.as_deref()) {
+                // Skip null responses (notifications)
+                if resp_body.trim() != "null" {
+                    writeln!(stdout, "{}", resp_body)?;
+                    stdout.flush()?;
+                }
+            }
+            continue;
+        }
+
+        // Direct mode: handle locally
         let req: mcp::RpcRequest = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(e) => {

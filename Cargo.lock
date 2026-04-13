@@ -82,6 +82,7 @@ dependencies = [
  "tokio",
  "toml 1.0.6+spec-1.1.0",
  "tower-http",
+ "ureq 3.3.0",
  "walkdir",
  "zip 8.5.1",
 ]
@@ -4515,14 +4516,17 @@ checksum = "dea7109cdcd5864d4eeb1b58a1648dc9bf520360d7af16ec26d0a9354bafcfc0"
 dependencies = [
  "base64 0.22.1",
  "der",
+ "flate2",
  "log",
  "native-tls",
  "percent-encoding",
+ "rustls",
  "rustls-pki-types",
  "socks",
  "ureq-proto",
  "utf8-zero",
  "webpki-root-certs",
+ "webpki-roots 1.0.6",
 ]
 
 [[package]]

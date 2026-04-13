@@ -20,6 +20,8 @@ use std::net::SocketAddr;
 #[cfg(feature = "alcove-server")]
 use std::sync::Arc;
 #[cfg(feature = "alcove-server")]
+use serde_json::Value;
+#[cfg(feature = "alcove-server")]
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 // ---------------------------------------------------------------------------
@@ -428,6 +430,7 @@ pub async fn run_server(
         .route("/health", get(health))
         .route("/search", get(get_search))
         .route("/v1/search", post(post_search))
+        .route("/mcp", post(mcp_dispatch))
         .layer(axum::extract::DefaultBodyLimit::max(1_048_576))
         .layer(
             CorsLayer::new()
@@ -454,11 +457,66 @@ pub async fn run_server(
     println!("      GET  /health     - Health check");
     println!("      GET  /search     - Search (q, limit, project, mode params)");
     println!("      POST /v1/search  - OpenAI-compatible search (JSON body)");
+    println!("      POST /mcp        - MCP JSON-RPC dispatch (proxy target)");
     println!();
 
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// MCP JSON-RPC dispatch via HTTP — proxy target for stdio thin clients
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "alcove-server")]
+async fn mcp_dispatch(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    body: String,
+) -> (StatusCode, Json<Value>) {
+    // Auth check (reuse existing token validation)
+    if let Some(ref expected) = state.token {
+        let provided = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "));
+        match provided {
+            Some(t) if constant_time_eq_str(t, expected) => {}
+            _ => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"error": "Unauthorized"})),
+                );
+            }
+        }
+    }
+
+    let req: crate::mcp::RpcRequest = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(e) => {
+            let resp = crate::mcp::RpcResponse::err(
+                None,
+                -32700,
+                format!("Failed to parse JSON-RPC request: {e}"),
+            );
+            return (
+                StatusCode::OK,
+                Json(serde_json::to_value(&resp).unwrap_or_default()),
+            );
+        }
+    };
+
+    match crate::mcp::dispatch(req) {
+        Some(resp) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(&resp).unwrap_or_default()),
+        ),
+        None => (
+            StatusCode::NO_CONTENT,
+            Json(serde_json::json!(null)),
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------------

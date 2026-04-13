@@ -52,6 +52,9 @@ zip = { version = "8.5", optional = true }
 quick-xml = { version = "0.39", optional = true }
 calamine = { version = "0.34", optional = true }
 
+# Lightweight sync HTTP client for MCP proxy mode
+ureq = "3"
+
 # HTTP server dependencies (alcove-server feature)
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }

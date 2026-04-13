@@ -1,0 +1,17 @@
+{
+  "name": "epicsagas",
+  "owner": {
+    "name": "epicsagas",
+    "url": "https://github.com/epicsagas"
+  },
+  "metadata": {
+    "description": "MCP documentation server with hybrid search and background RAG."
+  },
+  "plugins": [
+    {
+      "name": "alcove",
+      "source": "./",
+      "description": "MCP documentation server — hybrid BM25+vector search, lint, and launchd lifecycle for project docs."
+    }
+  ]
+}

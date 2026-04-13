@@ -1,0 +1,22 @@
+{
+  "name": "alcove",
+  "version": "0.7.12",
+  "description": "MCP documentation server — hybrid BM25+vector search, lint, and launchd lifecycle for project docs.",
+  "author": {
+    "name": "epicsagas",
+    "url": "https://github.com/epicsagas"
+  },
+  "homepage": "https://github.com/epicsagas/alcove",
+  "repository": "https://github.com/epicsagas/alcove",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "documentation",
+    "search",
+    "rag",
+    "bm25",
+    "vector",
+    "lint",
+    "launchd"
+  ]
+}
