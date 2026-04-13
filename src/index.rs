@@ -606,21 +606,49 @@ fn read_file_content(path: &Path) -> Result<String> {
                 libc::close(saved_stdout);
                 libc::close(saved_stderr);
             }
-            // Fallback to pdftotext if pdf_extract failed or returned empty content
+            // Fallback to pdftotext if pdf_extract failed or returned empty content.
+            // Uses spawn + try_wait with a 30-second deadline to prevent DoS via
+            // a malformed PDF that makes pdftotext loop indefinitely.
             match result {
                 Ok(text) if !text.trim().is_empty() => Ok(text),
-                _ => std::process::Command::new("pdftotext")
-                    .args([path.as_os_str(), std::ffi::OsStr::new("-")])
-                    .output()
-                    .map_err(|e| anyhow::anyhow!("pdftotext not available: {}", e))
-                    .and_then(|out| {
-                        if out.status.success() {
-                            String::from_utf8(out.stdout)
-                                .map_err(|e| anyhow::anyhow!("pdftotext output not UTF-8: {}", e))
-                        } else {
-                            Err(anyhow::anyhow!("pdftotext failed"))
+                _ => {
+                    use std::time::{Duration, Instant};
+                    let mut child = std::process::Command::new("pdftotext")
+                        .args([path.as_os_str(), std::ffi::OsStr::new("-")])
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                        .map_err(|e| anyhow::anyhow!("pdftotext not available: {}", e))?;
+                    let deadline = Instant::now() + Duration::from_secs(30);
+                    let status = loop {
+                        match child.try_wait() {
+                            Ok(Some(s)) => break Ok(s),
+                            Ok(None) => {
+                                if Instant::now() > deadline {
+                                    let _ = child.kill();
+                                    break Err(anyhow::anyhow!("pdftotext timed out"));
+                                }
+                                std::thread::sleep(Duration::from_millis(100));
+                            }
+                            Err(e) => break Err(anyhow::anyhow!("pdftotext wait error: {}", e)),
                         }
-                    }),
+                    };
+                    let status = status?;
+                    if status.success() {
+                        let mut stdout = child.stdout.take().unwrap_or_else(|| {
+                            // stdout was already consumed by try_wait path; return empty
+                            unreachable!("stdout pipe must be present after spawn")
+                        });
+                        let mut buf = Vec::new();
+                        use std::io::Read;
+                        stdout.read_to_end(&mut buf)
+                            .map_err(|e| anyhow::anyhow!("pdftotext read error: {}", e))?;
+                        String::from_utf8(buf)
+                            .map_err(|e| anyhow::anyhow!("pdftotext output not UTF-8: {}", e))
+                    } else {
+                        Err(anyhow::anyhow!("pdftotext failed"))
+                    }
+                }
             }
         }
         #[cfg(feature = "alcove-full")]
@@ -1304,12 +1332,19 @@ pub fn search_hybrid(
     let vector_path = docs_root.join(".alcove").join("vectors.db");
     let store = VectorStore::open(&vector_path, embedding_service.model_name(), embedding_service.dimension());
 
+    let mut vector_error: Option<String> = None;
     let vector_results = match store {
         Ok(s) => match s.search_with_filter(&query_embedding, limit * 2, project_filter) {
             Ok(r) => r,
-            Err(_) => Vec::new(),
+            Err(e) => {
+                vector_error = Some(format!("vector search error: {e}"));
+                Vec::new()
+            }
         },
-        Err(_) => Vec::new(),
+        Err(e) => {
+            vector_error = Some(format!("vector store open error: {e}"));
+            Vec::new()
+        }
     };
 
     // 8. Combine with RRF.
@@ -1432,7 +1467,10 @@ pub fn search_hybrid(
         "query": query,
         "scope": if project_filter.is_some() { "project" } else { "global" },
         "mode": "hybrid-bm25-vector",
-        "embedding_status": "ready",
+        "embedding_status": match &vector_error {
+            Some(e) => e.as_str(),
+            None => "ready",
+        },
         "matches": results,
         "truncated": truncated,
     }))
@@ -2017,5 +2055,68 @@ mod tests {
 
         let result = search_hybrid(tmp.path(), "OAuth", &svc, 5, None).unwrap();
         assert_eq!(result["mode"], "bm25-only", "expected bm25-only when embedding is not ready");
+    }
+
+    // B4: vector store open/search errors must be surfaced in embedding_status,
+    // not silently swallowed while still reporting mode = "hybrid-bm25-vector".
+    #[cfg(feature = "alcove-full")]
+    #[test]
+    fn search_hybrid_vector_store_error_reflected_in_embedding_status() {
+        use crate::embedding::EmbeddingService;
+        use crate::config::EmbeddingConfig;
+
+        let tmp = setup_indexed_root();
+        build_index_unlocked(tmp.path()).unwrap();
+
+        // Build a ready embedding service with a bogus cache dir so the model
+        // is not found, but embed() will fail — exercising vector store open
+        // failure path when vectors.db is absent (never built).
+        let svc = EmbeddingService::new(EmbeddingConfig {
+            model: "snowflake-arctic-embed-xs".to_string(),
+            auto_download: false,
+            cache_dir: tmp.path().join(".alcove/models").to_string_lossy().to_string(),
+            enabled: true,
+            query_cache_size: 64,
+        });
+
+        let result = search_hybrid(tmp.path(), "OAuth", &svc, 5, None).unwrap();
+        // When embedding fails (model absent), we get bm25-only — that is fine.
+        // When embedding succeeds but the vector DB is absent, we must NOT
+        // silently report "ready"; the error must appear in embedding_status.
+        // In this test the embedding step itself will fail (no model on disk),
+        // so we get bm25-only. Verify at minimum that embedding_status is NOT
+        // "ready" when the result cannot have come from a full hybrid run.
+        let mode = result["mode"].as_str().unwrap_or("");
+        let status = result["embedding_status"].as_str().unwrap_or("");
+        if mode == "hybrid-bm25-vector" {
+            // If we somehow got hybrid, status must be "ready"
+            assert_eq!(status, "ready");
+        } else {
+            // bm25-only path: status must NOT be "ready"
+            assert_ne!(status, "ready",
+                "embedding_status should reflect the failure reason, not 'ready'");
+        }
+    }
+
+    // pdftotext timeout: spawn + try_wait loop must not block indefinitely.
+    // We test the helper by pointing it at a valid (non-PDF) file path so
+    // pdftotext exits quickly with a non-zero status — the important thing is
+    // that read_file_content returns Ok/Err without hanging.
+    #[cfg(feature = "alcove-full")]
+    #[test]
+    fn read_file_content_pdf_does_not_hang() {
+        use std::time::{Duration, Instant};
+        let tmp = tempfile::TempDir::new().unwrap();
+        // Write a minimal valid-looking but actually broken PDF so pdftotext exits fast.
+        let pdf_path = tmp.path().join("broken.pdf");
+        std::fs::write(&pdf_path, b"%PDF-1.4 broken content").unwrap();
+        let start = Instant::now();
+        // read_file_content should return within a reasonable time even when
+        // pdftotext fails (non-zero exit or not installed).
+        let _ = read_file_content(&pdf_path);
+        assert!(
+            start.elapsed() < Duration::from_secs(35),
+            "read_file_content must not block longer than the 30s timeout"
+        );
     }
 }

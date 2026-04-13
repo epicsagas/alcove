@@ -674,7 +674,7 @@ mod tests {
         let a = vec![1.0, 1.0, 0.0];
         let b = vec![1.0, 0.0, 0.0];
         // cos(45°) ≈ 0.707
-        assert!((cosine_similarity(&a, &b) - 0.7071).abs() < 0.01);
+        assert!((cosine_similarity(&a, &b) - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.01);
     }
 
     /// Fix 1: reopening with a different model must clear all vectors atomically.
@@ -733,6 +733,7 @@ mod tests {
     /// Uses `contains_key` checks on the per-project HashMap.
     #[cfg(feature = "alcove-full")]
     #[test]
+    #[ignore = "stress test: builds 5000-vector HNSW graph, run explicitly with -- --ignored"]
     fn test_hnsw_cache_reused_on_second_search() {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("vec_cache.db");

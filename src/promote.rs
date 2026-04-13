@@ -106,16 +106,15 @@ pub fn promote(docs_root: &Path, opts: PromoteOptions) -> Result<PromoteResult> 
         .clone()
         .unwrap_or_else(|| detect_project(docs_root, source, &content));
 
-    // Prevent path traversal: project name must not contain separators or `..`
-    if project.contains(std::path::MAIN_SEPARATOR)
-        || project.contains('/')
-        || project.contains("..")
-        || project == "."
+    // Prevent path traversal: project name must be a single Normal component.
     {
-        anyhow::bail!(
-            "Invalid project name '{}': must not contain path separators or traversal sequences",
-            project
-        );
+        use std::path::Component;
+        let components: Vec<_> = std::path::Path::new(&project).components().collect();
+        if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
+            anyhow::bail!(
+                "Invalid project name: must be a simple name without path separators"
+            );
+        }
     }
 
     let target_dir = docs_root.join(&project);
@@ -129,6 +128,11 @@ pub fn promote(docs_root: &Path, opts: PromoteOptions) -> Result<PromoteResult> 
     let filename = source
         .file_name()
         .ok_or_else(|| anyhow::anyhow!("Source path has no filename"))?;
+
+    // Ensure the filename is a plain basename with no embedded path separators.
+    if std::path::Path::new(filename).components().count() != 1 {
+        anyhow::bail!("Invalid filename: must be a plain filename without path separators");
+    }
 
     let destination = target_dir.join(filename);
 
@@ -332,6 +336,59 @@ mod tests {
                 "should reject traversal project name: '{}'",
                 bad_project
             );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_promote_filename_with_separator_rejected() {
+        let tmp = TempDir::new().unwrap();
+        let docs_root = tmp.path().join("docs");
+        fs::create_dir_all(docs_root.join("proj")).unwrap();
+
+        // Craft a PathBuf whose file_name() contains a slash via symlink trick:
+        // We test the guard by providing a source whose OsStr filename contains a slash
+        // (possible on some platforms). On Linux/macOS we simulate via a path whose
+        // last component is actually traversal when re-joined.
+        // The simplest reproducible case: create "evil/note.md" under vault,
+        // then pass the path directly. file_name() returns "note.md" (safe),
+        // so we test the alternate case: a path ending in "/" (no filename).
+        let vault = tmp.path().join("vault");
+        fs::create_dir_all(&vault).unwrap();
+        // A path that ends in a separator has no file_name
+        let no_name_path = PathBuf::from(vault.to_str().unwrap().to_owned() + "/");
+        let result = promote(
+            &docs_root,
+            PromoteOptions {
+                source: no_name_path,
+                project: Some("proj".into()),
+                copy: true,
+            },
+        );
+        assert!(result.is_err(), "path with no filename should be rejected");
+    }
+
+    #[test]
+    fn test_promote_project_name_component_validation() {
+        let tmp = TempDir::new().unwrap();
+        let docs_root = tmp.path().join("docs");
+        fs::create_dir_all(&docs_root).unwrap();
+
+        let vault = tmp.path().join("vault");
+        fs::create_dir_all(&vault).unwrap();
+        let src = write(&vault, "note.md", "# Note\n");
+
+        // These should all be rejected by the strengthened component check
+        for bad in &["../escape", "a/b/c", ".", ".."] {
+            let result = promote(
+                &docs_root,
+                PromoteOptions {
+                    source: src.clone(),
+                    project: Some(bad.to_string()),
+                    copy: true,
+                },
+            );
+            assert!(result.is_err(), "should reject project name: '{bad}'");
         }
     }
 

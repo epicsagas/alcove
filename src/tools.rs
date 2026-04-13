@@ -620,6 +620,18 @@ pub fn tool_get_file(project_root: &Path, args_value: Value) -> Result<Value> {
         anyhow::bail!("File type not allowed: {}", args.relative_path);
     }
 
+    // Symlink escape guard: resolve all symlinks and verify the canonical path
+    // stays within the project root.
+    let canonical_path = full_path
+        .canonicalize()
+        .map_err(|_| anyhow::anyhow!("access denied: file not found"))?;
+    let canonical_root = project_root
+        .canonicalize()
+        .map_err(|_| anyhow::anyhow!("access denied: project root not found"))?;
+    if !canonical_path.starts_with(&canonical_root) {
+        anyhow::bail!("access denied: path outside project root");
+    }
+
     let content = std::fs::read_to_string(&full_path)?;
     let sliced = slice_content(&content, args.offset, args.limit);
 
@@ -1979,6 +1991,32 @@ mod tests {
         let result = tool_get_file(&project_root, args).unwrap();
         assert_eq!(result["path"], "level1/level2/level3/deep.md");
         assert!(result["content"].as_str().unwrap().contains("Deep File"));
+    }
+
+    // -- tool_get_file: symlink outside project root is rejected --
+
+    #[test]
+    #[cfg(unix)]
+    fn get_file_rejects_symlink_escape() {
+        let tmp = setup_docs_root();
+        let project_root = tmp.path().join("testproj");
+
+        // Create a file outside the project root
+        let outside = tmp.path().join("secret.md");
+        fs::write(&outside, "# Secret").unwrap();
+
+        // Create a symlink inside the project root pointing outside
+        let link = project_root.join("escape.md");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+
+        let args = json!({"relative_path": "escape.md"});
+        let result = tool_get_file(&project_root, args);
+        assert!(result.is_err(), "symlink escape should be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("access denied") || msg.contains("traversal") || msg.contains("outside"),
+            "unexpected error: {msg}"
+        );
     }
 
     // -- tool_init_project: invalid name with path separators --

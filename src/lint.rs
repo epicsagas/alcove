@@ -277,17 +277,14 @@ pub fn lint(docs_root: &Path, project_filter: Option<&str>) -> LintReport {
         file_links.push((file_path.clone(), links));
 
         // --- stale-marker ---
-        if stale_marker_re.is_match(&content) {
-            for cap in stale_marker_re.captures_iter(&content) {
-                let marker = cap[1].to_uppercase();
-                issues.push(LintIssue {
-                    severity: LintSeverity::Warning,
-                    kind: "stale-marker",
-                    file: rel.clone(),
-                    message: format!("Contains stale marker: {}", marker),
-                });
-                break; // one issue per file
-            }
+        if let Some(cap) = stale_marker_re.captures(&content) {
+            let marker = cap[1].to_uppercase();
+            issues.push(LintIssue {
+                severity: LintSeverity::Warning,
+                kind: "stale-marker",
+                file: rel.clone(),
+                message: format!("Contains stale marker: {}", marker),
+            });
         }
 
         // --- stale-date ---

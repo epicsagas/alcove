@@ -106,16 +106,29 @@ pub struct ServerState {
 // ---------------------------------------------------------------------------
 
 /// Constant-time string comparison to prevent timing attacks on bearer token auth.
+/// Runs the full XOR loop regardless of length to avoid a length oracle.
 #[cfg(feature = "alcove-server")]
 fn constant_time_eq_str(a: &str, b: &str) -> bool {
-    if a.len() != b.len() {
-        return false;
+    let a = a.as_bytes();
+    let b = b.as_bytes();
+    let len = a.len().max(b.len());
+    let mut diff: u8 = (a.len() != b.len()) as u8;
+    for i in 0..len {
+        let x = if i < a.len() { a[i] } else { 0 };
+        let y = if i < b.len() { b[i] } else { 0 };
+        diff |= x ^ y;
     }
-    // XOR all bytes and OR into accumulator — result is 0 only when equal.
-    a.bytes()
-        .zip(b.bytes())
-        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-        == 0
+    diff == 0
+}
+
+/// Validates CORS origin against an allowlist of localhost origins.
+/// Prevents `starts_with` bypass (e.g. `http://localhost.evil.com`).
+#[cfg(feature = "alcove-server")]
+fn is_allowed_origin(origin: &[u8]) -> bool {
+    let s = std::str::from_utf8(origin).unwrap_or("");
+    s == "http://localhost"
+        || (s.starts_with("http://localhost:") && s[17..].parse::<u16>().is_ok())
+        || (s.starts_with("http://127.0.0.1:") && s[17..].parse::<u16>().is_ok())
 }
 
 /// Check Bearer token authentication. Returns `Err` with 401 if the token is
@@ -163,6 +176,16 @@ async fn handle_search(
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
                 error: "Query cannot be empty".to_string(),
+                code: 400,
+            }),
+        ));
+    }
+
+    if req.q.len() > 8192 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Query too long (max 8192 bytes)".to_string(),
                 code: 400,
             }),
         ));
@@ -295,7 +318,11 @@ async fn handle_search(
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "alcove-server")]
-async fn health(State(state): State<Arc<ServerState>>) -> Json<HealthResponse> {
+async fn health(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+) -> Result<Json<HealthResponse>, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&state, &headers)?;
     let docs_root = state.docs_root.clone();
     let projects = tokio::task::spawn_blocking(move || {
         std::fs::read_dir(&docs_root)
@@ -310,12 +337,12 @@ async fn health(State(state): State<Arc<ServerState>>) -> Json<HealthResponse> {
     .await
     .unwrap_or(0);
 
-    Json(HealthResponse {
+    Ok(Json(HealthResponse {
         status: "ok".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         docs_root: state.docs_root.to_string_lossy().to_string(),
         projects,
-    })
+    }))
 }
 
 /// GET /search — query params
@@ -398,12 +425,11 @@ pub async fn run_server(
         .route("/health", get(health))
         .route("/search", get(get_search))
         .route("/v1/search", post(post_search))
+        .layer(axum::extract::DefaultBodyLimit::max(1_048_576))
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(|origin, _| {
-                    let bytes = origin.as_bytes();
-                    bytes.starts_with(b"http://localhost")
-                        || bytes.starts_with(b"http://127.0.0.1")
+                    is_allowed_origin(origin.as_bytes())
                 }))
                 .allow_methods([Method::GET, Method::POST])
                 .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
