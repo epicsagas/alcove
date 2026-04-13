@@ -377,9 +377,17 @@ files = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", ...]
 
 [diagram]
 format = "mermaid"
+
+[memory]
+reader_ttl_secs   = 300   # evict idle IndexReader after N seconds (0 = never)
+max_cached_readers = 1    # max concurrent IndexReader instances in RAM
+model_unload_secs  = 600  # unload embedding model after N seconds of inactivity (0 = never)
+max_hnsw_cache     = 3    # max HNSW graphs held in memory simultaneously
 ```
 
 All of this is set interactively via `alcove setup`. You can also edit the file directly.
+
+**Memory usage note:** During initial indexing or a full rebuild, Alcove loads the embedding model (~235–500 MB) and holds all document vectors in RAM while constructing the HNSW graph — peak usage scales with corpus size and is unavoidable for that operation. The `[memory]` settings above control *steady-state* RAM after indexing is complete.
 
 File lists are fully customizable — add any filename to any category, or move files between categories to match your team's workflow:
 

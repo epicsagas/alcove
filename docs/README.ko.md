@@ -328,9 +328,17 @@ files = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", ...]
 
 [diagram]
 format = "mermaid"
+
+[memory]
+reader_ttl_secs   = 300   # N초 후 유휴 IndexReader 해제 (0 = 해제 안 함)
+max_cached_readers = 1    # RAM에 동시에 유지할 최대 IndexReader 수
+model_unload_secs  = 600  # N초 동안 임베딩 미사용 시 모델 언로드 (0 = 언로드 안 함)
+max_hnsw_cache     = 3    # 동시에 메모리에 유지할 최대 HNSW 그래프 수
 ```
 
 모든 설정은 `alcove setup`으로 대화형으로 진행됩니다. 파일을 직접 편집할 수도 있습니다.
+
+**메모리 사용 참고:** 최초 인덱싱 또는 전체 rebuild 시, Alcove는 임베딩 모델(~235–500MB)을 로드하고 HNSW 그래프 구성을 위해 모든 문서 벡터를 RAM에 올립니다. 이 시점의 피크 메모리는 corpus 크기에 비례하며 구조적으로 불가피합니다. 위 `[memory]` 설정은 인덱싱 완료 후 *평상시* 메모리를 제어합니다.
 
 ## 지원 에이전트
 
