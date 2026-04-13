@@ -864,9 +864,22 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
             continue;
         }
 
+        // Resolve token: reuse existing or generate new
+        let existing_token = state.server_section.as_ref()
+            .and_then(|s| {
+                s.lines()
+                    .find_map(|l| l.strip_prefix("token = ").map(|v| v.trim_matches('"').to_string()))
+            })
+            .or_else(|| {
+                load_fresh_config()
+                    .and_then(|c| c.server)
+                    .and_then(|s| s.token)
+            });
+        let token = existing_token.unwrap_or_else(generate_token);
+
         state.server_section = Some(format!(
-            "\n[server]\nhost = \"{}\"\nport = {}\n",
-            selected_host, port
+            "\n[server]\nhost = \"{}\"\nport = {}\ntoken = \"{}\"\n",
+            selected_host, port, token
         ));
 
         println!(
@@ -1153,6 +1166,13 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
             println!("  Server: default (127.0.0.1:8080)");
         }
     }
+
+    // Show token hint
+    println!(
+        "  {} Share token with team: {}",
+        style("ℹ").dim(),
+        style("alcove token").cyan()
+    );
 
     println!();
     println!("  {}", style(t!("setup.hint_update").to_string()).dim());
@@ -2040,6 +2060,47 @@ fn save_full_config_to(
 }
 
 // ---------------------------------------------------------------------------
+// Token subcommand
+// ---------------------------------------------------------------------------
+
+/// Generate a random bearer token prefixed with `alcove-`.
+fn generate_token() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    // Simple fast random from nanosecond timestamp + process id
+    let pid = std::process::id();
+    let mut seed = (t as u64) ^ ((pid as u64) << 32);
+    let mut hex = String::with_capacity(32);
+    for _ in 0..32 {
+        // xorshift64
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        hex.push(std::char::from_digit((seed & 0xf) as u32, 16).unwrap());
+    }
+    format!("alcove-{hex}")
+}
+
+/// Print the stored bearer token from config.toml.
+pub fn cmd_token() -> Result<()> {
+    let cfg = load_config();
+    match cfg.server.as_ref().and_then(|s| s.token.as_ref()) {
+        Some(token) => {
+            println!("{token}");
+            Ok(())
+        }
+        None => {
+            println!(
+                "  {} No token configured. Run `alcove setup` to generate one.",
+                style("⚠").yellow()
+            );
+            std::process::exit(1);
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Model subcommand (alcove-full feature)
@@ -2570,7 +2631,7 @@ mod tests {
         let bin = PathBuf::from("/usr/local/bin/alcove");
         let docs = PathBuf::from("/docs/root");
 
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs);
+        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None);
         assert!(result.is_ok());
         assert!(cfg.exists());
 
@@ -2602,7 +2663,7 @@ mod tests {
         let bin = PathBuf::from("/bin/alcove");
         let docs = PathBuf::from("/docs");
 
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs);
+        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
@@ -2621,9 +2682,28 @@ mod tests {
         let bin = PathBuf::from("/bin/alcove");
         let docs = PathBuf::from("/docs");
 
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs);
+        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None);
         assert!(result.is_ok());
         assert!(cfg.exists());
+    }
+
+    // ── write_json_mcp with HTTP mode ──
+
+    #[test]
+    fn write_json_mcp_http_mode() {
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        let cfg = tmp.path().join("mcp.json");
+        let bin = PathBuf::from("/usr/local/bin/alcove");
+        let docs = PathBuf::from("/docs/root");
+
+        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, Some("http://127.0.0.1:8080/mcp"));
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&cfg).expect("failed to read");
+        let parsed: serde_json::Value = serde_json::from_str(&content).expect("invalid json");
+
+        assert_eq!(parsed["mcpServers"]["alcove"]["url"], "http://127.0.0.1:8080/mcp");
+        assert!(parsed["mcpServers"]["alcove"]["command"].is_null());
     }
 
     // ── write_opencode_mcp ──
@@ -2635,7 +2715,7 @@ mod tests {
         let bin = PathBuf::from("/bin/alcove");
         let docs = PathBuf::from("/docs");
 
-        let result = write_opencode_mcp(&cfg, &bin, &docs);
+        let result = write_opencode_mcp(&cfg, &bin, &docs, None);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
@@ -2655,7 +2735,7 @@ mod tests {
         fs::write(&cfg, serde_json::to_string(&existing).unwrap()).expect("failed to write");
 
         let result =
-            write_opencode_mcp(&cfg, &PathBuf::from("/bin/alcove"), &PathBuf::from("/docs"));
+            write_opencode_mcp(&cfg, &PathBuf::from("/bin/alcove"), &PathBuf::from("/docs"), None);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
@@ -2674,7 +2754,7 @@ mod tests {
         let bin = PathBuf::from("/bin/alcove");
         let docs = PathBuf::from("/docs");
 
-        let result = write_codex_mcp(&cfg, &bin, &docs);
+        let result = write_codex_mcp(&cfg, &bin, &docs, None);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
@@ -2690,7 +2770,7 @@ mod tests {
 
         fs::write(&cfg, "[some_other_section]\nkey = \"value\"\n").expect("failed to write");
 
-        let result = write_codex_mcp(&cfg, &PathBuf::from("/bin/alcove"), &PathBuf::from("/docs"));
+        let result = write_codex_mcp(&cfg, &PathBuf::from("/bin/alcove"), &PathBuf::from("/docs"), None);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
@@ -2706,7 +2786,7 @@ mod tests {
         let original = "[mcp_servers.alcove]\ncommand = \"/old/bin\"\n";
         fs::write(&cfg, original).expect("failed to write");
 
-        let result = write_codex_mcp(&cfg, &PathBuf::from("/new/bin"), &PathBuf::from("/docs"));
+        let result = write_codex_mcp(&cfg, &PathBuf::from("/new/bin"), &PathBuf::from("/docs"), None);
         assert!(result.is_ok());
 
         // Content should be unchanged (skipped)

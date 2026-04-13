@@ -147,6 +147,9 @@ pub struct ServerConfig {
     /// Listen port. Default: `8080`.
     #[serde(default = "default_server_port")]
     pub port: u16,
+    /// Bearer token for authentication. Auto-generated on `alcove setup`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -154,6 +157,7 @@ impl Default for ServerConfig {
         Self {
             host: default_server_host(),
             port: default_server_port(),
+            token: None,
         }
     }
 }

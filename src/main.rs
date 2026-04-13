@@ -147,6 +147,8 @@ enum Commands {
     /// Restart the background alcove serve process
     #[cfg(feature = "alcove-server")]
     Restart,
+    /// Print the bearer token from config (for team sharing)
+    Token,
 }
 
 #[derive(Subcommand)]
@@ -212,6 +214,7 @@ fn main() -> Result<()> {
         Some(Commands::Stop) => launchd::stop(),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Restart) => launchd::restart(),
+        Some(Commands::Token) => cli::cmd_token(),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Serve { host, port, token }) => {
             let cfg = config::load_config();
@@ -224,6 +227,12 @@ fn main() -> Result<()> {
             let bind_host = host.as_deref().unwrap_or(&srv_cfg.host);
             // Resolve port: CLI flag > config.toml > default (8080)
             let bind_port = port.unwrap_or(srv_cfg.port);
+            // Resolve token: CLI flag > config.toml > none
+            let resolved_token = token.as_ref()
+                .cloned()
+                .or_else(|| {
+                    cfg.server.as_ref().and_then(|s| s.token.clone())
+                });
 
             println!("{}", console::style("Starting Alcove RAG server...").bold());
             println!(
@@ -241,7 +250,7 @@ fn main() -> Result<()> {
             // Create tokio runtime for async server
             tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime")
-                .block_on(server::run_server(docs_root, bind_host, bind_port, token))
+                .block_on(server::run_server(docs_root, bind_host, bind_port, resolved_token))
         }
     }
 }
@@ -285,8 +294,15 @@ fn proxy_request(base: &str, line: &str, token: Option<&str>) -> Option<String> 
 
 fn serve() -> Result<()> {
     let proxy_base = detect_proxy_target();
-    // Token is only available via CLI flag or env; not stored in config.
-    let token: Option<String> = std::env::var("ALCOVE_TOKEN").ok();
+    // Token: env var > config.toml
+    let token: Option<String> = std::env::var("ALCOVE_TOKEN")
+        .ok()
+        .or_else(|| {
+            config::load_config()
+                .server
+                .as_ref()
+                .and_then(|s| s.token.clone())
+        });
 
     // In direct mode, build BM25 index in background
     if proxy_base.is_none() {
