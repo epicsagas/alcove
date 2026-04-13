@@ -56,8 +56,10 @@ struct HnswCacheEntry {
 
 /// Maximum number of per-project HNSW indices held in memory simultaneously.
 /// When exceeded, the least-recently-used entry is evicted before inserting a new one.
+/// Reduced from 8 → 3 to bound peak memory; each entry can consume 50–300 MB
+/// depending on vector count and dimension.
 #[cfg(feature = "alcove-full")]
-const HNSW_CACHE_MAX_ENTRIES: usize = 8;
+const HNSW_CACHE_MAX_ENTRIES: usize = 3;
 
 #[cfg(feature = "alcove-full")]
 pub struct VectorStore {
@@ -284,6 +286,7 @@ impl VectorStore {
     ///
     /// When `project_filter` is `Some`, only that project's vectors are loaded
     /// into the HNSW index (or searched linearly), reducing memory footprint.
+    #[allow(dead_code)]
     pub fn search(
         &self,
         query: &[f32],

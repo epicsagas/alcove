@@ -234,7 +234,10 @@ pub fn lint(docs_root: &Path, project_filter: Option<&str>) -> LintReport {
         Regex::new(&format!(r"(?i)\b({})\b", pattern)).unwrap()
     };
 
-    // Stale date regex: "as of YYYY" or just mention of a year like (2020) or "in 2019"
+    // Stale date regex: matches years like "in 2019", "(2020)", "as of 2021".
+    // `\b` already excludes `v2023` (no word boundary between `v` and `2`).
+    // False positives in URLs and version strings (e.g. `/2023/`, `2023.1.0`)
+    // are filtered out in the match loop below by inspecting the surrounding chars.
     let stale_date_re = Regex::new(r"\b(20\d{2}|19\d{2})\b").unwrap();
 
     let now_year = current_year();
@@ -288,7 +291,20 @@ pub fn lint(docs_root: &Path, project_filter: Option<&str>) -> LintReport {
         }
 
         // --- stale-date ---
+        let content_bytes = content.as_bytes();
         for cap in stale_date_re.captures_iter(&content) {
+            let m = cap.get(1).unwrap();
+            // Skip false positives: year inside URL path, version string, or date.
+            // Check character immediately before/after the match.
+            let before = if m.start() > 0 { content_bytes[m.start() - 1] } else { b' ' };
+            let after = if m.end() < content_bytes.len() { content_bytes[m.end()] } else { b' ' };
+            if before == b'/' || before == b'-' {
+                continue; // URL path segment or date continuation
+            }
+            if after == b'.' || after == b'-' || after == b'/' || after.is_ascii_digit() {
+                continue; // version string or date continuation
+            }
+
             if let Ok(year) = cap[1].parse::<i32>() {
                 if now_year - year >= 2 {
                     issues.push(LintIssue {

@@ -106,6 +106,18 @@ pub fn promote(docs_root: &Path, opts: PromoteOptions) -> Result<PromoteResult> 
         .clone()
         .unwrap_or_else(|| detect_project(docs_root, source, &content));
 
+    // Prevent path traversal: project name must not contain separators or `..`
+    if project.contains(std::path::MAIN_SEPARATOR)
+        || project.contains('/')
+        || project.contains("..")
+        || project == "."
+    {
+        anyhow::bail!(
+            "Invalid project name '{}': must not contain path separators or traversal sequences",
+            project
+        );
+    }
+
     let target_dir = docs_root.join(&project);
 
     // Create target directory if needed (inbox may not exist yet)
@@ -137,11 +149,19 @@ pub fn promote(docs_root: &Path, opts: PromoteOptions) -> Result<PromoteResult> 
             )
         })?;
     } else {
-        fs::rename(source, &destination).or_else(|_| {
+        fs::rename(source, &destination).or_else(|_| -> anyhow::Result<()> {
             // rename fails across filesystems; fall back to copy+delete
             fs::copy(source, &destination)?;
-            fs::remove_file(source)
-                .with_context(|| format!("Failed to remove source file after copy: {}", source.display()))
+            if let Err(e) = fs::remove_file(source) {
+                // Undo the copy so the filesystem stays consistent
+                let _ = fs::remove_file(&destination);
+                return Err(anyhow::anyhow!(
+                    "Failed to remove source file after copy: {}: {}",
+                    source.display(),
+                    e
+                ));
+            }
+            Ok(())
         })?;
     }
 
@@ -286,6 +306,33 @@ mod tests {
             },
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_promote_path_traversal_rejected() {
+        let tmp = TempDir::new().unwrap();
+        let docs_root = tmp.path().join("docs");
+        fs::create_dir_all(&docs_root).unwrap();
+
+        let vault = tmp.path().join("vault");
+        fs::create_dir_all(&vault).unwrap();
+        let src = write(&vault, "note.md", "# Note\n");
+
+        for bad_project in &["../outside", "../../etc", "a/b", ".", ".."] {
+            let result = promote(
+                &docs_root,
+                PromoteOptions {
+                    source: src.clone(),
+                    project: Some(bad_project.to_string()),
+                    copy: true,
+                },
+            );
+            assert!(
+                result.is_err(),
+                "should reject traversal project name: '{}'",
+                bad_project
+            );
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{SystemTime, Duration};
+use std::time::{SystemTime, Duration, Instant};
 use std::os::unix::io::AsRawFd;
 
 use anyhow::{Context, Result};
@@ -21,7 +21,7 @@ use crate::config::{effective_config, load_config};
 const NGRAM_TOKENIZER: &str = "cjk_ngram";
 
 // ---------------------------------------------------------------------------
-// Process-level IndexReader cache
+// Process-level IndexReader cache with TTL eviction
 // ---------------------------------------------------------------------------
 //
 // Opening a Tantivy index on every search call is expensive: it re-mmaps all
@@ -29,39 +29,73 @@ const NGRAM_TOKENIZER: &str = "cjk_ngram";
 // per docs_root path alive for the lifetime of the process (important for the
 // long-lived MCP/HTTP server; harmless for CLI single-shot calls).
 //
-// On `rebuild_index` the entry is evicted so the next search picks up the
-// freshly written segments.
+// TTL eviction: readers idle longer than `memory.reader_ttl_secs` (default 300 s)
+// are dropped at the next `get_cached_reader` call, provided no search holds a
+// clone of the Arc.  This bounds resident memory for long-lived server processes.
+//
+// On `rebuild_index` the entry is evicted before rebuilding so the next search
+// picks up freshly written segments.
 
-static INDEX_READER_CACHE: OnceLock<Mutex<HashMap<PathBuf, Arc<IndexReader>>>> = OnceLock::new();
-
-fn reader_cache() -> &'static Mutex<HashMap<PathBuf, Arc<IndexReader>>> {
-    INDEX_READER_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+struct CachedReaderEntry {
+    reader: Arc<IndexReader>,
+    last_used: Instant,
 }
 
-/// Maximum number of IndexReaders held in the process-level cache.
-/// Each reader mmaps segment files; an unbounded cache would exhaust memory
-/// in test suites that create many temporary indices.
-const MAX_CACHED_READERS: usize = 4;
+static INDEX_READER_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedReaderEntry>>> = OnceLock::new();
+
+fn reader_cache() -> &'static Mutex<HashMap<PathBuf, CachedReaderEntry>> {
+    INDEX_READER_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Return a cached reader for `index_dir`, creating one if absent.
 /// Calls `reload()` so that segments written after the reader was first
 /// created are visible (no-op when nothing changed).
 ///
-/// When the cache is full the oldest entry is evicted before inserting the new
-/// one, bounding peak memory usage to `MAX_CACHED_READERS` live readers.
+/// TTL eviction runs on every call: idle entries where no external Arc clone
+/// is held are dropped.  The cache is also bounded by `memory.max_cached_readers`
+/// (default 1); excess entries are evicted LRU-first.
 fn get_cached_reader(index_dir: &Path, index: &Index) -> Result<Arc<IndexReader>> {
+    let mem_cfg = crate::config::load_config().memory_config_with_defaults();
+    let ttl = if mem_cfg.reader_ttl_secs > 0 {
+        Some(Duration::from_secs(mem_cfg.reader_ttl_secs))
+    } else {
+        None
+    };
+    let max_readers = mem_cfg.max_cached_readers.max(1).min(4);
+
     let mut cache = reader_cache().lock().unwrap();
-    if let Some(reader) = cache.get(index_dir) {
-        // Pick up any new segments committed since the reader was created.
-        let _ = reader.reload();
-        return Ok(Arc::clone(reader));
+
+    // TTL eviction pass: drop idle readers not referenced by an active search.
+    if let Some(ttl) = ttl {
+        cache.retain(|_, entry| {
+            if entry.last_used.elapsed() > ttl {
+                // Only evict when the cache holds the sole strong reference.
+                Arc::strong_count(&entry.reader) > 1
+            } else {
+                true
+            }
+        });
     }
-    // Evict an arbitrary entry when at capacity to bound memory usage.
-    if cache.len() >= MAX_CACHED_READERS {
-        if let Some(key) = cache.keys().next().cloned() {
+
+    // Cache hit: refresh last_used and reload new segments.
+    if let Some(entry) = cache.get_mut(index_dir) {
+        entry.last_used = Instant::now();
+        let _ = entry.reader.reload();
+        return Ok(Arc::clone(&entry.reader));
+    }
+
+    // Evict LRU entry (not in use) when at capacity.
+    if cache.len() >= max_readers {
+        let lru_key = cache
+            .iter()
+            .filter(|(_, e)| Arc::strong_count(&e.reader) <= 1)
+            .min_by_key(|(_, e)| e.last_used)
+            .map(|(k, _)| k.clone());
+        if let Some(key) = lru_key {
             cache.remove(&key);
         }
     }
+
     let reader = Arc::new(
         index
             .reader_builder()
@@ -69,7 +103,13 @@ fn get_cached_reader(index_dir: &Path, index: &Index) -> Result<Arc<IndexReader>
             .try_into()
             .context("Failed to create index reader")?,
     );
-    cache.insert(index_dir.to_path_buf(), Arc::clone(&reader));
+    cache.insert(
+        index_dir.to_path_buf(),
+        CachedReaderEntry {
+            reader: Arc::clone(&reader),
+            last_used: Instant::now(),
+        },
+    );
     Ok(reader)
 }
 
@@ -1241,7 +1281,7 @@ pub fn search_hybrid(
     let store = VectorStore::open(&vector_path, embedding_service.model_name(), embedding_service.dimension());
 
     let vector_results = match store {
-        Ok(s) => match s.search(&query_embedding, limit * 2) {
+        Ok(s) => match s.search_with_filter(&query_embedding, limit * 2, project_filter) {
             Ok(r) => r,
             Err(_) => Vec::new(),
         },
@@ -1254,6 +1294,7 @@ pub fn search_hybrid(
     // Formula: k = max(10, round(60 * sqrt(limit / 50)))
     let rrf_k = ((60.0 * ((limit as f32) / 50.0).sqrt()).round() as u32).max(10);
     let fused = reciprocal_rank_fusion(&bm25_results, &vector_results, rrf_k);
+    let truncated = fused.len() > limit;
 
     // 9. Build final results with snippets.
     //
@@ -1369,7 +1410,7 @@ pub fn search_hybrid(
         "mode": "hybrid-bm25-vector",
         "embedding_status": "ready",
         "matches": results,
-        "truncated": results.len() >= limit,
+        "truncated": truncated,
     }))
 }
 

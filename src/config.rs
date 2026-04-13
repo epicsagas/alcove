@@ -222,6 +222,63 @@ impl EmbeddingConfig {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Memory budget config
+// ---------------------------------------------------------------------------
+
+fn default_reader_ttl_secs() -> u64 {
+    300
+}
+
+fn default_max_cached_readers() -> usize {
+    1
+}
+
+fn default_model_unload_secs() -> u64 {
+    600
+}
+
+fn default_max_hnsw_cache() -> usize {
+    3
+}
+
+/// Memory budget settings — controls how aggressively alcove releases
+/// in-memory data structures to reduce RSS.
+///
+/// ```toml
+/// [memory]
+/// reader_ttl_secs   = 300   # evict idle Tantivy readers after N seconds (0 = never)
+/// max_cached_readers = 1    # max IndexReader instances kept in RAM
+/// model_unload_secs = 600   # unload ONNX session after N seconds idle (0 = never)
+/// max_hnsw_cache    = 3     # max per-project HNSW graphs in RAM
+/// ```
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MemoryConfig {
+    /// Evict idle Tantivy IndexReaders after this many seconds. 0 = keep forever.
+    #[serde(default = "default_reader_ttl_secs")]
+    pub reader_ttl_secs: u64,
+    /// Maximum Tantivy IndexReader instances held in RAM simultaneously.
+    #[serde(default = "default_max_cached_readers")]
+    pub max_cached_readers: usize,
+    /// Unload ONNX embedding session after this many idle seconds. 0 = keep forever.
+    #[serde(default = "default_model_unload_secs")]
+    pub model_unload_secs: u64,
+    /// Maximum per-project HNSW graphs kept in RAM simultaneously.
+    #[serde(default = "default_max_hnsw_cache")]
+    pub max_hnsw_cache: usize,
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self {
+            reader_ttl_secs: default_reader_ttl_secs(),
+            max_cached_readers: default_max_cached_readers(),
+            model_unload_secs: default_model_unload_secs(),
+            max_hnsw_cache: default_max_hnsw_cache(),
+        }
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct DocConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -248,6 +305,9 @@ pub struct DocConfig {
     /// Defaults to localhost-only binding when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server: Option<ServerConfig>,
+    /// Memory budget configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<MemoryConfig>,
 }
 
 
@@ -266,7 +326,13 @@ impl DocConfig {
             #[cfg(feature = "alcove-full")]
             embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
             server: self.server.clone().or_else(|| base.server.clone()),
+            memory: self.memory.clone().or_else(|| base.memory.clone()),
         }
+    }
+
+    /// Return memory configuration with defaults applied.
+    pub fn memory_config_with_defaults(&self) -> MemoryConfig {
+        self.memory.clone().unwrap_or_default()
     }
 
     pub fn core_files(&self) -> Vec<String> {
@@ -412,6 +478,7 @@ pub fn load_config() -> &'static DocConfig {
             #[cfg(feature = "alcove-full")]
             embedding: None,
             server: None,
+            memory: None,
         }
     })
 }
@@ -437,10 +504,17 @@ pub fn classify_tier_with(relative_path: &str, cfg: &DocConfig) -> &'static str 
     }
 }
 
-/// Classify using the global config. Convenience wrapper around [`classify_tier_with`].
+/// Classify using the **default** built-in config.
+/// Tests must not rely on the user's `~/.alcove/config.toml` — use this wrapper
+/// (or call [`classify_tier_with`] directly with an explicit config) so results
+/// are deterministic regardless of the host machine.
 #[cfg(test)]
 pub fn classify_tier(relative_path: &str) -> &'static str {
-    classify_tier_with(relative_path, load_config())
+    // Use a leaked reference so the return type stays `&'static str` compatible
+    // with classify_tier_with's lifetime requirements.
+    use std::sync::OnceLock;
+    static DEFAULT: OnceLock<DocConfig> = OnceLock::new();
+    classify_tier_with(relative_path, DEFAULT.get_or_init(DocConfig::default))
 }
 
 // ---------------------------------------------------------------------------
@@ -1015,5 +1089,68 @@ format = "plantuml"
         let toml = r#"extra_extensions = ["yaml", "json"]"#;
         let cfg: DocConfig = toml::from_str(toml).unwrap();
         assert_eq!(cfg.extra_extensions.unwrap_or_default(), vec!["yaml", "json"]);
+    }
+
+    // -- MemoryConfig --
+
+    #[test]
+    fn memory_config_defaults() {
+        let cfg = MemoryConfig::default();
+        assert_eq!(cfg.reader_ttl_secs, 300);
+        assert_eq!(cfg.max_cached_readers, 1);
+        assert_eq!(cfg.model_unload_secs, 600);
+        assert_eq!(cfg.max_hnsw_cache, 3);
+    }
+
+    #[test]
+    fn memory_config_missing_section_returns_defaults() {
+        let cfg = DocConfig::default();
+        let mem = cfg.memory_config_with_defaults();
+        assert_eq!(mem.reader_ttl_secs, 300);
+        assert_eq!(mem.max_cached_readers, 1);
+    }
+
+    #[test]
+    fn memory_config_toml_deserialization() {
+        let toml = r#"
+[memory]
+reader_ttl_secs = 60
+max_cached_readers = 2
+model_unload_secs = 0
+max_hnsw_cache = 1
+"#;
+        let cfg: DocConfig = toml::from_str(toml).unwrap();
+        let mem = cfg.memory_config_with_defaults();
+        assert_eq!(mem.reader_ttl_secs, 60);
+        assert_eq!(mem.max_cached_readers, 2);
+        assert_eq!(mem.model_unload_secs, 0);
+        assert_eq!(mem.max_hnsw_cache, 1);
+    }
+
+    #[test]
+    fn memory_config_partial_toml_uses_defaults() {
+        let toml = r#"
+[memory]
+reader_ttl_secs = 120
+"#;
+        let cfg: DocConfig = toml::from_str(toml).unwrap();
+        let mem = cfg.memory_config_with_defaults();
+        assert_eq!(mem.reader_ttl_secs, 120);
+        assert_eq!(mem.max_cached_readers, 1); // default
+        assert_eq!(mem.model_unload_secs, 600); // default
+    }
+
+    #[test]
+    fn memory_config_overlay_project_wins() {
+        let base = DocConfig {
+            memory: Some(MemoryConfig { reader_ttl_secs: 300, ..MemoryConfig::default() }),
+            ..DocConfig::default()
+        };
+        let project = DocConfig {
+            memory: Some(MemoryConfig { reader_ttl_secs: 60, ..MemoryConfig::default() }),
+            ..DocConfig::default()
+        };
+        let merged = project.overlay(&base);
+        assert_eq!(merged.memory_config_with_defaults().reader_ttl_secs, 60);
     }
 }

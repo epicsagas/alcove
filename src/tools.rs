@@ -234,6 +234,10 @@ struct SearchArgs {
     query: String,
     #[serde(default = "default_search_limit")]
     limit: usize,
+    /// Hidden override: when set to `"grep"`, skip ranked/indexed search and
+    /// fall through to pure grep even when an index is available.
+    #[serde(default)]
+    mode: Option<String>,
 }
 
 fn default_search_limit() -> usize {
@@ -483,8 +487,9 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
         return Ok(json!({ "query": args.query, "matches": [], "truncated": false }));
     }
 
-    // Try indexed search first (faster and ranked)
-    if crate::index::index_exists(docs_root) {
+    // Try indexed search first (faster and ranked), unless grep is forced.
+    let force_grep = args.mode.as_deref() == Some("grep");
+    if !force_grep && crate::index::index_exists(docs_root) {
         let result = crate::index::search_indexed(docs_root, query_trimmed, args.limit, None);
         if let Ok(json) = result {
             let matches: Vec<Value> = json["matches"]

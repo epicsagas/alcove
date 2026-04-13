@@ -1009,8 +1009,8 @@ mod tests {
             .unwrap()
             .to_string();
         assert!(
-            text.contains("ok") || text.contains("skipped"),
-            "result should contain status ok or skipped, got: {text}"
+            text.contains("ok") || text.contains("skipped") || text.contains("started"),
+            "result should contain status ok, skipped, or started, got: {text}"
         );
     }
 

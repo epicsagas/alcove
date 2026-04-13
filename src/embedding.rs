@@ -25,10 +25,15 @@ pub enum ModelState {
     NotDownloaded,
     /// Background download in progress (percentage)
     Downloading { progress_pct: u8 },
-    /// Model cached, waiting to load ONNX session
+    /// Model cached on disk, ONNX session not yet loaded
     Cached,
     /// ONNX session loaded, ready for embedding
     Ready,
+    /// Session was loaded but unloaded after idle timeout; model still on disk.
+    /// Behaves like `Cached` — reloads on next `ensure_model()` call.
+    Unloaded,
+    /// Embedding is intentionally disabled in configuration (not an error)
+    Disabled,
     /// Download or load failed
     Failed(String),
 }
@@ -48,6 +53,8 @@ impl std::fmt::Display for ModelState {
             Self::Downloading { progress_pct } => write!(f, "downloading ({}%)", progress_pct),
             Self::Cached => write!(f, "cached"),
             Self::Ready => write!(f, "ready"),
+            Self::Unloaded => write!(f, "unloaded"),
+            Self::Disabled => write!(f, "disabled"),
             Self::Failed(e) => write!(f, "failed: {}", e),
         }
     }
@@ -207,6 +214,8 @@ pub struct EmbeddingService {
     /// Previous model dimension (for detecting changes)
     #[allow(dead_code)]
     previous_dimension: Arc<Mutex<Option<usize>>>,
+    /// Timestamp of the last successful `embed()` call — used for idle unload.
+    last_embed_at: Arc<Mutex<Instant>>,
 }
 
 /// Internal embedding configuration (not part of public API)
@@ -238,7 +247,7 @@ impl EmbeddingService {
         } else if internal_config.enabled {
             ModelState::NotDownloaded
         } else {
-            ModelState::Failed("Embedding disabled".to_string())
+            ModelState::Disabled
         };
 
         Self {
@@ -246,6 +255,7 @@ impl EmbeddingService {
             internal_config,
             session: Arc::new(Mutex::new(None)),
             previous_dimension: Arc::new(Mutex::new(None)),
+            last_embed_at: Arc::new(Mutex::new(Instant::now())),
         }
     }
 
@@ -316,9 +326,12 @@ impl EmbeddingService {
             .clone();
         match state {
             ModelState::Ready => return Ok(()),
+            ModelState::Disabled => return Err("Embedding is disabled in configuration".to_string()),
             ModelState::Failed(e) => return Err(e),
-            ModelState::NotDownloaded | ModelState::Cached => {
-                // Kick off background download then fall through to the poll loop.
+            // Unloaded = was Ready, then session dropped for idle; model still on disk.
+            // Treat identically to Cached so start_download() reloads the ONNX session.
+            ModelState::NotDownloaded | ModelState::Cached | ModelState::Unloaded => {
+                // Kick off background download/reload then fall through to the poll loop.
                 self.start_download();
             }
             ModelState::Downloading { .. } => {
@@ -371,7 +384,10 @@ impl EmbeddingService {
     fn start_download(&self) {
         {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            if *state != ModelState::NotDownloaded && *state != ModelState::Cached {
+            if *state != ModelState::NotDownloaded
+                && *state != ModelState::Cached
+                && *state != ModelState::Unloaded
+            {
                 return;
             }
             *state = ModelState::Downloading { progress_pct: 0 };
@@ -416,8 +432,69 @@ impl EmbeddingService {
         });
     }
 
-    /// Generate embeddings for texts
+    /// Drop the ONNX session if the idle timeout has elapsed.
+    ///
+    /// Acquires locks one at a time (never nested) to avoid deadlock with the
+    /// background download thread. Returns `true` if the session was unloaded.
+    ///
+    /// Possible race: if a background reload completes between the state-lock and
+    /// session-lock acquisitions, we still drop the session and leave state as
+    /// `Unloaded`. The next `ensure_model()` call will reload transparently.
+    fn try_unload_if_idle(&self) -> bool {
+        let unload_secs = crate::config::load_config()
+            .memory_config_with_defaults()
+            .model_unload_secs;
+        if unload_secs == 0 {
+            return false;
+        }
+        let elapsed = self
+            .last_embed_at
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .elapsed();
+        if elapsed <= Duration::from_secs(unload_secs) {
+            return false;
+        }
+
+        // Mark as Unloaded (only if currently Ready to avoid interfering with downloads).
+        let should_drop = {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if *state == ModelState::Ready {
+                *state = ModelState::Unloaded;
+                true
+            } else {
+                false
+            }
+        }; // state lock released
+
+        if should_drop {
+            // Drop the session to reclaim model-weight memory (~235–500 MB).
+            // State is already Unloaded, so ensure_model() will reload on demand.
+            *self.session.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            return true;
+        }
+        false
+    }
+
+    /// Generate embeddings for texts.
+    ///
+    /// Checks idle timeout before use: if the session has been unused for
+    /// longer than `memory.model_unload_secs`, the ONNX session is dropped
+    /// and `Unloaded` state is returned so the caller can fall back to BM25.
+    /// The session will be transparently reloaded on the next `ensure_model()` call.
     pub fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
+        // --- idle-unload check ---
+        // Drop the ONNX session after prolonged inactivity to reclaim RAM.
+        // We call `try_unload_if_idle()` which acquires locks one-at-a-time
+        // (never nested) so it can never deadlock with the download thread.
+        // In the rare race where a download completes during the unload, the
+        // session is dropped and `Unloaded` state is set; the next call to
+        // `ensure_model()` transparently reloads it.
+        if self.try_unload_if_idle() {
+            return Err("Model unloaded after idle timeout; will reload on next request".to_string());
+        }
+
+        // --- readiness check ---
         let state = self
             .state
             .lock()
@@ -433,16 +510,24 @@ impl EmbeddingService {
             .ok_or_else(|| "Session not loaded".to_string())?;
 
         let texts_vec: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
-        session.embed(texts_vec, None).map_err(|e| e.to_string())
+        let result = session.embed(texts_vec, None).map_err(|e| e.to_string())?;
+
+        // Update last-used timestamp on success.
+        *self.last_embed_at.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
+
+        Ok(result)
     }
 
-    /// Remove cached model
+    /// Remove cached model.
+    /// Uses the same HuggingFace hub folder naming as `is_model_cached`.
     #[allow(dead_code)]
     pub fn remove_cache(&self) -> Result<(), String> {
-        let model_dir = self
-            .internal_config
-            .cache_dir
-            .join(self.internal_config.model.as_str());
+        let model_id = self.internal_config.model.model_id();
+        let mut folder_name = format!("models--{}", model_id.replace('/', "--"));
+        if Self::is_quantized_variant(self.internal_config.model) {
+            folder_name.push_str("-quantized");
+        }
+        let model_dir = self.internal_config.cache_dir.join(folder_name);
         if model_dir.exists() {
             std::fs::remove_dir_all(&model_dir)
                 .map_err(|e| format!("Failed to remove cache: {}", e))?;

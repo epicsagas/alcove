@@ -8,7 +8,7 @@ use anyhow::Result;
 #[cfg(feature = "alcove-server")]
 use axum::{
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Method, StatusCode, header},
     response::Json,
     routing::{get, post},
     Router,
@@ -20,7 +20,7 @@ use std::net::SocketAddr;
 #[cfg(feature = "alcove-server")]
 use std::sync::Arc;
 #[cfg(feature = "alcove-server")]
-use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 // ---------------------------------------------------------------------------
 // Request/Response types
@@ -96,6 +96,26 @@ pub struct ErrorResponse {
 pub struct ServerState {
     pub docs_root: std::path::PathBuf,
     pub token: Option<String>,
+    /// Shared embedding service — initialised once at startup, reused per request.
+    #[cfg(feature = "alcove-full")]
+    pub embedding_service: Option<Arc<crate::embedding::EmbeddingService>>,
+}
+
+// ---------------------------------------------------------------------------
+// Auth helpers
+// ---------------------------------------------------------------------------
+
+/// Constant-time string comparison to prevent timing attacks on bearer token auth.
+#[cfg(feature = "alcove-server")]
+fn constant_time_eq_str(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    // XOR all bytes and OR into accumulator — result is 0 only when equal.
+    a.bytes()
+        .zip(b.bytes())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 /// Check Bearer token authentication. Returns `Err` with 401 if the token is
@@ -113,7 +133,7 @@ fn check_auth(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("");
-    if provided == expected {
+    if constant_time_eq_str(provided, expected) {
         Ok(())
     } else {
         Err((
@@ -127,31 +147,17 @@ fn check_auth(
 }
 
 // ---------------------------------------------------------------------------
-// Handlers
+// Shared search logic
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "alcove-server")]
-async fn health(State(state): State<Arc<ServerState>>) -> Json<HealthResponse> {
-    let projects = std::fs::read_dir(&state.docs_root)
-        .map(|entries| entries.filter_map(Result::ok).filter(|e| e.path().is_dir()).count())
-        .unwrap_or(0);
-
-    Json(HealthResponse {
-        status: "ok".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        docs_root: state.docs_root.to_string_lossy().to_string(),
-        projects,
-    })
-}
-
-#[cfg(feature = "alcove-server")]
-async fn search(
-    State(state): State<Arc<ServerState>>,
+async fn handle_search(
+    state: Arc<ServerState>,
     headers: HeaderMap,
-    Query(req): Query<SearchRequest>,
+    req: SearchRequest,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
     check_auth(&state, &headers)?;
-    // Validate query
+
     if req.q.trim().is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -162,83 +168,90 @@ async fn search(
         ));
     }
 
-    let docs_root = &state.docs_root;
-    let project_filter = req.project.as_deref();
-
-    // Determine search mode
+    let docs_root = state.docs_root.clone();
+    let project_filter_owned = req.project.clone();
+    let q = req.q.clone();
+    let limit = req.limit;
     let use_hybrid = req.mode == "hybrid"
         || (req.mode == "auto" && cfg!(feature = "alcove-full"));
 
     // Try hybrid search first if available
     #[cfg(feature = "alcove-full")]
     if use_hybrid {
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
-        use crate::config::load_config;
+        if let Some(service_arc) = state.embedding_service.clone() {
+            if crate::index::index_exists(&docs_root) {
+                let docs_root2 = docs_root.clone();
+                let q2 = q.clone();
+                let pf = project_filter_owned.clone();
 
-        if crate::index::index_exists(docs_root) {
-            let cfg = load_config();
-            let emb_cfg = cfg.embedding_config_with_defaults();
+                let result = tokio::task::spawn_blocking(move || {
+                    crate::index::search_hybrid(
+                        &docs_root2,
+                        &q2,
+                        &*service_arc,
+                        limit,
+                        pf.as_deref(),
+                    )
+                })
+                .await
+                .map_err(|_| (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "Internal search error".to_string(),
+                        code: 500,
+                    }),
+                ))?;
 
-            if emb_cfg.enabled {
-                let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
-                let cache_dir = std::path::PathBuf::from(
-                    emb_cfg.cache_dir.starts_with('~')
-                        .then(|| std::env::var("HOME").ok())
-                        .flatten()
-                        .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
-                        .unwrap_or_else(|| emb_cfg.cache_dir.clone())
-                );
-
-                let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-                    model: model.as_str().to_string(),
-                    auto_download: emb_cfg.auto_download,
-                    cache_dir: cache_dir.to_string_lossy().into_owned(),
-                    enabled: true,
-                });
-
-                if service.state() == crate::embedding::ModelState::Ready {
-                    let result = crate::index::search_hybrid(
-                        docs_root,
-                        &req.q,
-                        &service,
-                        req.limit,
-                        project_filter,
-                    );
-
-                    if let Ok(json) = result {
-                        let results: Vec<SearchResult> = json["matches"]
-                            .as_array()
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|m| {
-                                        Some(SearchResult {
-                                            project: m["project"].as_str()?.to_string(),
-                                            file: m["file"].as_str()?.to_string(),
-                                            line: m["line_start"].as_u64()?,
-                                            snippet: m["snippet"].as_str().unwrap_or("").to_string(),
-                                            score: m["score"].as_f64()? * 100.0, // Scale to 0-100
-                                            source: "hybrid".to_string(),
-                                        })
+                if let Ok(json) = result {
+                    let results: Vec<SearchResult> = json["matches"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|m| {
+                                    Some(SearchResult {
+                                        project: m["project"].as_str()?.to_string(),
+                                        file: m["file"].as_str()?.to_string(),
+                                        line: m["line_start"].as_u64()?,
+                                        snippet: m["snippet"]
+                                            .as_str()
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        score: m["score"].as_f64().unwrap_or(0.0),
+                                        source: "hybrid".to_string(),
                                     })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
 
-                        return Ok(Json(SearchResponse {
-                            query: req.q,
-                            results,
-                            mode: "hybrid".to_string(),
-                            truncated: json["truncated"].as_bool().unwrap_or(false),
-                        }));
-                    }
+                    return Ok(Json(SearchResponse {
+                        query: req.q,
+                        results,
+                        mode: "hybrid".to_string(),
+                        truncated: json["truncated"].as_bool().unwrap_or(false),
+                    }));
                 }
             }
         }
     }
 
     // Fall back to BM25 search
-    if crate::index::index_exists(docs_root) {
-        let result = crate::index::search_indexed(docs_root, &req.q, req.limit, project_filter);
+    if crate::index::index_exists(&docs_root) {
+        let docs_root2 = docs_root.clone();
+        let q2 = q.clone();
+        let pf = project_filter_owned.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            crate::index::search_indexed(&docs_root2, &q2, limit, pf.as_deref())
+        })
+        .await
+        .map_err(|_| (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Internal search error".to_string(),
+                code: 500,
+            }),
+        ))?;
 
         if let Ok(json) = result {
             let results: Vec<SearchResult> = json["matches"]
@@ -251,7 +264,7 @@ async fn search(
                                 file: m["file"].as_str()?.to_string(),
                                 line: m["line_start"].as_u64()?,
                                 snippet: m["snippet"].as_str().unwrap_or("").to_string(),
-                                score: m["score"].as_f64()? * 100.0,
+                                score: m["score"].as_f64().unwrap_or(0.0),
                                 source: "bm25".to_string(),
                             })
                         })
@@ -268,7 +281,6 @@ async fn search(
         }
     }
 
-    // No index available
     Err((
         StatusCode::SERVICE_UNAVAILABLE,
         Json(ErrorResponse {
@@ -279,17 +291,112 @@ async fn search(
 }
 
 // ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "alcove-server")]
+async fn health(State(state): State<Arc<ServerState>>) -> Json<HealthResponse> {
+    let docs_root = state.docs_root.clone();
+    let projects = tokio::task::spawn_blocking(move || {
+        std::fs::read_dir(&docs_root)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .filter(|e| e.path().is_dir())
+                    .count()
+            })
+            .unwrap_or(0)
+    })
+    .await
+    .unwrap_or(0);
+
+    Json(HealthResponse {
+        status: "ok".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        docs_root: state.docs_root.to_string_lossy().to_string(),
+        projects,
+    })
+}
+
+/// GET /search — query params
+#[cfg(feature = "alcove-server")]
+async fn get_search(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Query(req): Query<SearchRequest>,
+) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
+    handle_search(state, headers, req).await
+}
+
+/// POST /v1/search — JSON body (OpenAI-compatible)
+#[cfg(feature = "alcove-server")]
+async fn post_search(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    axum::Json(req): axum::Json<SearchRequest>,
+) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
+    handle_search(state, headers, req).await
+}
+
+// ---------------------------------------------------------------------------
 // Server entry point
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "alcove-server")]
-pub async fn run_server(docs_root: std::path::PathBuf, host: &str, port: u16, token: Option<String>) -> Result<()> {
-    let state = Arc::new(ServerState { docs_root, token });
+pub async fn run_server(
+    docs_root: std::path::PathBuf,
+    host: &str,
+    port: u16,
+    token: Option<String>,
+) -> Result<()> {
+    if token.is_none() {
+        eprintln!(
+            "  {} Alcove server running without authentication — anyone on the network can query it.",
+            console::style("WARNING").yellow().bold()
+        );
+    }
+
+    #[cfg(feature = "alcove-full")]
+    let embedding_service = {
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::config::load_config;
+
+        let cfg = load_config();
+        let emb_cfg = cfg.embedding_config_with_defaults();
+
+        if emb_cfg.enabled {
+            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+            let cache_dir = std::path::PathBuf::from(
+                emb_cfg
+                    .cache_dir
+                    .starts_with('~')
+                    .then(|| std::env::var("HOME").ok())
+                    .flatten()
+                    .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
+                    .unwrap_or_else(|| emb_cfg.cache_dir.clone()),
+            );
+            Some(Arc::new(EmbeddingService::new(crate::config::EmbeddingConfig {
+                model: model.as_str().to_string(),
+                auto_download: emb_cfg.auto_download,
+                cache_dir: cache_dir.to_string_lossy().into_owned(),
+                enabled: true,
+            })))
+        } else {
+            None
+        }
+    };
+
+    let state = Arc::new(ServerState {
+        docs_root,
+        token,
+        #[cfg(feature = "alcove-full")]
+        embedding_service,
+    });
 
     let app = Router::new()
         .route("/health", get(health))
-        .route("/search", get(search))
-        .route("/v1/search", post(search)) // OpenAI-compatible endpoint
+        .route("/search", get(get_search))
+        .route("/v1/search", post(post_search))
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(|origin, _| {
@@ -297,12 +404,11 @@ pub async fn run_server(docs_root: std::path::PathBuf, host: &str, port: u16, to
                     bytes.starts_with(b"http://localhost")
                         || bytes.starts_with(b"http://127.0.0.1")
                 }))
-                .allow_methods(Any)
-                .allow_headers(Any),
+                .allow_methods([Method::GET, Method::POST])
+                .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
         )
         .with_state(state);
 
-    // Parse the bind host; fail clearly if invalid.
     let ip: std::net::IpAddr = host.parse().map_err(|e| {
         anyhow::anyhow!("Invalid server host '{}': {}", host, e)
     })?;
@@ -315,9 +421,9 @@ pub async fn run_server(docs_root: std::path::PathBuf, host: &str, port: u16, to
         addr
     );
     println!("  {} Endpoints:", console::style("→").dim());
-    println!("      GET  /health  - Health check");
-    println!("      GET  /search  - Search (q, limit, project, mode params)");
-    println!("      POST /v1/search - OpenAI-compatible search");
+    println!("      GET  /health     - Health check");
+    println!("      GET  /search     - Search (q, limit, project, mode params)");
+    println!("      POST /v1/search  - OpenAI-compatible search (JSON body)");
     println!();
 
     axum::serve(listener, app).await?;
