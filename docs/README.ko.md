@@ -76,6 +76,8 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 - **스마트 검색** — BM25 랭킹 검색과 자동 인덱싱; 가장 관련성 높은 문서를 먼저 찾고, 필요 시 grep으로 폴백
 - **크로스 프로젝트 검색** — `scope: "global"`로 모든 프로젝트를 한 번에 검색 — 개인 지식 베이스로 활용
 - **프라이빗 문서는 프라이빗으로 유지** — 민감한 문서(시크릿 맵, 내부 결정, 기술 부채)가 공개 저장소에 들어가지 않음
+- **상시 HTTP 서버** — 선택적 백그라운드 서버로 콜드 스타트 지연 제거; 에이전트가 HTTP로 직접 연결하여 즉시 응답
+- **상시 HTTP 서버** — 선택적 백그라운드 서버로 콜드 스타트 지연 제거; 에이전트가 HTTP로 직접 연결하여 즉시 응답
 - **표준화된 문서 구조** — `policy.toml`로 모든 프로젝트와 팀에 일관된 문서를 적용
 - **크로스 레포 감사** — 프로젝트 저장소에 잘못 배치된 내부 문서를 찾아 수정 제안
 - **문서 검증** — 누락된 파일, 미작성 템플릿, 필수 섹션 확인
@@ -144,7 +146,9 @@ claude plugin install epicsagas/alcove
 1. 문서가 어디에 있는지
 2. 어떤 문서 카테고리를 추적할지
 3. 선호하는 다이어그램 형식
-4. 어떤 AI 에이전트를 설정할지 (MCP + 스킬 파일)
+4. 하이브리드 검색용 임베딩 모델
+5. **HTTP 서버** — 호스트, 포트, 자동 생성된 베어러 토큰, 로그인 항목 등록
+6. 어떤 AI 에이전트를 설정할지 (MCP + 스킬 파일)
 
 설정을 변경하려면 언제든 `alcove setup`을 다시 실행하세요. 이전 선택을 기억합니다.
 
@@ -173,11 +177,11 @@ flowchart LR
 
     A1 -- "CWD 감지" --> D1
     A2 -- "CWD 감지" --> D2
-    Agents -- "stdio MCP" --> MCP
+    Agents -- "HTTP / stdio" --> MCP
     MCP -- "범위 지정 접근" --> Docs
 ```
 
-문서는 별도 디렉토리(`DOCS_ROOT`)에 프로젝트별 폴더로 정리됩니다. Alcove는 거기서 관리하고 제공합니다 — stdio를 통해 MCP 호환 AI 에이전트에게. 에이전트는 `get_doc_file("PRD.md")` 같은 도구를 호출하여 어떤 에이전트를 사용하든 프로젝트별 답변을 얻습니다.
+문서는 별도 디렉토리(`DOCS_ROOT`)에 프로젝트별 폴더로 정리됩니다. Alcove는 거기서 관리하고 제공합니다. 백그라운드 HTTP 서버가 실행 중이면(`alcove enable`), 에이전트는 HTTP로 직접 연결하여 콜드 스타트 없이 즉시 응답합니다. 백그라운드 서버가 없으면 stdio 모드로 폴백하여 매 세션마다 엔진을 로드합니다. 에이전트는 `get_doc_file("PRD.md")` 같은 도구를 호출하여 어떤 에이전트를 사용하든 프로젝트별 답변을 얻습니다.
 
 ## 문서 분류
 
@@ -226,6 +230,7 @@ alcove disable      로그인 항목 해제 및 서버 중지
 alcove start        백그라운드 서버 시작
 alcove stop         백그라운드 서버 중지
 alcove restart      백그라운드 서버 재시작
+alcove token        팀 공유용 베어러 토큰 출력
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
 ```
 
@@ -268,52 +273,61 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 
 ### 백그라운드 서버
 
-Alcove를 REST API로 접근 가능한 상주 HTTP RAG 서버로 실행할 수 있습니다. 외부 통합, 대시보드, 또는 비-MCP 클라이언트에 유용합니다.
+Alcove는 REST API로 접근 가능한 상시 HTTP RAG 서버로 실행할 수 있습니다. 외부 통합, 대시보드, 비MCP 클라이언트에 유용합니다. **활성화하면 MCP 에이전트가 HTTP로 직접 연결** — 매 새 세션의 콜드 스타트 지연(ONNX 모델 로드, 인덱스 열기)을 제거합니다.
 
 ```bash
 # 포그라운드에서 서버 시작
-alcove serve                       # 기본: 127.0.0.1:8080
-alcove serve --port 9090           # 포트 지정
-alcove serve --token my-secret     # Bearer 토큰 인증
-alcove serve --host 0.0.0.0       # 전체 인터페이스에서 수신
+alcove serve                       # 기본값: 127.0.0.1:8080
+alcove serve --port 9090           # 커스텀 포트
+alcove serve --host 0.0.0.0       # 모든 인터페이스에서 수신
 ```
+
+서버는 인증에 **베어러 토큰**을 사용합니다. `alcove setup` 시 토큰이 자동 생성되어 `config.toml`에 저장됩니다. `--token` 플래그나 `ALCOVE_TOKEN` 환경변수로 명시적으로 전달할 수도 있습니다.
+
+#### 토큰 관리
+
+```bash
+# 저장된 토큰 출력 (팀원과 공유)
+alcove token
+
+# 팀원은 쉘 프로필에 설정:
+export ALCOVE_TOKEN="alcove-a3f7b2e14d5c..."
+```
+
+토큰 우선순위: **`--token` 플래그 > `ALCOVE_TOKEN` 환경변수 > `config.toml`**
 
 #### macOS 로그인 항목 (launchd)
 
-Alcove를 macOS 로그인 항목으로 등록하면 로그인 시 자동으로 HTTP 서버가 시작되고 백그라운드에서 계속 실행됩니다:
+Alcove를 macOS 로그인 항목으로 등록하면 HTTP 서버가 로그인 시 자동으로 시작되고 백그라운드에서 계속 실행됩니다. **`alcove setup`에서 기본값으로 활성화됩니다** — 설정 마법사에서 활성화 여부를 묻습니다 (기본값: 예).
 
 ```bash
 # 등록 및 시작 (재부팅 후에도 유지)
 alcove enable
 
-# 라이프사이클 관리
+# 생명주기 관리
 alcove stop         # 서버 중지
 alcove start        # 다시 시작
-alcove restart      # 중지 후 시작
+alcove restart      # 중지 + 시작
 
-# 등록 해제 (서버 중지 + 로그인 항목 제거)
+# 등록 해제 (서버 중지 및 로그인 항목 제거)
 alcove disable
 ```
 
-LaunchAgent가 `~/Library/LaunchAgents/com.epicsagas.alcove.plist`에 설치됩니다. 로그는 `~/.alcove/logs/`에 기록됩니다.
+`~/Library/LaunchAgents/com.epicsagas.alcove.plist`에 LaunchAgent가 설치됩니다. 로그는 `~/.alcove/logs/`에 기록됩니다.
 
-> **참고:** MCP 서버(stdio)는 Claude Code 세션 시작 시 자동으로 시작됩니다 — `enable`은 필요 없습니다. `enable`은 외부 접근을 위한 HTTP RAG 서버를 상시 실행하거나, **프록시 모드로 즉시 응답**을 원할 때 사용하세요 (아래 참조).
+#### 연결 모드
 
-#### 하이브리드 프록시 모드
-
-백그라운드 HTTP 서버가 실행 중이면, MCP stdio 프로세스가 자동으로 이를 감지하여 **경량 프록시**로 동작합니다 — 검색 엔진을 직접 로드하지 않고 JSON-RPC 요청을 HTTP 서버로 전달합니다. 매 에이전트 세션마다 발생하는 콜드스타트(ONNX 모델 로드, 인덱스 열기)를 제거합니다.
+백그라운드 HTTP 서버가 실행 중이면 MCP 에이전트가 HTTP로 직접 연결합니다 — 콜드 스타트 없음, 세션당 프로세스 생성 없음. 백그라운드 서버가 없으면 stdio 모드로 폴백합니다 (alcove 바이너리가 서브프로세스로 시작).
 
 ```
-에이전트 세션 시작 → alcove (stdio)
-  ├─ HTTP 서버 감지 → 프록시 모드 (즉시 응답, ~5ms/요청)
-  └─ 서버 없음      → 직접 모드 (콜드스타트, 전체 엔진 로드)
+alcove setup (enable = 예):
+  에이전트 → HTTP POST http://127.0.0.1:8080/mcp → 실행 중인 서버 (즉시)
+
+alcove setup (enable = 아니오):
+  에이전트 → alcove 실행 (stdio) → 엔진 로드 (콜드 스타트)
 ```
 
-프록시 모드 활성화:
-```bash
-alcove enable     # 백그라운드 서버 등록 + 시작
-# 이후 모든 에이전트 세션이 자동으로 프록시 모드를 사용합니다
-```
+설정은 각 에이전트의 MCP 설정 파일에 자동으로 올바른 모드를 구성합니다 — 활성화 시 HTTP `url`, 비활성화 시 `command` (stdio).
 
 ## 검색
 
@@ -457,6 +471,11 @@ files = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", ...]
 
 [diagram]
 format = "mermaid"
+
+[server]
+host = "127.0.0.1"          # 바인드 주소 (모든 인터페이스: 0.0.0.0)
+port = 8080                  # 수신 포트
+token = "alcove-a3f7b2..."   # 자동 생성된 베어러 토큰
 
 [memory]
 reader_ttl_secs   = 300   # N초 후 유휴 IndexReader 해제 (0 = 해제 안 함)

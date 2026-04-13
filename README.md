@@ -162,7 +162,9 @@ Without `pdftotext`, Alcove falls back to a built-in PDF parser which may fail o
 1. Where your docs live
 2. Which document categories to track
 3. Preferred diagram format
-4. Which AI agents to configure (MCP + skill files)
+4. Embedding model for hybrid search
+5. **HTTP server** — host, port, auto-generated bearer token, and login item registration
+6. Which AI agents to configure (MCP + skill files)
 
 Re-run `alcove setup` anytime to change settings. It remembers your previous choices.
 
@@ -193,11 +195,11 @@ flowchart LR
 
     A1 -- "CWD detected" --> D1
     A2 -- "CWD detected" --> D2
-    Agents -- "stdio MCP" --> MCP
+    Agents -- "HTTP / stdio" --> MCP
     MCP -- "scoped access" --> Docs
 ```
 
-Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent over stdio. Your agent calls tools like `search_project_docs("auth flow")` and gets ranked, project-specific results — regardless of which agent you're using.
+Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent. When the background HTTP server is running (via `alcove enable`), agents connect directly via HTTP for instant response with zero cold-start. Without the background server, agents fall back to stdio mode which loads the engine on each session.
 
 ## What it does
 
@@ -208,7 +210,8 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 - **Auto-detects your project** from CWD — no per-project config needed
 - **Scoped access** — each project only sees its own docs
 - **Cross-project search** — search across all projects at once with `scope: "global"`
-- **Private docs stay private** — docs never touch your public repo, runs entirely on your machine over stdio
+- **Private docs stay private** — docs never touch your public repo, runs entirely on your machine
+- **Persistent HTTP server** — optional background server eliminates cold-start latency; agents connect via HTTP for instant response
 - **Standardized doc structure** — `policy.toml` enforces consistent docs across all projects and teams
 - **Cross-repo audit** — finds internal docs misplaced in your project repo, suggests fixes
 - **Document validation** — checks for missing files, unfilled templates, required sections
@@ -250,6 +253,7 @@ alcove disable      Unregister from login items and stop server
 alcove start        Start the background server
 alcove stop         Stop the background server
 alcove restart      Restart the background server
+alcove token        Print the bearer token for team sharing
 alcove uninstall    Remove skills, config, and legacy files
 ```
 
@@ -292,19 +296,32 @@ Files with no matching project land in `inbox/` for manual review.
 
 ### Background Server
 
-Alcove can run as a persistent HTTP RAG server, accessible via REST API. This is useful for external integrations, dashboards, or non-MCP clients.
+Alcove can run as a persistent HTTP RAG server, accessible via REST API. This is useful for external integrations, dashboards, or non-MCP clients. **When enabled, MCP agents connect directly via HTTP** — eliminating cold-start latency (ONNX model load, index open) on every new session.
 
 ```bash
 # Start the server in the foreground
 alcove serve                       # default: 127.0.0.1:8080
 alcove serve --port 9090           # custom port
-alcove serve --token my-secret     # require Bearer token
 alcove serve --host 0.0.0.0       # listen on all interfaces
 ```
 
+The server uses a **bearer token** for authentication. During `alcove setup`, a token is auto-generated and stored in `config.toml`. You can also pass one explicitly with `--token` or the `ALCOVE_TOKEN` environment variable.
+
+#### Token management
+
+```bash
+# Print the stored token (for sharing with teammates)
+alcove token
+
+# Teammates set it in their shell profile:
+export ALCOVE_TOKEN="alcove-a3f7b2e14d5c..."
+```
+
+Tokens are resolved with priority: **`--token` flag > `ALCOVE_TOKEN` env var > `config.toml`**.
+
 #### macOS Login Item (launchd)
 
-Register Alcove as a macOS login item so the HTTP server starts automatically on login and stays running in the background:
+Register Alcove as a macOS login item so the HTTP server starts automatically on login and stays running in the background. **This is the default during `alcove setup`** — the setup wizard asks whether to enable it (default: Yes).
 
 ```bash
 # Register and start (persists across reboots)
@@ -321,23 +338,19 @@ alcove disable
 
 This installs a LaunchAgent at `~/Library/LaunchAgents/com.epicsagas.alcove.plist`. Logs are written to `~/.alcove/logs/`.
 
-> **Tip:** The MCP server (stdio) starts automatically when Claude Code launches a session — you don't need `enable` for that. Use `enable` if you want the HTTP RAG server running persistently for external access or for **instant MCP response** via proxy mode (see below).
+#### Connection Modes
 
-#### Hybrid Proxy Mode
-
-When the background HTTP server is running, the MCP stdio process automatically detects it and operates as a **thin proxy** — forwarding JSON-RPC requests to the warm server instead of loading the search engine itself. This eliminates cold-start latency (ONNX model load, index open) on every new agent session.
+When the background HTTP server is running, MCP agents connect to it directly via HTTP — no cold start, no process spawning per session. Without the background server, agents fall back to stdio mode (the alcove binary starts as a subprocess).
 
 ```
-Agent session starts → alcove (stdio)
-  ├─ HTTP server detected → proxy mode (instant, ~5ms per request)
-  └─ No server found      → direct mode (cold start, full engine load)
+alcove setup (enable = Yes):
+  Agent → HTTP POST http://127.0.0.1:8080/mcp → running server (instant)
+
+alcove setup (enable = No):
+  Agent → spawns alcove (stdio) → loads engine (cold start)
 ```
 
-To get proxy mode benefits:
-```bash
-alcove enable     # register + start background server
-# Now every new agent session uses proxy mode automatically
-```
+Setup configures the right mode automatically in each agent's MCP config file — HTTP `url` when enabled, `command` (stdio) when not.
 
 ## Search
 
@@ -506,6 +519,11 @@ files = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", ...]
 
 [diagram]
 format = "mermaid"
+
+[server]
+host = "127.0.0.1"          # bind address (0.0.0.0 for all interfaces)
+port = 8080                  # listen port
+token = "alcove-a3f7b2..."   # auto-generated bearer token
 
 [memory]
 reader_ttl_secs   = 300   # evict idle IndexReader after N seconds (0 = never)
