@@ -118,7 +118,7 @@ Agents call `search_project_docs("auth flow")` and get the 2 most relevant docs 
 
 ```bash
 # macOS
-brew install epicsagas/alcove/alcove
+brew install epicsagas/tap/alcove
 
 # Linux / Windows — pre-built binary (fast, no compilation)
 cargo install cargo-binstall
@@ -134,6 +134,18 @@ make install
 
 alcove setup
 ```
+
+### Claude Code Plugin
+
+If you use [Claude Code](https://claude.ai/claude-code), you can install Alcove as a plugin — it auto-installs the binary and registers the MCP server in one step:
+
+```bash
+claude plugin install epicsagas/alcove
+```
+
+This runs a `SessionStart` hook that:
+1. Installs the `alcove` binary if not found (via brew / cargo-binstall / cargo)
+2. Runs `alcove setup` to register the MCP server
 
 **Optional dependencies**
 
@@ -309,7 +321,23 @@ alcove disable
 
 This installs a LaunchAgent at `~/Library/LaunchAgents/com.epicsagas.alcove.plist`. Logs are written to `~/.alcove/logs/`.
 
-> **Tip:** The MCP server (stdio) starts automatically when Claude Code launches a session — you don't need `enable` for that. Use `enable` only if you want the HTTP RAG server running persistently for external access.
+> **Tip:** The MCP server (stdio) starts automatically when Claude Code launches a session — you don't need `enable` for that. Use `enable` if you want the HTTP RAG server running persistently for external access or for **instant MCP response** via proxy mode (see below).
+
+#### Hybrid Proxy Mode
+
+When the background HTTP server is running, the MCP stdio process automatically detects it and operates as a **thin proxy** — forwarding JSON-RPC requests to the warm server instead of loading the search engine itself. This eliminates cold-start latency (ONNX model load, index open) on every new agent session.
+
+```
+Agent session starts → alcove (stdio)
+  ├─ HTTP server detected → proxy mode (instant, ~5ms per request)
+  └─ No server found      → direct mode (cold start, full engine load)
+```
+
+To get proxy mode benefits:
+```bash
+alcove enable     # register + start background server
+# Now every new agent session uses proxy mode automatically
+```
 
 ## Search
 
@@ -548,7 +576,7 @@ ALCOVE_LANG=ko alcove setup
 
 ```bash
 # Homebrew
-brew upgrade epicsagas/alcove/alcove
+brew upgrade epicsagas/tap/alcove
 
 # cargo-binstall
 cargo binstall alcove

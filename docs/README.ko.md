@@ -102,7 +102,7 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 
 ```bash
 # macOS
-brew install epicsagas/alcove/alcove
+brew install epicsagas/tap/alcove
 
 # Linux / Windows — 사전 빌드 바이너리 (빠름, 컴파일 불필요)
 cargo install cargo-binstall
@@ -118,6 +118,18 @@ make install
 
 alcove setup
 ```
+
+### Claude Code 플러그인
+
+[Claude Code](https://claude.ai/claude-code)를 사용한다면, 플러그인으로 설치할 수 있습니다 — 바이너리 설치와 MCP 서버 등록을 한 번에 처리합니다:
+
+```bash
+claude plugin install epicsagas/alcove
+```
+
+`SessionStart` 훅이 실행되어:
+1. `alcove` 바이너리가 없으면 자동 설치 (brew / cargo-binstall / cargo)
+2. `alcove setup`으로 MCP 서버 등록
 
 **선택적 의존성**
 
@@ -285,7 +297,23 @@ alcove disable
 
 LaunchAgent가 `~/Library/LaunchAgents/com.epicsagas.alcove.plist`에 설치됩니다. 로그는 `~/.alcove/logs/`에 기록됩니다.
 
-> **참고:** MCP 서버(stdio)는 Claude Code 세션 시작 시 자동으로 시작됩니다 — `enable`은 필요 없습니다. `enable`은 외부 접근을 위한 HTTP RAG 서버를 상시 실행하려는 경우에만 사용하세요.
+> **참고:** MCP 서버(stdio)는 Claude Code 세션 시작 시 자동으로 시작됩니다 — `enable`은 필요 없습니다. `enable`은 외부 접근을 위한 HTTP RAG 서버를 상시 실행하거나, **프록시 모드로 즉시 응답**을 원할 때 사용하세요 (아래 참조).
+
+#### 하이브리드 프록시 모드
+
+백그라운드 HTTP 서버가 실행 중이면, MCP stdio 프로세스가 자동으로 이를 감지하여 **경량 프록시**로 동작합니다 — 검색 엔진을 직접 로드하지 않고 JSON-RPC 요청을 HTTP 서버로 전달합니다. 매 에이전트 세션마다 발생하는 콜드스타트(ONNX 모델 로드, 인덱스 열기)를 제거합니다.
+
+```
+에이전트 세션 시작 → alcove (stdio)
+  ├─ HTTP 서버 감지 → 프록시 모드 (즉시 응답, ~5ms/요청)
+  └─ 서버 없음      → 직접 모드 (콜드스타트, 전체 엔진 로드)
+```
+
+프록시 모드 활성화:
+```bash
+alcove enable     # 백그라운드 서버 등록 + 시작
+# 이후 모든 에이전트 세션이 자동으로 프록시 모드를 사용합니다
+```
 
 ## 검색
 
@@ -481,7 +509,7 @@ ALCOVE_LANG=ko alcove setup
 
 ```bash
 # Homebrew
-brew upgrade epicsagas/alcove/alcove
+brew upgrade epicsagas/tap/alcove
 
 # cargo-binstall
 cargo binstall alcove
