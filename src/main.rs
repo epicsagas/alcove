@@ -3,6 +3,8 @@ mod config;
 mod embedding;
 mod index;
 mod lint;
+#[cfg(feature = "alcove-server")]
+mod launchd;
 mod mcp;
 mod policy;
 mod promote;
@@ -130,6 +132,21 @@ enum Commands {
         #[arg(long)]
         token: Option<String>,
     },
+    /// Register alcove serve as a macOS login item and start it
+    #[cfg(feature = "alcove-server")]
+    Enable,
+    /// Unregister alcove from login items and stop it
+    #[cfg(feature = "alcove-server")]
+    Disable,
+    /// Start the background alcove serve process
+    #[cfg(feature = "alcove-server")]
+    Start,
+    /// Stop the background alcove serve process
+    #[cfg(feature = "alcove-server")]
+    Stop,
+    /// Restart the background alcove serve process
+    #[cfg(feature = "alcove-server")]
+    Restart,
 }
 
 #[derive(Subcommand)]
@@ -185,6 +202,16 @@ fn main() -> Result<()> {
         }
         #[cfg(feature = "alcove-full")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
+        #[cfg(feature = "alcove-server")]
+        Some(Commands::Enable) => launchd::enable(),
+        #[cfg(feature = "alcove-server")]
+        Some(Commands::Disable) => launchd::disable(),
+        #[cfg(feature = "alcove-server")]
+        Some(Commands::Start) => launchd::start(),
+        #[cfg(feature = "alcove-server")]
+        Some(Commands::Stop) => launchd::stop(),
+        #[cfg(feature = "alcove-server")]
+        Some(Commands::Restart) => launchd::restart(),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Serve { host, port, token }) => {
             let cfg = config::load_config();
