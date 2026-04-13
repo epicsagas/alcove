@@ -869,7 +869,7 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
                 "No — I'll run `alcove serve` manually".to_string(),
             ];
 
-            let enable_default = if already_enabled { 1 } else { 2 };
+            let enable_default = 1;
 
             let enable_idx = Select::with_theme(&ColorfulTheme::default())
                 .with_prompt("Register alcove serve as a macOS login item?")
