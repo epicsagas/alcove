@@ -979,9 +979,7 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
             });
 
             // Ensure model is loaded (and downloaded if auto_download is enabled)
-            if emb_cfg.auto_download {
-                let _ = service.ensure_model();
-            }
+            let _ = service.ensure_model();
 
             if service.state() == crate::embedding::ModelState::Ready {
                 let vector_path = docs_root.join(".alcove").join("vectors.db");

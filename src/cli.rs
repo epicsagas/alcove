@@ -1556,11 +1556,16 @@ fn print_index_result(result: serde_json::Value, is_rebuild: bool) -> Result<()>
             }
         }
         "model_not_ready" => {
-            let status = result["embedding_status"].as_str().unwrap_or("unknown");
+            let model = result["embedding_model"].as_str().unwrap_or("");
+            let hint = if model.is_empty() {
+                "run `alcove model download`".to_string()
+            } else {
+                format!("{} — run `alcove model download`", model)
+            };
             println!(
                 "  {} hybrid search unavailable  {}",
                 style("·").dim(),
-                style(status).dim(),
+                style(hint).dim(),
             );
         }
         "failed" => {
