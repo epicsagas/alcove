@@ -70,6 +70,7 @@ dependencies = [
  "quick-xml",
  "rand 0.10.0",
  "rayon",
+ "regex",
  "rusqlite",
  "rust-i18n",
  "serde",

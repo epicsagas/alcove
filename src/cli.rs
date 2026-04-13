@@ -2471,3 +2471,65 @@ fn cmd_model_status() -> Result<()> {
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// alcove lint
+// ---------------------------------------------------------------------------
+
+pub fn cmd_lint(format: &str) -> Result<()> {
+    use crate::lint;
+    use crate::tools;
+
+    let docs_root = match saved_docs_root() {
+        Some(p) => p,
+        None => {
+            anyhow::bail!("docs_root is not configured. Run `alcove setup` first.");
+        }
+    };
+
+    let project_filter = tools::resolve_project(&docs_root).map(|r| r.name);
+    let report = lint::lint(&docs_root, project_filter.as_deref());
+
+    if format == "json" {
+        let json = lint::lint_to_json(&report);
+        println!("{}", serde_json::to_string_pretty(&json)?);
+    } else {
+        let project_label = project_filter.as_deref().unwrap_or("(all projects)");
+        lint::print_lint_human(&report, project_label);
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// alcove promote
+// ---------------------------------------------------------------------------
+
+pub fn cmd_promote(source: &std::path::Path, project: Option<&str>, mv: bool) -> Result<()> {
+    use crate::promote;
+
+    let docs_root = match saved_docs_root() {
+        Some(p) => p,
+        None => {
+            anyhow::bail!("docs_root is not configured. Run `alcove setup` first.");
+        }
+    };
+
+    let opts = promote::PromoteOptions {
+        source: source.to_path_buf(),
+        project: project.map(|s| s.to_string()),
+        copy: !mv,
+    };
+
+    let result = promote::promote(&docs_root, opts)?;
+
+    println!(
+        "{} {} → {}  (project: {})",
+        style(result.action).green().bold(),
+        result.source.display(),
+        result.destination.display(),
+        style(&result.project).cyan(),
+    );
+
+    Ok(())
+}

@@ -2,8 +2,10 @@ mod cli;
 mod config;
 mod embedding;
 mod index;
+mod lint;
 mod mcp;
 mod policy;
+mod promote;
 mod tools;
 
 #[cfg(feature = "alcove-full")]
@@ -98,6 +100,23 @@ enum Commands {
         #[command(subcommand)]
         subcmd: ModelCommands,
     },
+    /// Lint project docs for broken links, orphans, stale markers
+    Lint {
+        /// Output format: human (default) or json
+        #[arg(long, default_value = "human")]
+        format: String,
+    },
+    /// Promote a document from an external vault into alcove docs
+    Promote {
+        /// Source file path
+        source: std::path::PathBuf,
+        /// Target project (auto-detected if omitted)
+        #[arg(long)]
+        project: Option<String>,
+        /// Move instead of copy
+        #[arg(long)]
+        mv: bool,
+    },
     /// Start HTTP RAG server for external access
     #[cfg(feature = "alcove-server")]
     Serve {
@@ -160,6 +179,10 @@ fn main() -> Result<()> {
             mode,
             limit,
         }) => cli::cmd_search(&query, &scope, &mode, limit),
+        Some(Commands::Lint { format }) => cli::cmd_lint(&format),
+        Some(Commands::Promote { source, project, mv }) => {
+            cli::cmd_promote(&source, project.as_deref(), mv)
+        }
         #[cfg(feature = "alcove-full")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
         #[cfg(feature = "alcove-server")]

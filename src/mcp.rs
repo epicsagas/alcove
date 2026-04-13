@@ -390,6 +390,67 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                 "required": []
             }),
         },
+        ToolDescription {
+            name: "lint_project".into(),
+            description: concat!(
+                "Lint project documentation for semantic issues: broken links, orphaned files, ",
+                "stale markers (WIP/TODO/FIXME/DRAFT/DEPRECATED), and stale year references.\n",
+                "\n",
+                "Use this tool when the user asks to check doc quality beyond policy compliance, ",
+                "find broken internal links, locate TODO/WIP content, or audit doc hygiene.\n",
+                "\n",
+                "Checks:\n",
+                "- broken-link (warning): wikilinks [[target]] or markdown links [text](path) that resolve to no file\n",
+                "- orphan (info): files not linked from any other document (index/readme/moc excluded)\n",
+                "- stale-marker (warning): files containing WIP, TODO, FIXME, DRAFT, DEPRECATED, DO NOT USE, OUTDATED\n",
+                "- stale-date (info): files mentioning a year that is 2+ years in the past\n",
+                "\n",
+                "Optionally filter by project name. If omitted, scans all projects."
+            ).into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "project": {
+                        "type": "string",
+                        "description": "Project name to lint (omit for all projects)"
+                    }
+                },
+                "required": []
+            }),
+        },
+        ToolDescription {
+            name: "promote_document".into(),
+            description: concat!(
+                "Promote a document from an external vault (e.g. Obsidian) into the alcove doc-repo.\n",
+                "\n",
+                "Use this tool when the user wants to import, migrate, or copy a file from ",
+                "outside alcove into the appropriate project directory.\n",
+                "\n",
+                "If 'project' is not specified, the target project is auto-detected by matching ",
+                "the file name and content keywords against known project directory names. ",
+                "Falls back to the 'inbox/' directory if no match is found.\n",
+                "\n",
+                "By default, the file is copied (safe). Set copy=false to move it instead."
+            ).into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Absolute path to the source file to promote"
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": "Target project name (auto-detected if omitted)"
+                    },
+                    "copy": {
+                        "type": "boolean",
+                        "description": "Copy the file (true, default) or move it (false)"
+                    }
+                },
+                "required": ["source"]
+            }),
+        },
     ];
 
     RpcResponse::ok(id, json!({ "tools": tools }))
@@ -422,6 +483,20 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             }
         },
     };
+
+    // lint_project and promote_document operate on docs_root directly
+    if call.name == "lint_project" {
+        return match tools::tool_lint_project(&docs_root, call.arguments) {
+            Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
+            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+        };
+    }
+    if call.name == "promote_document" {
+        return match tools::tool_promote_document(&docs_root, call.arguments) {
+            Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
+            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+        };
+    }
 
     // list_projects and init_project don't need a resolved project
     if call.name == "list_projects" {

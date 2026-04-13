@@ -1,7 +1,9 @@
 pub mod config;
 pub mod embedding;
 pub mod index;
+pub mod lint;
 pub mod policy;
+pub mod promote;
 
 #[cfg(feature = "alcove-full")]
 pub mod vector;
