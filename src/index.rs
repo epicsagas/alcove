@@ -72,7 +72,7 @@ fn get_cached_reader(index_dir: &Path, index: &Index) -> Result<Arc<IndexReader>
     if let Some(ttl) = ttl {
         cache.retain(|_, entry| {
             if entry.last_used.elapsed() > ttl {
-                // Only evict when the cache holds the sole strong reference.
+                // Keep this entry — it is still in active use by a caller.
                 Arc::strong_count(&entry.reader) > 1
             } else {
                 true
@@ -651,7 +651,12 @@ fn read_file_content(path: &Path) -> Result<String> {
                 Ok(text) if !text.trim().is_empty() => Ok(text),
                 _ => {
                     use std::time::{Duration, Instant};
-                    let mut child = std::process::Command::new("pdftotext")
+                    let pdftotext_bin = ["/usr/bin/pdftotext", "/usr/local/bin/pdftotext", "/opt/homebrew/bin/pdftotext"]
+                        .iter()
+                        .find(|p| std::path::Path::new(p).exists())
+                        .copied()
+                        .unwrap_or("pdftotext");
+                    let mut child = std::process::Command::new(pdftotext_bin)
                         .args([path.as_os_str(), std::ffi::OsStr::new("-")])
                         .stdout(std::process::Stdio::piped())
                         .stderr(std::process::Stdio::null())

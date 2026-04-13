@@ -1,9 +1,39 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use regex::Regex;
 use serde_json::{Value, json};
 use walkdir::WalkDir;
+
+// ---------------------------------------------------------------------------
+// Compiled regexes (allocated once, reused across all lint calls)
+// ---------------------------------------------------------------------------
+
+fn fence_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?s)(?:```|~~~)[^\n]*\n.*?(?:```|~~~)").unwrap())
+}
+
+fn inline_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"`[^`\n]+`").unwrap())
+}
+
+fn wiki_link_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]").unwrap())
+}
+
+fn md_link_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\[(?:[^\]]*)\]\(([^)]+)\)").unwrap())
+}
+
+fn wikilink_strip_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\[\[[^\]]+\]\]").unwrap())
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -106,19 +136,15 @@ fn is_index_file(path: &Path) -> bool {
     )
 }
 
-/// Replace fenced code blocks (``` … ```) and inline `code` spans with spaces,
-/// preserving character positions so other offsets remain valid.
-/// This prevents TOML `[[table]]` syntax inside code fences from being parsed
-/// as Obsidian-style wikilinks.
+/// Replace fenced code blocks (``` … ``` and ~~~ … ~~~) and inline `code`
+/// spans with spaces, preserving byte offsets so downstream regex matches
+/// remain valid. This prevents TOML `[[table]]` syntax inside code fences
+/// from being parsed as Obsidian-style wikilinks.
 fn strip_code_blocks(content: &str) -> String {
-    // Fenced blocks: ```optional-lang\n ... ``` (non-greedy, dotall)
-    let fence_re = Regex::new(r"(?s)```[^\n]*\n.*?```").unwrap();
-    let after_fences = fence_re.replace_all(content, |caps: &regex::Captures| {
+    let after_fences = fence_re().replace_all(content, |caps: &regex::Captures| {
         " ".repeat(caps[0].len())
     });
-    // Inline code: `...` (single backtick, no newlines)
-    let inline_re = Regex::new(r"`[^`\n]+`").unwrap();
-    inline_re
+    inline_re()
         .replace_all(&after_fences, |caps: &regex::Captures| {
             " ".repeat(caps[0].len())
         })
@@ -132,14 +158,12 @@ fn extract_links(content: &str) -> Vec<String> {
     let prose = strip_code_blocks(content);
 
     // Wikilinks: [[target]] or [[target|alias]]
-    let wiki_re = Regex::new(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]").unwrap();
-    for cap in wiki_re.captures_iter(&prose) {
+    for cap in wiki_link_re().captures_iter(&prose) {
         links.push(cap[1].trim().to_string());
     }
 
     // Markdown links: [text](path) — skip http/https/mailto
-    let md_re = Regex::new(r"\[(?:[^\]]*)\]\(([^)]+)\)").unwrap();
-    for cap in md_re.captures_iter(&prose) {
+    for cap in md_link_re().captures_iter(&prose) {
         let target = cap[1].trim();
         if !target.starts_with("http://")
             && !target.starts_with("https://")
@@ -254,7 +278,6 @@ fn lint_with_year(docs_root: &Path, project_filter: Option<&str>, now_year: i32)
     // False positives in URLs and version strings (e.g. `/2023/`, `2023.1.0`)
     // are filtered out in the match loop below by inspecting the surrounding chars.
     let stale_date_re = Regex::new(r"\b(20\d{2}|19\d{2})\b").unwrap();
-    let wikilink_re = Regex::new(r"\[\[[^\]]+\]\]").unwrap();
 
     for file_path in &files {
         let content = match std::fs::read_to_string(file_path) {
@@ -295,7 +318,7 @@ fn lint_with_year(docs_root: &Path, project_filter: Option<&str>, now_year: i32)
         // doesn't trigger a false-positive DEPRECATED marker hit.
         let prose_for_markers = {
             let no_code = strip_code_blocks(&content);
-            wikilink_re
+            wikilink_strip_re()
                 .replace_all(&no_code, |caps: &regex::Captures| {
                     " ".repeat(caps[0].len())
                 })
