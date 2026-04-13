@@ -79,6 +79,8 @@ Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织
 - **标准化文档结构** —— `policy.toml` 在所有项目和团队中强制执行一致的文档规范
 - **跨仓库审计** —— 发现项目仓库中错误放置的内部文档并建议修复
 - **文档验证** —— 检查缺失文件、未填充模板、必需章节
+- **语义检查** —— 自动检测失效的 Wiki 链接、孤立文件、过期 WIP/DRAFT 标记及 2 年以上的日期表述
+- **外部仓库引入** —— 一条命令将 Obsidian 等工具的笔记带入 doc-repo；根据文件名和内容自动路由到对应项目
 - **支持 9+ 个代理** —— Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity、Gemini CLI
 
 ## 为什么选择 Alcove
@@ -93,6 +95,8 @@ Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织
 | 敏感文档有泄露到公共仓库的风险 | 私有文档与项目仓库物理隔离 |
 | 文档结构因项目和团队成员而异 | `policy.toml` 在所有项目中强制执行标准 |
 | 无法检查文档是否完整 | `validate` 捕获缺失文件、空模板、缺失章节 |
+| 过期链接或 WIP 标记容易被忽视 | `lint` 自动检测失效链接、孤立文件及过期标记 |
+| Obsidian 等外部工具的笔记处于孤立状态 | `promote` 一条命令将外部笔记整合到 doc-repo |
 
 ## 快速开始
 
@@ -181,6 +185,8 @@ Alcove 将文档分为以下层级：
 | `validate_docs` | 根据团队策略（`policy.toml`）验证文档 |
 | `rebuild_index` | 重建全文搜索索引（通常自动完成） |
 | `check_doc_changes` | 检测自上次索引构建以来添加、修改或删除的文档 |
+| `lint_project` | 语义检查 — 失效链接、孤立文件、过期标记及过期日期表述 |
+| `promote_document` | 将外部仓库的文件复制或移动到 alcove doc-repo |
 
 ## CLI
 
@@ -189,11 +195,50 @@ alcove              启动 MCP 服务器（代理调用）
 alcove setup        交互式设置——随时重新运行以重新配置
 alcove doctor       检查安装健康状态
 alcove validate     根据策略验证文档（--format json, --exit-code）
+alcove lint         语义检查 — 失效链接、孤立文件、过期标记 (--format json)
+alcove promote      将外部仓库笔记引入 doc-repo
 alcove index        增量更新搜索索引（仅处理变更文件）
 alcove rebuild      从头重建搜索索引（适用于模式变更后）
 alcove search       从终端搜索文档
 alcove uninstall    移除技能、配置和遗留文件
 ```
+
+### 检查（Lint）
+
+```bash
+# 检查当前项目（从 CWD 自动识别）
+alcove lint
+
+# 指定项目
+alcove lint --project my-app
+
+# 输出机器可读格式（适合 CI）
+alcove lint --format json
+```
+
+检查涵盖四个方面：
+
+| 检查项 | 检测内容 |
+|--------|---------|
+| `broken-link` | 指向不存在文件的 `[[wiki链接]]` 或 `[文字](路径)` |
+| `orphan` | 没有任何文档链接的孤立文件 |
+| `stale-marker` | WIP / TODO / FIXME / DRAFT / DEPRECATED 标记 |
+| `stale-date` | 2 年以上的日期表述（如 "截至 2022 年"） |
+
+### 引入（Promote）
+
+```bash
+# 将 Obsidian 笔记复制到 doc-repo（自动路由到匹配项目）
+alcove promote ~/my-brain/Projects/auth-notes.md
+
+# 指定项目
+alcove promote ~/my-brain/Projects/auth-notes.md --project my-app
+
+# 移动而非复制
+alcove promote ~/my-brain/Projects/auth-notes.md --mv
+```
+
+没有匹配项目的文件将保存在 `inbox/` 中等待人工审查。
 
 ## 搜索
 
@@ -333,7 +378,12 @@ cargo uninstall alcove    # 移除二进制文件
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove 与 **obsidian-forge** 天然集成。obsidian-forge 是一个 Obsidian 笔记库生成器和自动化守护程序。使用 obsidian-forge 构建并强化你的知识图谱后，将 alcove 的 `DOCS_ROOT` 指向该笔记库，AI 智能体即可对整个个人知识库进行有排名的精准搜索，而不会产生上下文膨胀。
+Alcove 与 **obsidian-forge** 天然配合。obsidian-forge 是 Obsidian 知识库生成器和自动化守护进程。用 obsidian-forge 构建知识图谱，再通过 `alcove promote` 将笔记引入 doc-repo — AI 智能体即可通过排序搜索高效利用项目知识库，无需任何上下文冗余。
+
+```
+obsidian-forge（个人知识）   →   alcove promote   →   alcove（项目文档）
+  知识库 / 收件箱 / 图谱          一条命令               BM25 + 向量搜索
+```
 
 ## 贡献
 

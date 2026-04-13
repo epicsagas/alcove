@@ -79,6 +79,8 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 - **표준화된 문서 구조** — `policy.toml`로 모든 프로젝트와 팀에 일관된 문서를 적용
 - **크로스 레포 감사** — 프로젝트 저장소에 잘못 배치된 내부 문서를 찾아 수정 제안
 - **문서 검증** — 누락된 파일, 미작성 템플릿, 필수 섹션 확인
+- **시맨틱 린트** — 깨진 위키링크, 고아 파일, 오래된 WIP/DRAFT 마커, 2년 이상 지난 날짜 표현 자동 감지
+- **외부 볼트 가져오기** — Obsidian 등의 노트를 한 명령으로 doc-repo에 추가; 파일명·내용 기반 프로젝트 자동 라우팅
 - **9개 이상 에이전트 지원** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Gemini CLI
 
 ## Alcove를 사용하는 이유
@@ -93,6 +95,8 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 | 민감한 문서가 프로젝트 저장소에 섞여 있거나 여기저기 흩어져 있음 | 프라이빗 문서는 프로젝트 저장소와 물리적으로 분리 |
 | 프로젝트와 팀원마다 문서 구조가 다름 | `policy.toml`로 모든 프로젝트에 표준 적용 |
 | 문서가 완성되었는지 확인할 방법이 없음 | `validate`가 누락된 파일, 빈 템플릿, 누락된 섹션을 감지 |
+| 오래된 링크나 WIP 마커를 놓치기 쉬움 | `lint`가 깨진 링크, 고아 파일, 오래된 마커를 자동 감지 |
+| Obsidian 등 외부 노트가 고립된 상태로 남아 있음 | `promote`로 외부 노트를 한 명령으로 doc-repo에 통합 |
 
 ## 빠른 시작
 
@@ -181,6 +185,8 @@ Alcove는 문서를 다음과 같이 분류합니다:
 | `validate_docs` | 팀 정책(`policy.toml`)에 따라 문서 검증 |
 | `rebuild_index` | 전문 검색 인덱스 재빌드 (보통 자동) |
 | `check_doc_changes` | 마지막 인덱스 빌드 이후 추가·수정·삭제된 문서 감지 |
+| `lint_project` | 시맨틱 린트 — 깨진 링크, 고아 파일, 오래된 마커, 오래된 날짜 표현 |
+| `promote_document` | 외부 볼트의 파일을 alcove doc-repo에 복사 또는 이동 |
 
 ## CLI
 
@@ -189,11 +195,50 @@ alcove              MCP 서버 시작 (에이전트가 호출)
 alcove setup        대화형 설정 — 언제든 다시 실행하여 재설정
 alcove doctor       설치 상태 진단
 alcove validate     정책에 따라 문서 검증 (--format json, --exit-code)
+alcove lint         시맨틱 린트 — 깨진 링크, 고아 파일, 오래된 마커 (--format json)
+alcove promote      외부 볼트의 노트를 doc-repo에 가져오기
 alcove index        검색 인덱스 업데이트 (증분 — 변경된 파일만)
 alcove rebuild      검색 인덱스 전체 재구축 (스키마 변경 후 사용)
 alcove search       터미널에서 문서 검색
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
 ```
+
+### 린트
+
+```bash
+# 현재 프로젝트 린트 (CWD에서 자동 감지)
+alcove lint
+
+# 특정 프로젝트 지정
+alcove lint --project my-app
+
+# CI용 머신 리더블 출력
+alcove lint --format json
+```
+
+린트는 네 가지를 검사합니다:
+
+| 검사 항목 | 감지 내용 |
+|-----------|-----------|
+| `broken-link` | 존재하지 않는 파일을 가리키는 `[[위키링크]]` 또는 `[텍스트](경로)` |
+| `orphan` | 다른 문서에서 링크되지 않는 파일 |
+| `stale-marker` | WIP / TODO / FIXME / DRAFT / DEPRECATED 마커 |
+| `stale-date` | 2년 이상 지난 날짜 표현 (예: "as of 2022") |
+
+### 프로모트
+
+```bash
+# Obsidian 노트를 doc-repo에 복사 (자동으로 프로젝트 라우팅)
+alcove promote ~/my-brain/Projects/auth-notes.md
+
+# 특정 프로젝트 지정
+alcove promote ~/my-brain/Projects/auth-notes.md --project my-app
+
+# 복사 대신 이동
+alcove promote ~/my-brain/Projects/auth-notes.md --mv
+```
+
+일치하는 프로젝트가 없는 파일은 수동 검토를 위해 `inbox/`에 저장됩니다.
 
 ## 검색
 
@@ -347,7 +392,12 @@ cargo uninstall alcove    # 바이너리 제거
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove는 **obsidian-forge**와 자연스럽게 연동됩니다. obsidian-forge는 Obsidian 볼트 생성기이자 자동화 데몬입니다. obsidian-forge로 지식 그래프를 구축한 뒤, alcove의 `DOCS_ROOT`를 해당 볼트 경로로 설정하면 AI 에이전트가 컨텍스트 낭비 없이 개인 지식 베이스를 랭킹 검색으로 활용할 수 있습니다.
+Alcove는 **obsidian-forge**와 자연스럽게 연동됩니다. obsidian-forge는 Obsidian 볼트 생성기이자 자동화 데몬입니다. obsidian-forge로 지식 그래프를 구축한 뒤, `alcove promote`로 노트를 doc-repo에 가져오세요 — AI 에이전트가 컨텍스트 낭비 없이 랭킹 검색으로 프로젝트 지식 베이스를 활용할 수 있습니다.
+
+```
+obsidian-forge (개인 지식)   →   alcove promote   →   alcove (프로젝트 문서)
+  볼트 / 인박스 / 그래프          한 명령                BM25 + 벡터 검색
+```
 
 ## 기여
 

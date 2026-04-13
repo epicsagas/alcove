@@ -111,6 +111,8 @@ Agents call `search_project_docs("auth flow")` and get the 2 most relevant docs 
 | Sensitive docs sitting in project repos | Private docs on your machine, never in public repos |
 | Doc structure differs per project and team member | `policy.toml` enforces standards across all projects |
 | No way to check if docs are complete | `validate` catches missing files, empty templates, missing sections |
+| Stale docs with broken links or WIP markers go unnoticed | `lint` detects broken links, orphans, and stale markers automatically |
+| Notes from Obsidian or other tools stay siloed | `promote` brings any note into your doc-repo with one command |
 
 ## Quick start
 
@@ -190,6 +192,8 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 - **Standardized doc structure** — `policy.toml` enforces consistent docs across all projects and teams
 - **Cross-repo audit** — finds internal docs misplaced in your project repo, suggests fixes
 - **Document validation** — checks for missing files, unfilled templates, required sections
+- **Semantic lint** — detects broken wikilinks, orphan files, stale WIP/DRAFT markers, and date claims that are 2+ years old
+- **External vault promotion** — bring a note from Obsidian (or any vault) into your alcove doc-repo with one command; auto-routes to the right project
 - **Works with 9+ agents** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Gemini CLI
 
 ## MCP Tools
@@ -205,6 +209,8 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 | `validate_docs` | Validate docs against team policy (`policy.toml`) |
 | `rebuild_index` | Rebuild the full-text search index (usually automatic) |
 | `check_doc_changes` | Detect added, modified, or deleted docs since last index build |
+| `lint_project` | Semantic lint — broken links, orphan files, stale markers, stale date claims |
+| `promote_document` | Copy or move a file from an external vault into the alcove doc-repo |
 
 ## CLI
 
@@ -213,11 +219,50 @@ alcove              Start MCP server (agents call this)
 alcove setup        Interactive setup — re-run anytime to reconfigure
 alcove doctor       Check the health of your alcove installation
 alcove validate     Validate docs against policy (--format json, --exit-code)
+alcove lint         Semantic lint — broken links, orphans, stale markers (--format json)
+alcove promote      Bring a file from an external vault into your doc-repo
 alcove index        Update the search index (incremental — only changed files)
 alcove rebuild      Rebuild the search index from scratch (use after schema changes)
 alcove search       Search docs from the terminal
 alcove uninstall    Remove skills, config, and legacy files
 ```
+
+### Lint
+
+```bash
+# Lint the current project (auto-detected from CWD)
+alcove lint
+
+# Lint a specific project by name
+alcove lint --project my-app
+
+# Machine-readable output for CI
+alcove lint --format json
+```
+
+Lint checks four things:
+
+| Check | What it catches |
+|-------|----------------|
+| `broken-link` | `[[wikilinks]]` and `[text](path)` pointing to missing files |
+| `orphan` | Files that no other document links to |
+| `stale-marker` | WIP / TODO / FIXME / DRAFT / DEPRECATED markers |
+| `stale-date` | Year mentions that are 2+ years old (e.g. "as of 2022") |
+
+### Promote
+
+```bash
+# Copy a note from Obsidian into your doc-repo (auto-routes to matching project)
+alcove promote ~/my-brain/Projects/auth-notes.md
+
+# Route to a specific project
+alcove promote ~/my-brain/Projects/auth-notes.md --project my-app
+
+# Move instead of copy
+alcove promote ~/my-brain/Projects/auth-notes.md --mv
+```
+
+Files with no matching project land in `inbox/` for manual review.
 
 ## Search
 
@@ -414,7 +459,12 @@ cargo uninstall alcove    # remove binary
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and automation daemon. Use obsidian-forge to build and strengthen your knowledge graph in Obsidian, then point alcove's `DOCS_ROOT` at the vault — your AI agents get ranked, scoped search over your entire personal knowledge base without any context bloat.
+Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and automation daemon. Use obsidian-forge to build and strengthen your knowledge graph in Obsidian, then promote notes into alcove with `alcove promote` — your AI agents get ranked, scoped search over your project knowledge base without any context bloat.
+
+```
+obsidian-forge (personal knowledge)   →   alcove promote   →   alcove (project docs)
+  vault / inbox / graph                    one command           BM25 + vector search
+```
 
 ## Contributing
 

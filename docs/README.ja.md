@@ -79,6 +79,8 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 - **標準化されたドキュメント構造** — `policy.toml`がすべてのプロジェクトとチームに一貫したドキュメントを強制
 - **クロスリポジトリ監査** — プロジェクトリポジトリに誤って配置された内部ドキュメントを発見し、修正を提案
 - **ドキュメント検証** — 不足ファイル、未記入テンプレート、必須セクションをチェック
+- **セマンティックLint** — 壊れたウィキリンク、孤立ファイル、古いWIP/DRAFTマーカー、2年以上前の日付表現を自動検出
+- **外部ボルトへの取り込み** — Obsidianなど外部ツールのノートをdoc-repoにワンコマンドで追加；ファイル名・内容に基づくプロジェクト自動ルーティング
 - **9つ以上のエージェントに対応** — Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity、Gemini CLI
 
 ## なぜAlcoveなのか
@@ -93,6 +95,8 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 | 機密ドキュメントがパブリックリポジトリに漏洩するリスク | プライベートドキュメントをプロジェクトリポジトリから物理的に分離 |
 | ドキュメント構造がプロジェクトやチームメンバーごとに異なる | `policy.toml`がすべてのプロジェクトに標準を強制 |
 | ドキュメントが完全かどうか確認する方法がない | `validate`が不足ファイル、空テンプレート、不足セクションを検出 |
+| 古いリンクやWIPマーカーが見落とされやすい | `lint`が壊れたリンク、孤立ファイル、古いマーカーを自動検出 |
+| ObsidianなどのノートがサイロになっているNote | `promote`で外部ノートをワンコマンドでdoc-repoに統合 |
 
 ## クイックスタート
 
@@ -181,6 +185,8 @@ Alcoveはドキュメントを以下のように分類します:
 | `validate_docs` | チームポリシー（`policy.toml`）に対してドキュメントを検証 |
 | `rebuild_index` | 全文検索インデックスの再構築（通常は自動） |
 | `check_doc_changes` | 前回のインデックスビルド以降に追加・変更・削除されたドキュメントを検出 |
+| `lint_project` | セマンティックLint — 壊れたリンク、孤立ファイル、古いマーカー、古い日付表現 |
+| `promote_document` | 外部ボルトのファイルをalcove doc-repoにコピーまたは移動 |
 
 ## CLI
 
@@ -189,11 +195,50 @@ alcove              MCPサーバーを起動（エージェントがこれを呼
 alcove setup        対話的セットアップ — いつでも再実行して再設定可能
 alcove doctor       インストール状態を診断
 alcove validate     ポリシーに対してドキュメントを検証（--format json, --exit-code）
+alcove lint         セマンティックLint — 壊れたリンク、孤立ファイル、古いマーカー (--format json)
+alcove promote      外部ボルトのノートをdoc-repoに取り込む
 alcove index        検索インデックスの増分更新（変更されたファイルのみ）
 alcove rebuild      検索インデックスをゼロから再構築（スキーマ変更後に使用）
 alcove search       ターミナルからドキュメントを検索
 alcove uninstall    スキル、設定、レガシーファイルを削除
 ```
+
+### Lint
+
+```bash
+# 現在のプロジェクトをLint（CWDから自動検出）
+alcove lint
+
+# プロジェクトを指定
+alcove lint --project my-app
+
+# CI向けのマシンリーダブル出力
+alcove lint --format json
+```
+
+Lintは4つの項目を検査します：
+
+| 検査項目 | 検出内容 |
+|---------|---------|
+| `broken-link` | 存在しないファイルを指す `[[ウィキリンク]]` または `[テキスト](パス)` |
+| `orphan` | 他のドキュメントからリンクされていないファイル |
+| `stale-marker` | WIP / TODO / FIXME / DRAFT / DEPRECATED マーカー |
+| `stale-date` | 2年以上前の日付表現（例："as of 2022"） |
+
+### Promote
+
+```bash
+# ObsidianのノートをDoc-repoにコピー（プロジェクトを自動ルーティング）
+alcove promote ~/my-brain/Projects/auth-notes.md
+
+# プロジェクトを指定
+alcove promote ~/my-brain/Projects/auth-notes.md --project my-app
+
+# コピーの代わりに移動
+alcove promote ~/my-brain/Projects/auth-notes.md --mv
+```
+
+一致するプロジェクトがないファイルは手動確認のため`inbox/`に保存されます。
 
 ## 検索
 
@@ -333,7 +378,12 @@ cargo uninstall alcove    # バイナリを削除
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcoveは**obsidian-forge**と自然に連携できます。obsidian-forgeはObsidianボルトのジェネレーターかつ自動化デーモンです。obsidian-forgeで知識グラフを構築・強化した後、alcoveの`DOCS_ROOT`をそのボルトに向けることで、AIエージェントはコンテキストを無駄にせずに個人ナレッジベースをランク検索で活用できます。
+Alcoveは**obsidian-forge**と自然に連携できます。obsidian-forgeはObsidianボルトのジェネレーターかつ自動化デーモンです。obsidian-forgeで知識グラフを構築・強化した後、`alcove promote`でノートをdoc-repoに取り込みましょう — AIエージェントはコンテキストを無駄にせずにランク検索でプロジェクトナレッジベースを活用できます。
+
+```
+obsidian-forge（個人知識）   →   alcove promote   →   alcove（プロジェクトドキュメント）
+  ボルト / 受信トレイ / グラフ      ワンコマンド            BM25 + ベクトル検索
+```
 
 ## コントリビュート
 

@@ -79,6 +79,8 @@ Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository
 - **Standardisierte Dokumentstruktur** — `policy.toml` erzwingt konsistente Dokumente über alle Projekte und Teams
 - **Cross-Repo-Audit** — findet fehlplatzierte interne Dokumente im Projektrepository und schlägt Korrekturen vor
 - **Dokumentvalidierung** — prüft auf fehlende Dateien, unausgefüllte Templates, erforderliche Abschnitte
+- **Semantisches Lint** — erkennt automatisch defekte Wikilinks, verwaiste Dateien, veraltete WIP/DRAFT-Markierungen und Datumsangaben älter als 2 Jahre
+- **Import aus externen Vaults** — bringt eine Notiz aus Obsidian (oder einem anderen Vault) mit einem Befehl ins doc-repo; automatisches Routing zum richtigen Projekt
 - **Funktioniert mit 9+ Agenten** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Gemini CLI
 
 ## Warum Alcove
@@ -93,6 +95,8 @@ Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository
 | Sensible Dokumente riskieren Leak in öffentliche Repos | Private Dokumente physisch von Projekt-Repos getrennt |
 | Dokumentstruktur variiert pro Projekt und Teammitglied | `policy.toml` erzwingt Standards über alle Projekte |
 | Keine Möglichkeit zu prüfen, ob Dokumente vollständig sind | `validate` erkennt fehlende Dateien, leere Templates, fehlende Abschnitte |
+| Defekte Links oder WIP-Markierungen bleiben unbemerkt | `lint` erkennt automatisch defekte Links, verwaiste Dateien und veraltete Markierungen |
+| Notizen aus Obsidian oder anderen Tools bleiben isoliert | `promote` integriert externe Notizen mit einem Befehl ins doc-repo |
 
 ## Schnellstart
 
@@ -181,6 +185,8 @@ Das `audit`-Tool scannt sowohl das Docs-Repository als auch das lokale Projektve
 | `validate_docs` | Dokumente gegen Team-Policy (`policy.toml`) validieren |
 | `rebuild_index` | Volltextsuchindex neu aufbauen (normalerweise automatisch) |
 | `check_doc_changes` | Seit dem letzten Index-Build hinzugefügte, geänderte oder gelöschte Dokumente erkennen |
+| `lint_project` | Semantisches Lint — defekte Links, verwaiste Dateien, veraltete Markierungen und Datumsangaben |
+| `promote_document` | Datei aus einem externen Vault ins alcove doc-repo kopieren oder verschieben |
 
 ## CLI
 
@@ -189,11 +195,50 @@ alcove              MCP-Server starten (Agenten rufen das auf)
 alcove setup        Interaktives Setup — jederzeit erneut ausführen
 alcove doctor       Gesundheit der Alcove-Installation prüfen
 alcove validate     Dokumente gegen Policy validieren (--format json, --exit-code)
+alcove lint         Semantisches Lint — defekte Links, verwaiste Dateien, veraltete Markierungen (--format json)
+alcove promote      Notizen aus einem externen Vault ins doc-repo importieren
 alcove index        Suchindex inkrementell aktualisieren (nur geänderte Dateien)
 alcove rebuild      Suchindex von Grund auf neu aufbauen (nach Schema-Änderungen)
 alcove search       Dokumente vom Terminal aus suchen
 alcove uninstall    Skills, Konfiguration und Legacy-Dateien entfernen
 ```
+
+### Lint
+
+```bash
+# Lint des aktuellen Projekts (automatisch aus CWD erkannt)
+alcove lint
+
+# Projekt angeben
+alcove lint --project my-app
+
+# Maschinenlesbare Ausgabe für CI
+alcove lint --format json
+```
+
+Lint prüft vier Dinge:
+
+| Prüfung | Was erkannt wird |
+|---------|-----------------|
+| `broken-link` | `[[Wikilinks]]` oder `[Text](Pfad)` die auf fehlende Dateien zeigen |
+| `orphan` | Dateien, auf die kein anderes Dokument verlinkt |
+| `stale-marker` | WIP / TODO / FIXME / DRAFT / DEPRECATED Markierungen |
+| `stale-date` | Datumsangaben älter als 2 Jahre (z. B. "as of 2022") |
+
+### Promote
+
+```bash
+# Obsidian-Notiz ins doc-repo kopieren (automatisches Routing zum Projekt)
+alcove promote ~/my-brain/Projects/auth-notes.md
+
+# Bestimmtes Projekt angeben
+alcove promote ~/my-brain/Projects/auth-notes.md --project my-app
+
+# Verschieben statt kopieren
+alcove promote ~/my-brain/Projects/auth-notes.md --mv
+```
+
+Dateien ohne passendes Projekt werden in `inbox/` zur manuellen Überprüfung gespeichert.
 
 ## Suche
 
@@ -333,7 +378,12 @@ cargo uninstall alcove    # Binary entfernen
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove lässt sich nahtlos mit **obsidian-forge** kombinieren — einem Obsidian-Vault-Generator und Automatisierungs-Daemon. Baue und stärke deinen Wissensgraphen in Obsidian mit obsidian-forge, zeige dann `DOCS_ROOT` von alcove auf den Vault, und deine KI-Agenten erhalten kontextschonenden Ranked-Search-Zugriff auf deine gesamte persönliche Wissensbasis.
+Alcove lässt sich nahtlos mit **obsidian-forge** kombinieren — einem Obsidian-Vault-Generator und Automatisierungs-Daemon. Baue und stärke deinen Wissensgraphen in Obsidian mit obsidian-forge, nutze dann `alcove promote` um relevante Notizen ins doc-repo zu übertragen — und deine KI-Agenten erhalten kontextschonenden Ranked-Search-Zugriff auf deine gesamte persönliche Wissensbasis.
+
+```
+obsidian-forge (persönliches Wissen)   →   alcove promote   →   alcove (Projektdocs)
+  Vault / Inbox / Graph                     ein Befehl            BM25 + Vektorsuche
+```
 
 ## Mitwirken
 
