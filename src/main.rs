@@ -84,8 +84,8 @@ enum Commands {
     Search {
         /// Search query
         query: String,
-        /// Search scope: project (default) or global
-        #[arg(long, default_value = "project")]
+        /// Search scope: global (default) or project
+        #[arg(long, default_value = "global")]
         scope: String,
         /// Search mode: auto (default, ranked if index exists, else grep), grep, or ranked
         #[arg(long, default_value = "auto")]
