@@ -102,7 +102,7 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 
 ```bash
 # macOS
-brew install epicsagas/alcove/alcove
+brew install epicsagas/tap/alcove
 
 # Linux / Windows — ビルド済みバイナリ（高速、コンパイル不要）
 cargo install cargo-binstall
@@ -358,7 +358,7 @@ ALCOVE_LANG=ja alcove setup
 
 ```bash
 # Homebrew
-brew upgrade epicsagas/alcove/alcove
+brew upgrade epicsagas/tap/alcove
 
 # cargo-binstall
 cargo binstall alcove

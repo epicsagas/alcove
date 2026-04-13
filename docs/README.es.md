@@ -102,7 +102,7 @@ Alcove mantiene toda tu documentación privada en **un único repositorio compar
 
 ```bash
 # macOS
-brew install epicsagas/alcove/alcove
+brew install epicsagas/tap/alcove
 
 # Linux / Windows — binario precompilado (rápido, sin compilación)
 cargo install cargo-binstall
@@ -358,7 +358,7 @@ ALCOVE_LANG=es alcove setup
 
 ```bash
 # Homebrew
-brew upgrade epicsagas/alcove/alcove
+brew upgrade epicsagas/tap/alcove
 
 # cargo-binstall
 cargo binstall alcove
