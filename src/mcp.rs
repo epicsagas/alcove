@@ -549,7 +549,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             .arguments
             .get("limit")
             .and_then(serde_json::Value::as_u64)
-            .map(|v| usize::try_from(v).unwrap_or(usize::MAX))
+            .map(|v| usize::try_from(v).unwrap_or(usize::MAX).clamp(1, 200))
             .unwrap_or(20);
         let query = call
             .arguments

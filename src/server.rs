@@ -196,7 +196,7 @@ async fn handle_search(
     let docs_root = state.docs_root.clone();
     let project_filter_owned = req.project.clone();
     let q = req.q.clone();
-    let limit = req.limit;
+    let limit = req.limit.clamp(1, 200);
     let use_hybrid = req.mode == "hybrid"
         || (req.mode == "auto" && cfg!(feature = "alcove-full"));
 
@@ -507,7 +507,18 @@ async fn mcp_dispatch(
         }
     };
 
-    match crate::mcp::dispatch(req) {
+    let req_id = req.id.clone();
+    let result = tokio::task::spawn_blocking(move || crate::mcp::dispatch(req))
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("[alcove] mcp dispatch task panicked: {e}");
+            Some(crate::mcp::RpcResponse::err(
+                req_id,
+                -32603,
+                "Internal server error".to_string(),
+            ))
+        });
+    match result {
         Some(resp) => (
             StatusCode::OK,
             Json(serde_json::to_value(&resp).unwrap_or_default()),

@@ -97,6 +97,37 @@ pub fn promote(docs_root: &Path, opts: PromoteOptions) -> Result<PromoteResult> 
         anyhow::bail!("Source file does not exist: {}", source.display());
     }
 
+    // Block access to OS-sensitive directories.
+    // This prevents LLM agents from reading system files (e.g. /etc/passwd) via promote.
+    {
+        let canonical_source = source
+            .canonicalize()
+            .with_context(|| format!("Failed to resolve source path: {}", source.display()))?;
+        // Block known OS-sensitive roots (POSIX + macOS /private aliases).
+        // Note: both /etc (Linux canonical) and /private/etc (macOS canonical via symlink)
+        // are listed so this works correctly on both platforms after canonicalize().
+        const BLOCKED: &[&str] = &[
+            "/etc", "/proc", "/sys", "/dev",
+            "/bin", "/sbin", "/lib", "/lib64",
+            "/usr/bin", "/usr/sbin", "/usr/lib",
+            "/boot", "/root",
+            "/run", "/var/run",
+            "/snap",
+            "/private/etc",   // macOS: /etc symlink target
+            // macOS: /private/var/folders is the user TempDir — do NOT block that.
+            // Block only sensitive subdirs of /var that contain secrets/state.
+            "/private/var/run",
+            "/private/var/db",
+            "/private/var/vm",
+        ];
+        if BLOCKED.iter().any(|b| canonical_source.starts_with(b)) {
+            anyhow::bail!(
+                "Source file is in a restricted system directory: {}",
+                canonical_source.display()
+            );
+        }
+    }
+
     let content = fs::read_to_string(source)
         .with_context(|| format!("Failed to read source file: {}", source.display()))?;
 
@@ -413,5 +444,34 @@ mod tests {
             },
         );
         assert!(result.is_err(), "should error when destination already exists");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_promote_system_dir_source_rejected() {
+        let tmp = TempDir::new().unwrap();
+        let docs_root = tmp.path().join("docs");
+        fs::create_dir_all(&docs_root).unwrap();
+
+        // /etc/hosts always exists on Unix/macOS and is a sensitive system file.
+        let system_src = std::path::PathBuf::from("/etc/hosts");
+        if !system_src.exists() {
+            return; // skip if environment lacks /etc/hosts
+        }
+
+        let result = promote(
+            &docs_root,
+            PromoteOptions {
+                source: system_src,
+                project: Some("proj".into()),
+                copy: true,
+            },
+        );
+        assert!(result.is_err(), "should reject system-directory source");
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("restricted system directory"),
+            "expected system-directory error, got: {err_msg}"
+        );
     }
 }

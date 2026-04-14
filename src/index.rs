@@ -66,7 +66,12 @@ fn get_cached_reader(index_dir: &Path, index: &Index) -> Result<Arc<IndexReader>
     };
     let max_readers = mem_cfg.max_cached_readers.clamp(1, 4);
 
-    let mut cache = reader_cache().lock().unwrap();
+    let mut cache = reader_cache().lock().unwrap_or_else(|e| {
+        eprintln!("[alcove] reader cache mutex poisoned — clearing stale entries and recovering");
+        let mut guard = e.into_inner();
+        guard.clear();
+        guard
+    });
 
     // TTL eviction pass: drop idle readers not referenced by an active search.
     if let Some(ttl) = ttl {
