@@ -4,11 +4,12 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use console::style;
 use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
+use rand::RngExt;
 use rust_i18n::t;
 
 use crate::config::{
-    DOC_REPO_REQUIRED, DOC_REPO_SUPPLEMENTARY, DocConfig, PROJECT_REPO_FILES, config_path,
-    default_docs_root, load_config,
+    CategoryConfig, DiagramConfig, DOC_REPO_REQUIRED, DOC_REPO_SUPPLEMENTARY, DocConfig,
+    PROJECT_REPO_FILES, config_path, default_docs_root, load_config,
 };
 
 // ---------------------------------------------------------------------------
@@ -167,7 +168,10 @@ fn save_docs_root(path: &Path) -> Result<()> {
 }
 
 fn save_docs_root_to(cfg_path: &Path, path: &Path) -> Result<()> {
-    fs::create_dir_all(cfg_path.parent().unwrap())?;
+    let parent = cfg_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("config path has no parent directory: {}", cfg_path.display()))?;
+    fs::create_dir_all(parent)?;
 
     if cfg_path.exists() {
         let content = fs::read_to_string(cfg_path)?;
@@ -730,9 +734,10 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
                 .map(|p| p.join(".alcove").join("models").to_string_lossy().to_string())
                 .unwrap_or_else(|| "~/.alcove/models".to_string());
 
+            let model_toml = toml::Value::String(model_name.to_string()).to_string();
+            let cache_toml = toml::Value::String(default_cache_dir.clone()).to_string();
             state.embedding_section = Some(format!(
-                "\n[embedding]\nmodel = \"{}\"\nauto_download = {}\n# cache_dir = \"{}\"  # default, uncomment to override\nenabled = true\n",
-                model_name, auto_download, default_cache_dir
+                "\n[embedding]\nmodel = {model_toml}\nauto_download = {auto_download}\n# cache_dir = {cache_toml}  # default, uncomment to override\nenabled = true\n"
             ));
 
             return Ok(StepResult::Continue);
@@ -877,9 +882,10 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
             });
         let token = existing_token.unwrap_or_else(generate_token);
 
+        let host_toml = toml::Value::String(selected_host.to_string()).to_string();
+        let token_toml = toml::Value::String(token.clone()).to_string();
         state.server_section = Some(format!(
-            "\n[server]\nhost = \"{}\"\nport = {}\ntoken = \"{}\"\n",
-            selected_host, port, token
+            "\n[server]\nhost = {host_toml}\nport = {port}\ntoken = {token_toml}\n"
         ));
 
         println!(
@@ -2034,8 +2040,8 @@ struct FullConfigParams<'a> {
     server_section: Option<&'a str>,
 }
 
-fn save_full_config_to(p: FullConfigParams<'_>) -> Result<()> {
-    let FullConfigParams {
+fn save_full_config_to(
+    FullConfigParams {
         cfg_path,
         docs_root,
         diagram_format,
@@ -2044,32 +2050,38 @@ fn save_full_config_to(p: FullConfigParams<'_>) -> Result<()> {
         public_files,
         embedding_section,
         server_section,
-    } = p;
-    fs::create_dir_all(cfg_path.parent().unwrap())?;
+    }: FullConfigParams<'_>,
+) -> Result<()> {
+    let parent = cfg_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("config path has no parent directory: {}", cfg_path.display()))?;
+    fs::create_dir_all(parent)?;
 
-    let fmt_list = |files: &[String]| -> String {
-        files
-            .iter()
-            .map(|f| format!("\"{}\"", f))
-            .collect::<Vec<_>>()
-            .join(", ")
+    let base = DocConfig {
+        docs_root: Some(docs_root.display().to_string()),
+        core: Some(CategoryConfig { files: core_files.to_vec() }),
+        team: Some(CategoryConfig { files: team_files.to_vec() }),
+        public: Some(CategoryConfig { files: public_files.to_vec() }),
+        diagram: Some(DiagramConfig { format: diagram_format.to_string() }),
+        ..DocConfig::default()
     };
-
-    let mut content = format!(
-        "docs_root = \"{}\"\n\n[core]\nfiles = [{}]\n\n[team]\nfiles = [{}]\n\n[public]\nfiles = [{}]\n\n[diagram]\nformat = \"{}\"\n",
-        docs_root.display(),
-        fmt_list(core_files),
-        fmt_list(team_files),
-        fmt_list(public_files),
-        diagram_format,
-    );
+    let mut content = toml::to_string(&base)
+        .map_err(|e| anyhow::anyhow!("failed to serialize config: {}", e))?;
 
     if let Some(section) = embedding_section {
-        content.push_str(section);
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push('\n');
+        content.push_str(section.trim_start_matches('\n'));
     }
 
     if let Some(section) = server_section {
-        content.push_str(section);
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push('\n');
+        content.push_str(section.trim_start_matches('\n'));
     }
 
     fs::write(cfg_path, content)?;
@@ -2082,22 +2094,12 @@ fn save_full_config_to(p: FullConfigParams<'_>) -> Result<()> {
 
 /// Generate a random bearer token prefixed with `alcove-`.
 fn generate_token() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    // Simple fast random from nanosecond timestamp + process id
-    let pid = std::process::id();
-    let mut seed = (t as u64) ^ ((pid as u64) << 32);
-    let mut hex = String::with_capacity(32);
-    for _ in 0..32 {
-        // xorshift64
-        seed ^= seed << 13;
-        seed ^= seed >> 7;
-        seed ^= seed << 17;
-        hex.push(std::char::from_digit((seed & 0xf) as u32, 16).unwrap());
-    }
+    use std::fmt::Write;
+    let bytes: [u8; 16] = rand::rng().random();
+    let hex = bytes.iter().fold(String::with_capacity(32), |mut s: String, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    });
     format!("alcove-{hex}")
 }
 
@@ -2302,14 +2304,12 @@ fn cmd_model_set(model_name: &str) -> Result<()> {
     };
 
     // Update or add [embedding] section
-    let embedding_section = format!(
-        "[embedding]\nmodel = \"{}\"\nauto_download = true\n",
-        model_name
-    );
+    let model_toml = toml::Value::String(model_name.to_string()).to_string();
+    let embedding_section = format!("[embedding]\nmodel = {model_toml}\nauto_download = true\n");
 
     if content.contains("[embedding]") {
         // Replace existing embedding section
-        let start = content.find("[embedding]").unwrap();
+        let start = content.find("[embedding]").expect("checked above with contains()");
         let end = content[start..]
             .find("\n[")
             .map(|i| start + i)
@@ -2893,5 +2893,128 @@ mod tests {
         assert!(content.contains("\"README.md\""));
         assert!(content.contains("[diagram]"));
         assert!(content.contains("format = \"mermaid\""));
+    }
+
+    #[test]
+    fn save_full_config_writes_embedding_section() {
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        let cfg = tmp.path().join("config.toml");
+        let docs = tmp.path().join("docs");
+        let core: Vec<String> = vec![];
+        let team: Vec<String> = vec![];
+        let public: Vec<String> = vec![];
+        let embedding = "\n[embedding]\nmodel = \"nomic-embed-text\"\n";
+
+        let result = save_full_config_to(FullConfigParams {
+            cfg_path: &cfg,
+            docs_root: &docs,
+            diagram_format: "mermaid",
+            core_files: &core,
+            team_files: &team,
+            public_files: &public,
+            embedding_section: Some(embedding),
+            server_section: None,
+        });
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&cfg).expect("failed to read");
+        assert!(content.contains("[embedding]"));
+        assert!(content.contains("model = \"nomic-embed-text\""));
+    }
+
+    #[test]
+    fn save_full_config_writes_server_section() {
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        let cfg = tmp.path().join("config.toml");
+        let docs = tmp.path().join("docs");
+        let core: Vec<String> = vec![];
+        let team: Vec<String> = vec![];
+        let public: Vec<String> = vec![];
+        let server = "\n[server]\nport = 8080\n";
+
+        let result = save_full_config_to(FullConfigParams {
+            cfg_path: &cfg,
+            docs_root: &docs,
+            diagram_format: "mermaid",
+            core_files: &core,
+            team_files: &team,
+            public_files: &public,
+            embedding_section: None,
+            server_section: Some(server),
+        });
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&cfg).expect("failed to read");
+        assert!(content.contains("[server]"));
+        assert!(content.contains("port = 8080"));
+    }
+
+    #[test]
+    fn save_full_config_special_chars_round_trip() {
+        // Verify that model names / hosts with special chars survive TOML write+parse.
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        let cfg = tmp.path().join("config.toml");
+        let docs = tmp.path().join("docs");
+        let core: Vec<String> = vec![];
+        let team: Vec<String> = vec![];
+        let public: Vec<String> = vec![];
+
+        // Model name with quotes and backslash — typical injection attempt.
+        let model_name = r#"nomic \"embed\" text\special"#;
+        let model_toml = toml::Value::String(model_name.to_string()).to_string();
+        // Match production format: section strings start with \n
+        let embedding = format!("\n[embedding]\nmodel = {model_toml}\nenabled = true\n");
+
+        let result = save_full_config_to(FullConfigParams {
+            cfg_path: &cfg,
+            docs_root: &docs,
+            diagram_format: "mermaid",
+            core_files: &core,
+            team_files: &team,
+            public_files: &public,
+            embedding_section: Some(&embedding),
+            server_section: None,
+        });
+        assert!(result.is_ok(), "write failed: {:?}", result);
+
+        let content = fs::read_to_string(&cfg).expect("failed to read");
+
+        // Must be valid TOML.
+        let parsed: toml::Value = toml::from_str(&content).expect("invalid TOML written");
+
+        // Round-trip: parsed model value must equal original.
+        let parsed_model = parsed
+            .get("embedding")
+            .and_then(|e| e.get("model"))
+            .and_then(|m| m.as_str())
+            .expect("embedding.model not found");
+        assert_eq!(parsed_model, model_name);
+    }
+
+    // ── generate_token ──
+
+    #[test]
+    fn generate_token_has_correct_prefix_and_length() {
+        let token = generate_token();
+        assert!(token.starts_with("alcove-"), "expected 'alcove-' prefix, got: {token}");
+        // "alcove-" (7) + 32 hex chars = 39
+        assert_eq!(token.len(), 39, "unexpected token length: {token}");
+    }
+
+    #[test]
+    fn generate_token_contains_only_hex_chars() {
+        let token = generate_token();
+        let hex_part = token.strip_prefix("alcove-").expect("prefix missing");
+        assert!(
+            hex_part.chars().all(|c| c.is_ascii_hexdigit()),
+            "non-hex char in token: {token}"
+        );
+    }
+
+    #[test]
+    fn generate_token_produces_unique_values() {
+        let t1 = generate_token();
+        let t2 = generate_token();
+        assert_ne!(t1, t2, "two consecutive tokens must differ");
     }
 }
