@@ -217,6 +217,7 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 - **Document validation** — checks for missing files, unfilled templates, required sections
 - **Semantic lint** — detects broken wikilinks, orphan files, stale WIP/DRAFT markers, and date claims that are 2+ years old
 - **External vault promotion** — bring a note from Obsidian (or any vault) into your alcove doc-repo with one command; auto-routes to the right project
+- **Knowledge base vaults** — create, link, and search independent knowledge bases (separate from project docs); link Obsidian vaults directly
 - **Works with 9+ agents** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Gemini CLI
 
 ## MCP Tools
@@ -234,6 +235,8 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 | `check_doc_changes` | Detect added, modified, or deleted docs since last index build |
 | `lint_project` | Semantic lint — broken links, orphan files, stale markers, stale date claims |
 | `promote_document` | Copy or move a file from an external vault into the alcove doc-repo |
+| `search_vault` | Search knowledge base vaults — separate from project docs, for research and reference |
+| `list_vaults` | List all knowledge base vaults with document counts |
 
 ## CLI
 
@@ -255,6 +258,14 @@ alcove stop         Stop the background server
 alcove restart      Restart the background server
 alcove token        Print the bearer token for team sharing
 alcove uninstall    Remove skills, config, and legacy files
+
+alcove vault create   Create a new knowledge base vault
+alcove vault link     Link an external directory as a vault (e.g., Obsidian)
+alcove vault list     List all vaults with document counts
+alcove vault remove   Remove a vault (symlinks: remove link only)
+alcove vault add      Add a document to a vault
+alcove vault index    Build search index for vaults
+alcove vault rebuild  Rebuild vault search index from scratch
 ```
 
 ### Lint
@@ -620,6 +631,44 @@ cargo install alcove
 alcove uninstall          # remove skills & config
 cargo uninstall alcove    # remove binary
 ```
+
+## Knowledge Base Vaults
+
+Beyond project documentation, Alcove supports **independent knowledge base vaults** for research notes, reference materials, and curated knowledge that LLMs can search.
+
+```bash
+# Create a vault for AI research notes
+alcove vault create ai-research
+
+# Link an existing Obsidian vault (no copying — indexes in place)
+alcove vault link my-obsidian ~/Obsidian/research
+
+# Add a document
+alcove vault add ai-research ~/Downloads/transformer-survey.md
+
+# Build the vault search index
+alcove vault index
+
+# Search from CLI
+alcove search "attention mechanism" --vault ai-research
+
+# Agents search via MCP
+search_vault(query="attention mechanism", vault="ai-research")
+
+# Search ALL vaults at once
+search_vault(query="transformer", vault="*")
+```
+
+Vaults are **completely isolated** from project docs — separate indexes, separate caches, separate search. Your coding agent's project doc search is never affected by vault activity.
+
+| Feature | Project docs | Vaults |
+|---------|-------------|--------|
+| Purpose | Per-project documentation | General knowledge base |
+| Storage | `~/.alcove/docs/` | `~/.alcove/vaults/` |
+| Index | Shared project index | Independent per-vault index |
+| Cache | `PROJECT_READER_CACHE` | `VAULT_READER_CACHE` |
+| Search | `search_project_docs` | `search_vault` |
+| Symlink | No | Yes (link external dirs) |
 
 ## Ecosystem
 
