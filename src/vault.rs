@@ -145,14 +145,14 @@ pub fn remove_vault(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Copy a source file into the vault directory. Returns the destination path.
+/// Copy a source file or directory into the vault. Returns the destination path.
+///
+/// - Files are copied directly into the vault root.
+/// - Directories are copied recursively, preserving structure.
 pub fn add_to_vault(name: &str, source: &Path) -> Result<PathBuf> {
     validate_vault_name(name)?;
-    if !source.exists() || !source.is_file() {
-        anyhow::bail!(
-            "Source does not exist or is not a file: {}",
-            source.display()
-        );
+    if !source.exists() {
+        anyhow::bail!("Source does not exist: {}", source.display());
     }
     let vault_dir = vaults_root().join(name);
     if !vault_dir.exists() {
@@ -165,9 +165,34 @@ pub fn add_to_vault(name: &str, source: &Path) -> Result<PathBuf> {
     if dest.exists() {
         anyhow::bail!("Destination already exists: {}", dest.display());
     }
-    fs::copy(source, &dest)
-        .with_context(|| format!("Failed to copy file to vault: {}", dest.display()))?;
+    if source.is_dir() {
+        copy_dir_recursive(source, &dest)?;
+    } else {
+        fs::copy(source, &dest)
+            .with_context(|| format!("Failed to copy file to vault: {}", dest.display()))?;
+    }
     Ok(dest)
+}
+
+/// Recursively copy a directory tree from `src` to `dst`.
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    fs::create_dir_all(dst)
+        .with_context(|| format!("Failed to create directory: {}", dst.display()))?;
+    for entry in fs::read_dir(src)
+        .with_context(|| format!("Failed to read directory: {}", src.display()))?
+    {
+        let entry = entry?;
+        let src_path = entry.path();
+        let file_name = entry.file_name();
+        let dst_path = dst.join(&file_name);
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path)
+                .with_context(|| format!("Failed to copy: {}", src_path.display()))?;
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
