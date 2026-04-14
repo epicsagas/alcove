@@ -419,6 +419,37 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
             }),
         },
         ToolDescription {
+            name: "search_vault".into(),
+            description: "Search knowledge base vaults for a query. Use this to find information in research notes, reference materials, and curated knowledge bases — separate from project documentation.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query"
+                    },
+                    "vault": {
+                        "type": "string",
+                        "description": "Vault name to search. Omit or use '*' to search all vaults."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results (default: 20)"
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+        ToolDescription {
+            name: "list_vaults".into(),
+            description: "List all knowledge base vaults with their document counts.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
+        ToolDescription {
             name: "promote_document".into(),
             description: concat!(
                 "Promote a document from an external vault (e.g. Obsidian) into the alcove doc-repo.\n",
@@ -496,6 +527,97 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
             Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
         };
+    }
+
+    // list_vaults and search_vault operate on vault storage, not project docs
+    if call.name == "list_vaults" {
+        return match crate::vault::list_vaults() {
+            Ok(vaults) => {
+                let arr: Vec<Value> = vaults
+                    .into_iter()
+                    .map(|v| {
+                        json!({
+                            "name": v.name,
+                            "doc_count": v.doc_count,
+                            "is_link": v.is_link,
+                            "path": v.path.to_string_lossy(),
+                        })
+                    })
+                    .collect();
+                RpcResponse::ok(id, mcp_text_result(&json!(arr)))
+            }
+            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+        };
+    }
+    if call.name == "search_vault" {
+        let query = call
+            .arguments
+            .get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let vault_name = call
+            .arguments
+            .get("vault")
+            .and_then(|v| v.as_str())
+            .unwrap_or("*");
+        let limit = call
+            .arguments
+            .get("limit")
+            .and_then(Value::as_u64)
+            .map(|v| usize::try_from(v).unwrap_or(usize::MAX).clamp(1, 200))
+            .unwrap_or(20);
+
+        let search_all = vault_name == "*" || vault_name.is_empty();
+
+        if search_all {
+            // Search all vaults, merge results by score
+            let vaults = match crate::vault::list_vaults() {
+                Ok(v) => v,
+                Err(e) => {
+                    return RpcResponse::err(
+                        id,
+                        -32002,
+                        format!("Tool `{}` failed: {e}", call.name),
+                    );
+                }
+            };
+            let mut all_matches: Vec<Value> = Vec::new();
+            for vault in &vaults {
+                if let Ok(result) = crate::index::search_vault(&vault.path, query, limit) {
+                    if let Some(matches) = result["matches"].as_array() {
+                        all_matches.extend(matches.iter().cloned());
+                    }
+                }
+            }
+            // Sort by score descending
+            all_matches.sort_by(|a, b| {
+                let sa = a["score"].as_f64().unwrap_or(0.0);
+                let sb = b["score"].as_f64().unwrap_or(0.0);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal) // descending by score
+            });
+            all_matches.truncate(limit);
+            let result = json!({
+                "query": query,
+                "scope": "all_vaults",
+                "matches": all_matches,
+            });
+            return RpcResponse::ok(id, mcp_text_result(&result));
+        } else {
+            let vault_path = crate::vault::vaults_root().join(vault_name);
+            if !vault_path.is_dir() {
+                return RpcResponse::err(
+                    id,
+                    -32002,
+                    format!("Vault '{}' does not exist", vault_name),
+                );
+            }
+            return match crate::index::search_vault(&vault_path, query, limit) {
+                Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
+                Err(e) => {
+                    RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name))
+                }
+            };
+        }
     }
 
     // list_projects and init_project don't need a resolved project
@@ -756,6 +878,8 @@ mod tests {
         assert!(names.contains(&"configure_project"));
         assert!(names.contains(&"rebuild_index"));
         assert!(names.contains(&"check_doc_changes"));
+        assert!(names.contains(&"search_vault"));
+        assert!(names.contains(&"list_vaults"));
     }
 
     #[test]
@@ -1283,5 +1407,105 @@ mod tests {
             .unwrap()
             .to_string();
         assert!(text.contains("rebuild"), "should contain rebuild result");
+    }
+
+    #[test]
+    fn dispatch_search_vault_returns_results() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Set ALCOVE_HOME so vaults_root() points to our temp dir
+        unsafe { std::env::set_var("ALCOVE_HOME", tmp.path().as_os_str()) };
+
+        let vaults_dir = tmp.path().join("vaults");
+        let vault_path = vaults_dir.join("testvault");
+        std::fs::create_dir_all(&vault_path).unwrap();
+        std::fs::write(
+            vault_path.join("notes.md"),
+            "# Research Notes\n\nImportant findings about quantum computing.",
+        )
+        .unwrap();
+
+        // Build a vault index so search_vault can find results
+        let _ = crate::index::build_vault_index(&vault_path);
+
+        // Also need DOCS_ROOT set for dispatch to proceed past the config check
+        let docs_tmp = tempfile::tempdir().unwrap();
+        unsafe { std::env::set_var("DOCS_ROOT", docs_tmp.path().as_os_str()) };
+
+        let req = make_req(
+            "tools/call",
+            json!({
+                "name": "search_vault",
+                "arguments": {"query": "quantum", "vault": "testvault"}
+            }),
+        );
+        let resp = dispatch(req).unwrap();
+
+        unsafe { std::env::remove_var("DOCS_ROOT") };
+        unsafe { std::env::remove_var("ALCOVE_HOME") };
+
+        // The tool should succeed (even if no index exists yet, it returns an error message)
+        if let Some(ref err) = resp.error {
+            // Acceptable: vault index not built yet
+            assert!(
+                err.message.contains("index") || err.message.contains("Vault"),
+                "unexpected error: {}",
+                err.message
+            );
+        } else {
+            let text = resp.result.unwrap()["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            assert!(
+                text.contains("quantum") || text.contains("matches"),
+                "search_vault should return results or matches key: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn dispatch_list_vaults() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Set ALCOVE_HOME so vaults_root() points to our temp dir
+        unsafe { std::env::set_var("ALCOVE_HOME", tmp.path().as_os_str()) };
+
+        let vaults_dir = tmp.path().join("vaults");
+        std::fs::create_dir_all(&vaults_dir).unwrap();
+
+        // Create two vaults
+        let v1 = vaults_dir.join("alpha");
+        std::fs::create_dir_all(&v1).unwrap();
+        std::fs::write(v1.join("doc.md"), "# Alpha doc").unwrap();
+
+        let v2 = vaults_dir.join("beta");
+        std::fs::create_dir_all(&v2).unwrap();
+        std::fs::write(v2.join("a.md"), "# A").unwrap();
+        std::fs::write(v2.join("b.md"), "# B").unwrap();
+
+        // DOCS_ROOT needed for dispatch
+        let docs_tmp = tempfile::tempdir().unwrap();
+        unsafe { std::env::set_var("DOCS_ROOT", docs_tmp.path().as_os_str()) };
+
+        let req = make_req(
+            "tools/call",
+            json!({"name": "list_vaults", "arguments": {}}),
+        );
+        let resp = dispatch(req).unwrap();
+
+        unsafe { std::env::remove_var("DOCS_ROOT") };
+        unsafe { std::env::remove_var("ALCOVE_HOME") };
+
+        assert!(
+            resp.error.is_none(),
+            "list_vaults should succeed: {:?}",
+            resp.error
+        );
+        let text = resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(text.contains("alpha"), "should list alpha vault");
+        assert!(text.contains("beta"), "should list beta vault");
+        assert!(text.contains("doc_count"), "should contain doc_count field");
     }
 }

@@ -41,6 +41,9 @@ pub struct SearchRequest {
     /// Search mode: auto, hybrid, bm25, grep
     #[serde(default = "default_mode")]
     pub mode: String,
+    /// Vault filter (optional, mutually exclusive with `project`)
+    #[serde(default)]
+    pub vault: Option<String>,
 }
 
 #[cfg(feature = "alcove-server")]
@@ -193,12 +196,186 @@ async fn handle_search(
         ));
     }
 
+    // Reject if both project and vault are specified
+    if req.project.is_some() && req.vault.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Cannot specify both 'project' and 'vault'".to_string(),
+                code: 400,
+            }),
+        ));
+    }
+
+    // Handle vault search
+    if let Some(ref vault_name) = req.vault {
+        // Validate vault name: single normal path component (unless wildcard)
+        if vault_name != "*" {
+            use std::path::Component;
+            let p = std::path::Path::new(vault_name.as_str());
+            let components: Vec<_> = p.components().collect();
+            if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "Vault not found".to_string(),
+                        code: 404,
+                    }),
+                ));
+            }
+        }
+
+        let limit = req.limit.clamp(1, 200);
+
+        if vault_name == "*" {
+            // Search all vaults — collect results from each, merge by score
+            let vaults = crate::vault::list_vaults().map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: format!("Failed to list vaults: {e}"),
+                        code: 500,
+                    }),
+                )
+            })?;
+
+            let mut all_results: Vec<SearchResult> = Vec::new();
+            let mut any_truncated = false;
+
+            for vi in vaults {
+                let vault_path = vi.path.clone();
+                let q = req.q.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    crate::index::search_vault(&vault_path, &q, limit)
+                })
+                .await
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: format!("Vault search failed: {e}"),
+                            code: 500,
+                        }),
+                    )
+                })?;
+
+                match result {
+                    Ok(json) => {
+                        if json["truncated"].as_bool().unwrap_or(false) {
+                            any_truncated = true;
+                        }
+                        if let Some(arr) = json["matches"].as_array() {
+                            for m in arr {
+                                if let (Some(project), Some(file), Some(line)) = (
+                                    m["project"].as_str(),
+                                    m["file"].as_str(),
+                                    m["line_start"].as_u64(),
+                                ) {
+                                    all_results.push(SearchResult {
+                                        project: project.to_string(),
+                                        file: file.to_string(),
+                                        line,
+                                        snippet: m["snippet"]
+                                            .as_str()
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        score: m["score"].as_f64().unwrap_or(0.0),
+                                        source: "vault".to_string(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[alcove] vault search error for '{}': {e}", vi.name);
+                    }
+                }
+            }
+
+            // Sort by score descending, take top `limit`
+            all_results.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let truncated = any_truncated || all_results.len() > limit;
+            all_results.truncate(limit);
+
+            return Ok(Json(SearchResponse {
+                query: req.q,
+                results: all_results,
+                mode: "vault".to_string(),
+                truncated,
+            }));
+        }
+
+        // Single vault search
+        let vp = crate::vault::vaults_root().join(vault_name.as_str());
+        if !vp.is_dir() {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Vault not found".to_string(),
+                    code: 404,
+                }),
+            ));
+        }
+
+        let q = req.q.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            crate::index::search_vault(&vp, &q, limit)
+        })
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Vault search failed: {e}"),
+                    code: 500,
+                }),
+            )
+        })?
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Vault search failed: {e}"),
+                    code: 500,
+                }),
+            )
+        })?;
+
+        let results: Vec<SearchResult> = result["matches"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| {
+                        Some(SearchResult {
+                            project: m["project"].as_str()?.to_string(),
+                            file: m["file"].as_str()?.to_string(),
+                            line: m["line_start"].as_u64()?,
+                            snippet: m["snippet"].as_str().unwrap_or("").to_string(),
+                            score: m["score"].as_f64().unwrap_or(0.0),
+                            source: "vault".to_string(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        return Ok(Json(SearchResponse {
+            query: req.q,
+            results,
+            mode: "vault".to_string(),
+            truncated: result["truncated"].as_bool().unwrap_or(false),
+        }));
+    }
+
     // Validate project existence if a project filter is specified.
     if let Some(ref project) = req.project {
         use std::path::Component;
         let p = std::path::Path::new(project);
         let components: Vec<_> = p.components().collect();
-        // Reject path traversal: must be a single normal component
         if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
             return Err((
                 StatusCode::NOT_FOUND,
@@ -625,6 +802,7 @@ mod tests {
             limit: 10,
             project: Some("nonexistent".to_string()),
             mode: "bm25".to_string(),
+            vault: None,
         };
 
         let result = handle_search(state, headers, req).await;
@@ -644,11 +822,54 @@ mod tests {
             limit: 10,
             project: Some("../etc".to_string()),
             mode: "bm25".to_string(),
+            vault: None,
         };
 
         let result = handle_search(state, headers, req).await;
         assert!(result.is_err());
         let (status, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn search_vault_not_found_returns_404() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = make_state(tmp.path().to_path_buf());
+        let headers = HeaderMap::new();
+        let req = SearchRequest {
+            q: "test".to_string(),
+            limit: 10,
+            project: None,
+            mode: "bm25".to_string(),
+            vault: Some("nonexistent_vault".to_string()),
+        };
+
+        let result = handle_search(state, headers, req).await;
+        assert!(result.is_err());
+        let (status, body) = result.unwrap_err();
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body.0.code, 404);
+        assert_eq!(body.0.error, "Vault not found");
+    }
+
+    #[tokio::test]
+    async fn search_both_project_and_vault_returns_400() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = make_state(tmp.path().to_path_buf());
+        let headers = HeaderMap::new();
+        let req = SearchRequest {
+            q: "test".to_string(),
+            limit: 10,
+            project: Some("myproject".to_string()),
+            mode: "bm25".to_string(),
+            vault: Some("myvault".to_string()),
+        };
+
+        let result = handle_search(state, headers, req).await;
+        assert!(result.is_err());
+        let (status, body) = result.unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body.0.code, 400);
+        assert!(body.0.error.contains("Cannot specify both"));
     }
 }

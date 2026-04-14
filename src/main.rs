@@ -148,8 +148,37 @@ enum Commands {
     /// Restart the background alcove serve process
     #[cfg(feature = "alcove-server")]
     Restart,
+    /// Manage knowledge base vaults
+    Vault {
+        #[command(subcommand)]
+        subcmd: VaultCommands,
+    },
     /// Print the bearer token from config (for team sharing)
     Token,
+}
+
+#[derive(Subcommand)]
+enum VaultCommands {
+    /// Create a new empty vault
+    Create { name: String },
+    /// Link an external directory as a vault (e.g., Obsidian vault)
+    Link {
+        name: String,
+        path: std::path::PathBuf,
+    },
+    /// List all vaults
+    List,
+    /// Remove a vault (symlinks: remove link only; directories: remove all)
+    Remove { name: String },
+    /// Add a document to a vault
+    Add {
+        vault: String,
+        source: std::path::PathBuf,
+    },
+    /// Build search index for vaults
+    Index { name: Option<String> },
+    /// Rebuild vault search index from scratch
+    Rebuild { name: Option<String> },
 }
 
 #[derive(Subcommand)]
@@ -203,6 +232,79 @@ fn main() -> Result<()> {
         Some(Commands::Promote { source, project, mv }) => {
             cli::cmd_promote(&source, project.as_deref(), mv)
         }
+        Some(Commands::Vault { subcmd }) => match subcmd {
+            VaultCommands::Create { name } => {
+                let path = vault::create_vault(&name)?;
+                println!("  \u{2713} Created vault '{}' at {}", name, path.display());
+                Ok(())
+            }
+            VaultCommands::Link { name, path } => {
+                let vault_path = vault::link_vault(&name, &path)?;
+                let _ = vault_path;
+                println!("  \u{2713} Linked vault '{}' \u{2192} {}", name, path.display());
+                Ok(())
+            }
+            VaultCommands::List => {
+                let vaults = vault::list_vaults()?;
+                if vaults.is_empty() {
+                    println!("  No vaults found. Create one with: alcove vault create <name>");
+                } else {
+                    for v in &vaults {
+                        let link_indicator = if v.is_link { " \u{2192} (linked)" } else { "" };
+                        println!("  {} ({} docs){}", v.name, v.doc_count, link_indicator);
+                    }
+                    println!("\n  {} vault(s) total", vaults.len());
+                }
+                Ok(())
+            }
+            VaultCommands::Remove { name } => {
+                vault::remove_vault(&name)?;
+                println!("  \u{2713} Removed vault '{}'", name);
+                Ok(())
+            }
+            VaultCommands::Add { vault, source } => {
+                let dest = vault::add_to_vault(&vault, &source)?;
+                println!(
+                    "  \u{2713} Added {} to vault '{}'",
+                    dest.file_name().unwrap_or_default().to_string_lossy(),
+                    vault
+                );
+                Ok(())
+            }
+            VaultCommands::Index { name } => {
+                if let Some(name) = name {
+                    let vault_path = vault::vaults_root().join(&name);
+                    if !vault_path.is_dir() {
+                        anyhow::bail!("Vault '{}' not found", name);
+                    }
+                    let result = index::build_vault_index(&vault_path)?;
+                    let files = result["files"].as_u64().unwrap_or(0);
+                    println!("  ✓ Indexed vault '{}' ({} files)", name, files);
+                } else {
+                    let result = index::build_all_vault_indexes()?;
+                    println!("  ✓ {}", result["summary"].as_str().unwrap_or("done"));
+                }
+                Ok(())
+            }
+            VaultCommands::Rebuild { name } => {
+                if let Some(name) = name {
+                    let vault_path = vault::vaults_root().join(&name);
+                    if !vault_path.is_dir() {
+                        anyhow::bail!("Vault '{}' not found", name);
+                    }
+                    let result = index::rebuild_vault_index(&vault_path)?;
+                    let files = result["files"].as_u64().unwrap_or(0);
+                    println!("  ✓ Rebuilt vault '{}' ({} files)", name, files);
+                } else {
+                    for v in vault::list_vaults()? {
+                        let result = index::rebuild_vault_index(&v.path)?;
+                        let files = result["files"].as_u64().unwrap_or(0);
+                        println!("  ✓ Rebuilt vault '{}' ({} files)", v.name, files);
+                    }
+                }
+                Ok(())
+            }
+        },
         #[cfg(feature = "alcove-full")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
         #[cfg(feature = "alcove-server")]

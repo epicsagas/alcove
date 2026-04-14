@@ -76,7 +76,11 @@ pub const PROJECT_REPO_FILES: &[&str] = &[
 // ---------------------------------------------------------------------------
 
 /// Returns `~/.alcove` — the canonical home directory for all alcove data.
+/// Respects `ALCOVE_HOME` env var if set (useful for testing and custom installations).
 pub fn alcove_home() -> PathBuf {
+    if let Ok(custom) = std::env::var("ALCOVE_HOME") {
+        return PathBuf::from(custom);
+    }
     dirs::home_dir()
         .map(|p| p.join(".alcove"))
         .unwrap_or_else(|| PathBuf::from("/nonexistent"))

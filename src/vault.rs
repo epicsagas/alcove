@@ -110,7 +110,8 @@ pub fn list_vaults() -> Result<Vec<VaultInfo>> {
             continue;
         }
         let path = entry.path();
-        let metadata = entry.metadata()?;
+        // Use fs::metadata to follow symlinks (DirEntry::metadata may not on all platforms)
+        let metadata = fs::metadata(&path)?;
         if !metadata.is_dir() {
             continue;
         }
@@ -311,7 +312,8 @@ mod tests {
                 continue;
             }
             let path = entry.path();
-            let metadata = entry.metadata()?;
+            // Use fs::metadata to follow symlinks (DirEntry::metadata may not on all platforms)
+            let metadata = fs::metadata(&path)?;
             if !metadata.is_dir() {
                 continue;
             }

@@ -1544,6 +1544,301 @@ pub fn search_hybrid(
 }
 
 // ---------------------------------------------------------------------------
+// Vault indexing
+// ---------------------------------------------------------------------------
+
+/// Build a BM25 index for a single vault directory.
+///
+/// Vault files live directly under `vault_path` (flat structure), unlike
+/// project docs which are nested under `docs_root/<project>/`.  The vault
+/// name (directory basename) is stored in the `project` field for schema
+/// compatibility with project indexes.
+pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
+    let vault_name = vault_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let dir = index_dir(vault_path);
+    std::fs::create_dir_all(&dir)?;
+
+    let (schema, project_field, file_field, chunk_id_field, body_field, line_start_field) =
+        build_schema();
+
+    // Walk all .md files in vault_path, excluding `_` prefix and `.alcove/`
+    let mut files: Vec<PathBuf> = Vec::new();
+    for entry in WalkDir::new(vault_path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let path = e.path();
+            // Skip .alcove directory
+            if path
+                .strip_prefix(vault_path)
+                .ok()
+                .and_then(|rel| rel.components().next())
+                .map(|c| {
+                    let s = c.as_os_str().to_string_lossy();
+                    s.starts_with('.') || s.starts_with('_')
+                })
+                .unwrap_or(false)
+            {
+                return false;
+            }
+            // Must be a file
+            if !e.file_type().is_file() {
+                return false;
+            }
+            // Must be .md
+            if !path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+            {
+                return false;
+            }
+            // Must not have underscore prefix filename
+            if path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .starts_with('_')
+            {
+                return false;
+            }
+            true
+        })
+    {
+        files.push(entry.path().to_path_buf());
+    }
+
+    let file_count = files.len() as u64;
+
+    let index = Index::create_in_dir(&dir, schema.clone()).or_else(|_| {
+        std::fs::remove_dir_all(&dir)?;
+        std::fs::create_dir_all(&dir)?;
+        Index::create_in_dir(&dir, schema.clone())
+    })?;
+    register_ngram_tokenizer(&index)?;
+
+    #[cfg(not(test))]
+    let mut writer = index.writer(crate::config::load_config().index_buffer_bytes())?;
+    #[cfg(test)]
+    let mut writer = index.writer_with_num_threads(1, 15_000_000)?;
+
+    for file_path in &files {
+        let rel = file_path
+            .strip_prefix(vault_path)
+            .unwrap_or(file_path)
+            .to_string_lossy()
+            .to_string();
+
+        if let Ok(content) = read_file_content(file_path) {
+            let file_ext = file_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            for (chunk_idx, chunk) in chunk_content(&content, file_ext).iter().enumerate() {
+                let mut doc = TantivyDocument::new();
+                doc.add_text(project_field, &vault_name);
+                doc.add_text(file_field, &rel);
+                doc.add_u64(chunk_id_field, chunk_idx as u64);
+                doc.add_text(body_field, &chunk.text);
+                doc.add_u64(line_start_field, chunk.line_start as u64);
+                writer.add_document(doc)?;
+            }
+        }
+    }
+
+    writer.commit()?;
+
+    // Save metadata for the vault index
+    let mut meta = IndexMeta::default();
+    for file_path in &files {
+        let rel = file_path
+            .strip_prefix(vault_path)
+            .unwrap_or(file_path)
+            .to_string_lossy()
+            .to_string();
+        meta.files.insert(rel, file_fingerprint(file_path));
+    }
+    let _ = meta.save(vault_path);
+
+    Ok(json!({
+        "status": "ok",
+        "vault": vault_name,
+        "files": file_count,
+        "index_path": dir.to_string_lossy(),
+    }))
+}
+
+/// Build BM25 indexes for all registered vaults.
+///
+/// Calls `vault::list_vaults()` and runs `build_vault_index` on each.
+pub fn build_all_vault_indexes() -> Result<JsonValue> {
+    let vaults = crate::vault::list_vaults()?;
+    let mut results = Vec::new();
+    let mut errors = Vec::new();
+
+    for vault in &vaults {
+        match build_vault_index(&vault.path) {
+            Ok(summary) => results.push(summary),
+            Err(e) => errors.push(json!({
+                "vault": vault.name,
+                "error": e.to_string(),
+            })),
+        }
+    }
+
+    Ok(json!({
+        "status": "ok",
+        "vaults_indexed": results.len(),
+        "vaults_failed": errors.len(),
+        "results": results,
+        "errors": errors,
+    }))
+}
+
+/// Search a single vault's BM25 index.
+///
+/// Returns the same JSON format as `search_indexed` (matches array with
+/// file, score, snippet, etc.) for consistency.
+pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<JsonValue> {
+    let dir = index_dir(vault_path);
+    if !dir.exists() {
+        anyhow::bail!("Vault search index not found. Run vault index build first.");
+    }
+
+    let vault_name = vault_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let sanitized = sanitize_query(query);
+    if sanitized.is_empty() {
+        return Ok(json!({
+            "query": query,
+            "vault": vault_name,
+            "mode": "ranked",
+            "matches": [],
+            "truncated": false,
+        }));
+    }
+
+    let index = Index::open_in_dir(&dir).context("Failed to open vault search index")?;
+    register_ngram_tokenizer(&index)?;
+
+    let schema = index.schema();
+    let project_field = schema.get_field("project").context("missing 'project' field")?;
+    let file_field = schema.get_field("file").context("missing 'file' field")?;
+    let chunk_id_field = schema.get_field("chunk_id").context("missing 'chunk_id' field")?;
+    let body_field = schema.get_field("body").context("missing 'body' field")?;
+    let line_start_field = schema
+        .get_field("line_start")
+        .context("missing 'line_start' field")?;
+
+    let reader = get_cached_reader(&dir, &index, CacheCategory::Vault)?;
+    let searcher = reader.searcher();
+
+    let query_parser = QueryParser::for_index(&index, vec![body_field]);
+    let parsed_query = query_parser
+        .parse_query(&sanitized)
+        .context("Failed to parse vault search query")?;
+
+    let top_docs: Vec<(Score, DocAddress)> = searcher
+        .search(
+            &parsed_query,
+            &TopDocs::with_limit(limit * 3).order_by_score(),
+        )
+        .context("Vault search failed")?;
+
+    // Deduplicate: keep only the best-scoring chunk per file.
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut results = Vec::new();
+
+    for (score, doc_address) in top_docs {
+        let doc: TantivyDocument = searcher.doc(doc_address)?;
+
+        let project = doc
+            .get_first(project_field)
+            .and_then(|v| schema::Value::as_str(&v))
+            .unwrap_or("")
+            .to_string();
+
+        let file = doc
+            .get_first(file_field)
+            .and_then(|v| schema::Value::as_str(&v))
+            .unwrap_or("")
+            .to_string();
+
+        use std::collections::hash_map::Entry;
+        if let Entry::Vacant(e) = seen.entry(file.clone()) {
+            e.insert(results.len());
+        } else {
+            continue;
+        }
+
+        let body = doc
+            .get_first(body_field)
+            .and_then(|v| schema::Value::as_str(&v))
+            .unwrap_or("")
+            .to_string();
+
+        let line_start = doc
+            .get_first(line_start_field)
+            .and_then(|v| schema::Value::as_u64(&v))
+            .unwrap_or(0);
+
+        let chunk_id = doc
+            .get_first(chunk_id_field)
+            .and_then(|v| schema::Value::as_u64(&v))
+            .unwrap_or(0);
+
+        results.push(json!({
+            "project": project,
+            "file": file,
+            "chunk_id": chunk_id,
+            "line_start": line_start,
+            "snippet": body,
+            "score": (score * 1000.0).round() / 1000.0,
+        }));
+
+        if results.len() >= limit {
+            break;
+        }
+    }
+
+    let truncated = results.len() >= limit;
+    Ok(json!({
+        "query": query,
+        "vault": vault_name,
+        "mode": "ranked",
+        "matches": results,
+        "truncated": truncated,
+    }))
+}
+
+/// Delete and rebuild a single vault's BM25 index.
+///
+/// Invalidates the vault reader cache before wiping the index directory
+/// so the next search opens a fresh reader.
+pub fn rebuild_vault_index(vault_path: &Path) -> Result<JsonValue> {
+    invalidate_reader_cache(vault_path, CacheCategory::Vault);
+
+    let dir = index_dir(vault_path);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir)?;
+    }
+    let meta = meta_path(vault_path);
+    if meta.exists() {
+        std::fs::remove_file(&meta)?;
+    }
+
+    build_vault_index(vault_path)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -2290,5 +2585,148 @@ mod tests {
             start.elapsed() < Duration::from_secs(35),
             "read_file_content must not block longer than the 30s timeout"
         );
+    }
+
+    // -- Vault indexing tests --
+
+    fn setup_vault_dir(tmp: &TempDir) -> PathBuf {
+        let vault = tmp.path().join("my-vault");
+        fs::create_dir_all(&vault).unwrap();
+        fs::write(
+            vault.join("note1.md"),
+            "# Note One\n\nThis is about OAuth 2.0 authentication.\nPKCE flow for public clients.",
+        )
+        .unwrap();
+        fs::write(
+            vault.join("note2.md"),
+            "# Note Two\n\nKubernetes deployment strategies.\nRolling updates and blue-green deployments.",
+        )
+        .unwrap();
+        fs::write(
+            vault.join("readme.txt"),
+            "This is a text file, not markdown.",
+        )
+        .unwrap();
+        vault
+    }
+
+    #[test]
+    fn test_build_vault_index() {
+        let tmp = TempDir::new().unwrap();
+        let vault = setup_vault_dir(&tmp);
+
+        let result = build_vault_index(&vault).unwrap();
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["vault"], "my-vault");
+        assert_eq!(result["files"].as_u64().unwrap(), 2);
+        // Index directory should exist
+        assert!(vault.join(".alcove/index").exists());
+    }
+
+    #[test]
+    fn test_search_vault() {
+        let tmp = TempDir::new().unwrap();
+        let vault = setup_vault_dir(&tmp);
+
+        build_vault_index(&vault).unwrap();
+
+        let result = search_vault(&vault, "OAuth", 10).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        assert!(!matches.is_empty(), "should find OAuth matches in vault");
+
+        // All results should have the vault name as project
+        for m in matches {
+            assert_eq!(m["project"], "my-vault");
+            assert!(m["score"].as_f64().unwrap() > 0.0);
+        }
+    }
+
+    #[test]
+    fn test_vault_index_excludes_underscore_files() {
+        let tmp = TempDir::new().unwrap();
+        let vault = setup_vault_dir(&tmp);
+
+        // Add an underscore-prefixed file
+        fs::write(
+            vault.join("_template.md"),
+            "# Template\n\nOAuth placeholder template content.",
+        )
+        .unwrap();
+
+        let result = build_vault_index(&vault).unwrap();
+        // _template.md should be excluded from the count
+        assert_eq!(result["files"].as_u64().unwrap(), 2);
+
+        // Also verify search does not return it
+        let search_result = search_vault(&vault, "OAuth", 10).unwrap();
+        let matches = search_result["matches"].as_array().unwrap();
+        for m in matches {
+            let file = m["file"].as_str().unwrap_or("");
+            assert!(
+                !file.contains("_template.md"),
+                "_template.md should be excluded from vault search results"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rebuild_vault_index() {
+        let tmp = TempDir::new().unwrap();
+        let vault = setup_vault_dir(&tmp);
+
+        build_vault_index(&vault).unwrap();
+
+        // Add a new file
+        fs::write(
+            vault.join("note3.md"),
+            "# Note Three\n\nNew content about gRPC services.",
+        )
+        .unwrap();
+
+        let result = rebuild_vault_index(&vault).unwrap();
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["files"].as_u64().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_search_vault_empty_query() {
+        let tmp = TempDir::new().unwrap();
+        let vault = setup_vault_dir(&tmp);
+        build_vault_index(&vault).unwrap();
+
+        let result = search_vault(&vault, "", 10).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        assert!(matches.is_empty(), "empty query should return no matches");
+    }
+
+    #[test]
+    fn test_search_vault_no_index_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let vault = tmp.path().join("empty-vault");
+        fs::create_dir_all(&vault).unwrap();
+        fs::write(vault.join("note.md"), "# Note").unwrap();
+
+        let result = search_vault(&vault, "note", 10);
+        assert!(result.is_err(), "search on unindexed vault should error");
+    }
+
+    #[test]
+    fn test_vault_index_excludes_alcove_dir() {
+        let tmp = TempDir::new().unwrap();
+        let vault = setup_vault_dir(&tmp);
+
+        // Build index first (creates .alcove/)
+        build_vault_index(&vault).unwrap();
+
+        // Add a .md file inside .alcove that should be ignored
+        fs::write(
+            vault.join(".alcove/internal.md"),
+            "# Internal\n\nThis should not be indexed.",
+        )
+        .unwrap();
+
+        // Rebuild and verify count stays the same
+        let result = rebuild_vault_index(&vault).unwrap();
+        assert_eq!(result["files"].as_u64().unwrap(), 2);
     }
 }
