@@ -2005,8 +2005,8 @@ fn save_full_config(
     server_section: Option<&str>,
 ) -> Result<()> {
     let cfg_path = config_path();
-    save_full_config_to(
-        &cfg_path,
+    save_full_config_to(FullConfigParams {
+        cfg_path: &cfg_path,
         docs_root,
         diagram_format,
         core_files,
@@ -2014,7 +2014,7 @@ fn save_full_config(
         public_files,
         embedding_section,
         server_section,
-    )?;
+    })?;
     println!(
         "  {} {}",
         style("✓").green(),
@@ -2023,16 +2023,28 @@ fn save_full_config(
     Ok(())
 }
 
-fn save_full_config_to(
-    cfg_path: &Path,
-    docs_root: &Path,
-    diagram_format: &str,
-    core_files: &[String],
-    team_files: &[String],
-    public_files: &[String],
-    embedding_section: Option<&str>,
-    server_section: Option<&str>,
-) -> Result<()> {
+struct FullConfigParams<'a> {
+    cfg_path: &'a Path,
+    docs_root: &'a Path,
+    diagram_format: &'a str,
+    core_files: &'a [String],
+    team_files: &'a [String],
+    public_files: &'a [String],
+    embedding_section: Option<&'a str>,
+    server_section: Option<&'a str>,
+}
+
+fn save_full_config_to(p: FullConfigParams<'_>) -> Result<()> {
+    let FullConfigParams {
+        cfg_path,
+        docs_root,
+        diagram_format,
+        core_files,
+        team_files,
+        public_files,
+        embedding_section,
+        server_section,
+    } = p;
     fs::create_dir_all(cfg_path.parent().unwrap())?;
 
     let fmt_list = |files: &[String]| -> String {
@@ -2858,16 +2870,16 @@ mod tests {
         let team = vec!["ENV_SETUP.md".to_string()];
         let public = vec!["README.md".to_string()];
 
-        let result = save_full_config_to(
-            &cfg,
-            &docs,
-            "mermaid",
-            &core,
-            &team,
-            &public,
-            None,
-            None,
-        );
+        let result = save_full_config_to(FullConfigParams {
+            cfg_path: &cfg,
+            docs_root: &docs,
+            diagram_format: "mermaid",
+            core_files: &core,
+            team_files: &team,
+            public_files: &public,
+            embedding_section: None,
+            server_section: None,
+        });
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
