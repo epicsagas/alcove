@@ -181,7 +181,7 @@ fn save_docs_root_to(cfg_path: &Path, path: &Path) -> Result<()> {
                 .lines()
                 .map(|l| {
                     if l.trim_start().starts_with("docs_root") {
-                        format!("docs_root = \"{}\"", path.display())
+                        format!("docs_root = {}", toml::Value::String(path.display().to_string()))
                     } else {
                         l.to_string()
                     }
@@ -191,11 +191,11 @@ fn save_docs_root_to(cfg_path: &Path, path: &Path) -> Result<()> {
             fs::write(cfg_path, updated)?;
         } else {
             // Prepend
-            let updated = format!("docs_root = \"{}\"\n\n{}", path.display(), content);
+            let updated = format!("docs_root = {}\n\n{}", toml::Value::String(path.display().to_string()), content);
             fs::write(cfg_path, updated)?;
         }
     } else {
-        fs::write(cfg_path, format!("docs_root = \"{}\"\n", path.display()))?;
+        fs::write(cfg_path, format!("docs_root = {}\n", toml::Value::String(path.display().to_string())))?;
     }
     Ok(())
 }
@@ -293,15 +293,13 @@ fn write_opencode_mcp(config_path: &Path, binary: &Path, docs_root: &Path, serve
 
 fn write_codex_mcp(config_path: &Path, binary: &Path, docs_root: &Path, server_url: Option<&str>) -> Result<()> {
     let entry = if let Some(url) = server_url {
-        format!(
-            "\n[mcp_servers.alcove]\ntype = \"remote\"\nurl = \"{}\"\n",
-            url
-        )
+        let url_toml = toml::Value::String(url.to_string()).to_string();
+        format!("\n[mcp_servers.alcove]\ntype = \"remote\"\nurl = {url_toml}\n")
     } else {
+        let binary_toml = toml::Value::String(binary.display().to_string()).to_string();
+        let docs_root_toml = toml::Value::String(docs_root.display().to_string()).to_string();
         format!(
-            "\n[mcp_servers.alcove]\ncommand = \"{}\"\nargs = []\n\n[mcp_servers.alcove.env]\nDOCS_ROOT = \"{}\"\n",
-            binary.display(),
-            docs_root.display(),
+            "\n[mcp_servers.alcove]\ncommand = {binary_toml}\nargs = []\n\n[mcp_servers.alcove.env]\nDOCS_ROOT = {docs_root_toml}\n"
         )
     };
 
@@ -2068,6 +2066,13 @@ fn save_full_config_to(
     let mut content = toml::to_string(&base)
         .map_err(|e| anyhow::anyhow!("failed to serialize config: {}", e))?;
 
+    // Guard: DocConfig::default() must not emit [embedding] or [server] sections,
+    // otherwise the manually appended sections below will create duplicate headers.
+    debug_assert!(
+        !content.contains("[embedding]") && !content.contains("[server]"),
+        "base config already contains [embedding] or [server] — would produce duplicate TOML sections"
+    );
+
     if let Some(section) = embedding_section {
         if !content.ends_with('\n') {
             content.push('\n');
@@ -3016,5 +3021,74 @@ mod tests {
         let t1 = generate_token();
         let t2 = generate_token();
         assert_ne!(t1, t2, "two consecutive tokens must differ");
+    }
+
+    // ── save_docs_root_to ──
+
+    #[test]
+    fn save_docs_root_to_escapes_special_chars() {
+        let dir = TempDir::new().expect("temp dir");
+        let cfg_path = dir.path().join("config.toml");
+
+        // Path with a double-quote — raw embedding would break TOML.
+        let tricky = std::path::PathBuf::from(r#"/tmp/path"with"quotes"#);
+        save_docs_root_to(&cfg_path, &tricky).expect("write should succeed");
+
+        let written = fs::read_to_string(&cfg_path).expect("read back");
+        let parsed: toml::Value = toml::from_str(&written).expect("must be valid TOML");
+        let got = parsed["docs_root"].as_str().expect("docs_root is a string");
+        assert_eq!(got, tricky.display().to_string());
+    }
+
+    #[test]
+    fn save_docs_root_to_escapes_backslash() {
+        let dir = TempDir::new().expect("temp dir");
+        let cfg_path = dir.path().join("config.toml");
+
+        let tricky = std::path::PathBuf::from(r"C:\Users\test\docs");
+        save_docs_root_to(&cfg_path, &tricky).expect("write should succeed");
+
+        let written = fs::read_to_string(&cfg_path).expect("read back");
+        let parsed: toml::Value = toml::from_str(&written).expect("must be valid TOML");
+        let got = parsed["docs_root"].as_str().expect("docs_root is a string");
+        assert_eq!(got, tricky.display().to_string());
+    }
+
+    // ── write_codex_mcp ──
+
+    #[test]
+    fn write_codex_mcp_escapes_binary_path() {
+        let dir = TempDir::new().expect("temp dir");
+        let cfg_path = dir.path().join("codex_config.toml");
+        let binary = std::path::PathBuf::from(r#"/usr/local/bin/al"cove"#);
+        let docs_root = dir.path().join("docs");
+
+        write_codex_mcp(&cfg_path, &binary, &docs_root, None).expect("write should succeed");
+
+        let written = fs::read_to_string(&cfg_path).expect("read back");
+        let parsed: toml::Value = toml::from_str(&written).expect("must be valid TOML");
+        let got = parsed["mcp_servers"]["alcove"]["command"]
+            .as_str()
+            .expect("command is a string");
+        assert_eq!(got, binary.display().to_string());
+    }
+
+    #[test]
+    fn write_codex_mcp_escapes_server_url() {
+        let dir = TempDir::new().expect("temp dir");
+        let cfg_path = dir.path().join("codex_config.toml");
+        let binary = dir.path().join("alcove");
+        let docs_root = dir.path().join("docs");
+        // URL with a quote — injection attempt.
+        let url = r#"http://localhost:8080/mcp"extra"#;
+
+        write_codex_mcp(&cfg_path, &binary, &docs_root, Some(url)).expect("write should succeed");
+
+        let written = fs::read_to_string(&cfg_path).expect("read back");
+        let parsed: toml::Value = toml::from_str(&written).expect("must be valid TOML");
+        let got = parsed["mcp_servers"]["alcove"]["url"]
+            .as_str()
+            .expect("url is a string");
+        assert_eq!(got, url);
     }
 }

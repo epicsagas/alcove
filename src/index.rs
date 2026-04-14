@@ -820,7 +820,7 @@ pub fn build_index_bm25_only(docs_root: &Path) -> Result<JsonValue> {
 
 #[cfg(test)]
 pub fn build_index_unlocked(docs_root: &Path) -> Result<JsonValue> {
-    build_index_inner(docs_root, false)
+    build_index_inner(docs_root, true)
 }
 
 fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue> {
@@ -1573,7 +1573,7 @@ mod tests {
     #[test]
     fn build_index_succeeds() {
         let tmp = setup_indexed_root();
-        let result = build_index_unlocked(tmp.path()).unwrap();
+        let result = build_index_inner(tmp.path(), true).unwrap();
         assert_eq!(result["status"], "ok");
         assert!(result["indexed"].as_u64().unwrap() >= 5);
         assert!(result["projects"].as_u64().unwrap() >= 3);
@@ -1585,9 +1585,9 @@ mod tests {
     fn build_index_incremental_skips_unchanged() {
         let tmp = setup_indexed_root();
         // First build
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         // Second build with no changes
-        let result = build_index_unlocked(tmp.path()).unwrap();
+        let result = build_index_inner(tmp.path(), true).unwrap();
         assert_eq!(result["status"], "ok");
         // All files should be skipped on second run
         assert!(result["skipped"].as_u64().unwrap() >= 5);
@@ -1596,7 +1596,7 @@ mod tests {
     #[test]
     fn search_indexed_finds_oauth() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
@@ -1613,7 +1613,7 @@ mod tests {
     #[test]
     fn search_indexed_with_project_filter() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         let result = search_indexed(tmp.path(), "OAuth", 10, Some("backend")).unwrap();
         let matches = result["matches"].as_array().unwrap();
@@ -1626,7 +1626,7 @@ mod tests {
     #[test]
     fn search_indexed_respects_limit() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         let result = search_indexed(tmp.path(), "OAuth", 1, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
@@ -1636,7 +1636,7 @@ mod tests {
     #[test]
     fn search_indexed_no_results() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         let result = search_indexed(tmp.path(), "zzz_nonexistent_query_zzz", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
@@ -1646,7 +1646,7 @@ mod tests {
     #[test]
     fn search_indexed_skips_hidden_projects() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         let result = search_indexed(tmp.path(), "Template", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
@@ -1703,7 +1703,7 @@ mod tests {
     #[test]
     fn is_index_fresh_after_build() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         assert!(
             !is_index_stale(tmp.path()),
             "just-built index should not be stale"
@@ -1713,7 +1713,7 @@ mod tests {
     #[test]
     fn is_index_stale_after_file_change() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         assert!(!is_index_stale(tmp.path()));
 
         // Modify a file (need to change mtime)
@@ -1732,7 +1732,7 @@ mod tests {
     #[test]
     fn is_index_stale_after_new_file() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         // Add a new file
         fs::write(tmp.path().join("backend/NEW.md"), "# New doc").unwrap();
@@ -1756,7 +1756,7 @@ mod tests {
     #[test]
     fn ensure_index_fresh_skips_when_fresh() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         let rebuilt = ensure_index_fresh(tmp.path());
         assert!(!rebuilt, "should not rebuild when fresh");
@@ -1765,7 +1765,7 @@ mod tests {
     #[test]
     fn is_index_stale_after_file_deletion() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         assert!(!is_index_stale(tmp.path()));
 
         // Delete a file
@@ -1790,7 +1790,7 @@ mod tests {
     #[test]
     fn search_indexed_special_chars_no_panic() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         // These should not panic or error
         let result = search_indexed(tmp.path(), "C++", 10, None).unwrap();
@@ -1806,7 +1806,7 @@ mod tests {
     #[test]
     fn search_indexed_empty_query() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         let result = search_indexed(tmp.path(), "", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
@@ -1829,7 +1829,7 @@ mod tests {
         }
         fs::write(proj.join("BIG.md"), &content).unwrap();
 
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
 
@@ -1869,7 +1869,7 @@ mod tests {
     #[test]
     fn search_indexed_global_scope_label() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
         assert_eq!(result["scope"], "global");
         assert_eq!(result["mode"], "ranked");
@@ -1879,7 +1879,7 @@ mod tests {
     fn search_indexed_returns_chunk_id() {
         // chunk_id must be present in BM25 results so hybrid RRF can join on it
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty());
@@ -1892,7 +1892,7 @@ mod tests {
     #[test]
     fn search_indexed_project_scope_label() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         let result = search_indexed(tmp.path(), "OAuth", 10, Some("backend")).unwrap();
         assert_eq!(result["scope"], "project");
     }
@@ -1900,7 +1900,7 @@ mod tests {
     #[test]
     fn build_index_incremental_rebuilds_after_change() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         // Add new file
         fs::write(
@@ -1908,7 +1908,7 @@ mod tests {
             "# New Document\n\nFresh content here.",
         )
         .unwrap();
-        let r2 = build_index_unlocked(tmp.path()).unwrap();
+        let r2 = build_index_inner(tmp.path(), true).unwrap();
         assert_eq!(r2["status"], "ok");
         // The new file should be picked up (indexed >= 1)
         assert!(
@@ -1953,7 +1953,7 @@ mod tests {
     #[test]
     fn index_exists_true_after_build() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         assert!(index_exists(tmp.path()));
     }
 
@@ -1972,7 +1972,7 @@ mod tests {
     #[test]
     fn check_doc_changes_fresh_index() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         let result = check_doc_changes(tmp.path());
         assert!(result["index_exists"].as_bool().unwrap());
         assert!(!result["is_stale"].as_bool().unwrap());
@@ -1985,7 +1985,7 @@ mod tests {
     #[test]
     fn check_doc_changes_after_add() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         fs::write(tmp.path().join("backend/NEW.md"), "# New").unwrap();
         let result = check_doc_changes(tmp.path());
         assert!(result["is_stale"].as_bool().unwrap());
@@ -2001,7 +2001,7 @@ mod tests {
     #[test]
     fn check_doc_changes_after_delete() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         fs::remove_file(tmp.path().join("backend/PRD.md")).unwrap();
         let result = check_doc_changes(tmp.path());
         assert!(result["is_stale"].as_bool().unwrap());
@@ -2017,7 +2017,7 @@ mod tests {
     #[test]
     fn check_doc_changes_after_modify() {
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         std::thread::sleep(std::time::Duration::from_secs(1));
         fs::write(tmp.path().join("backend/PRD.md"), "# Updated PRD").unwrap();
         let result = check_doc_changes(tmp.path());
@@ -2042,7 +2042,7 @@ mod tests {
         )
         .unwrap();
 
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         let result = search_indexed(tmp.path(), "인증", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty(), "should find Korean text '인증'");
@@ -2059,7 +2059,7 @@ mod tests {
         )
         .unwrap();
 
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         let result = search_indexed(tmp.path(), "認証", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty(), "should find Japanese text '認証'");
@@ -2076,7 +2076,7 @@ mod tests {
         )
         .unwrap();
 
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
         let result = search_indexed(tmp.path(), "认证", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty(), "should find Chinese text '认证'");
@@ -2089,7 +2089,7 @@ mod tests {
         use crate::config::EmbeddingConfig;
 
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         // Create an EmbeddingService with embedding disabled — state will be Disabled (non-Ready)
         let svc = EmbeddingService::new(EmbeddingConfig {
@@ -2113,7 +2113,7 @@ mod tests {
         use crate::config::EmbeddingConfig;
 
         let tmp = setup_indexed_root();
-        build_index_unlocked(tmp.path()).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
 
         // Build a ready embedding service with a bogus cache dir so the model
         // is not found, but embed() will fail — exercising vector store open
