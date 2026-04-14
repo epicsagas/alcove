@@ -347,13 +347,18 @@ With background server (proxy mode):
   Agent ──stdio──→ alcove (thin proxy)
                      │ stdin → HTTP POST /mcp
                      │ HTTP response → stdout
-                     └──HTTP──→ alcove serve (warm, instant ~5ms)
+                     └──HTTP──→ alcove serve (always warm)
+                                 ├─ BM25 index (loaded)
+                                 ├─ ONNX embedding model (loaded)
+                                 ├─ HNSW vector index (loaded)
+                                 └─ hybrid search ready (~5ms)
 
 Without background server (direct mode):
   Agent ──stdio──→ alcove (full engine)
-                     ├─ load ONNX model (2-5s cold start)
-                     ├─ open search index
-                     └─ process request
+                     ├─ load ONNX embedding model (2-5s cold start)
+                     ├─ open BM25 index
+                     ├─ build HNSW vector index
+                     └─ hybrid search ready (after warm-up)
 ```
 
 On startup, the stdio process checks `GET /health` on the configured host/port. If the server responds, it enters proxy mode automatically — no configuration change needed. The JSON-RPC payload is identical in both modes; only the transport changes internally.
