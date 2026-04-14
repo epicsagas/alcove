@@ -195,11 +195,11 @@ flowchart LR
 
     A1 -- "CWD detected" --> D1
     A2 -- "CWD detected" --> D2
-    Agents -- "HTTP / stdio" --> MCP
+    Agents -- "stdio (proxy → HTTP)" --> MCP
     MCP -- "scoped access" --> Docs
 ```
 
-Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent. When the background HTTP server is running (via `alcove enable`), agents connect directly via HTTP for instant response with zero cold-start. Without the background server, agents fall back to stdio mode which loads the engine on each session.
+Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent over stdio. When the background HTTP server is running (via `alcove enable`), the stdio process acts as a thin proxy — forwarding requests to the warm server for instant response with zero cold-start. Without the background server, it loads the full engine on each session.
 
 ## What it does
 
@@ -296,7 +296,7 @@ Files with no matching project land in `inbox/` for manual review.
 
 ### Background Server
 
-Alcove can run as a persistent HTTP RAG server, accessible via REST API. This is useful for external integrations, dashboards, or non-MCP clients. **When enabled, MCP agents connect directly via HTTP** — eliminating cold-start latency (ONNX model load, index open) on every new session.
+Alcove can run as a persistent HTTP RAG server, accessible via REST API. This is useful for external integrations, dashboards, or non-MCP clients. **When enabled, the MCP stdio process automatically proxies to the warm server** — eliminating cold-start latency (ONNX model load, index open) on every new session.
 
 ```bash
 # Start the server in the foreground
@@ -338,19 +338,25 @@ alcove disable
 
 This installs a LaunchAgent at `~/Library/LaunchAgents/com.epicsagas.alcove.plist`. Logs are written to `~/.alcove/logs/`.
 
-#### Connection Modes
+#### Hybrid Proxy Mode
 
-When the background HTTP server is running, MCP agents connect to it directly via HTTP — no cold start, no process spawning per session. Without the background server, agents fall back to stdio mode (the alcove binary starts as a subprocess).
+Agents always connect to alcove via **stdio** (the MCP standard). When the background HTTP server is running, the stdio process acts as a **thin proxy** — it forwards JSON-RPC messages to the warm server over HTTP instead of loading the search engine itself. This eliminates cold-start latency (ONNX model load, index open) on every new agent session.
 
 ```
-alcove setup (enable = Yes):
-  Agent → HTTP POST http://127.0.0.1:8080/mcp → running server (instant)
+With background server (proxy mode):
+  Agent ──stdio──→ alcove (thin proxy)
+                     │ stdin → HTTP POST /mcp
+                     │ HTTP response → stdout
+                     └──HTTP──→ alcove serve (warm, instant ~5ms)
 
-alcove setup (enable = No):
-  Agent → spawns alcove (stdio) → loads engine (cold start)
+Without background server (direct mode):
+  Agent ──stdio──→ alcove (full engine)
+                     ├─ load ONNX model (2-5s cold start)
+                     ├─ open search index
+                     └─ process request
 ```
 
-Setup configures the right mode automatically in each agent's MCP config file — HTTP `url` when enabled, `command` (stdio) when not.
+On startup, the stdio process checks `GET /health` on the configured host/port. If the server responds, it enters proxy mode automatically — no configuration change needed. The JSON-RPC payload is identical in both modes; only the transport changes internally.
 
 ## Search
 

@@ -177,11 +177,11 @@ flowchart LR
 
     A1 -- "CWD 감지" --> D1
     A2 -- "CWD 감지" --> D2
-    Agents -- "HTTP / stdio" --> MCP
+    Agents -- "stdio (프록시 → HTTP)" --> MCP
     MCP -- "범위 지정 접근" --> Docs
 ```
 
-문서는 별도 디렉토리(`DOCS_ROOT`)에 프로젝트별 폴더로 정리됩니다. Alcove는 거기서 관리하고 제공합니다. 백그라운드 HTTP 서버가 실행 중이면(`alcove enable`), 에이전트는 HTTP로 직접 연결하여 콜드 스타트 없이 즉시 응답합니다. 백그라운드 서버가 없으면 stdio 모드로 폴백하여 매 세션마다 엔진을 로드합니다. 에이전트는 `get_doc_file("PRD.md")` 같은 도구를 호출하여 어떤 에이전트를 사용하든 프로젝트별 답변을 얻습니다.
+문서는 별도 디렉토리(`DOCS_ROOT`)에 프로젝트별 폴더로 정리됩니다. Alcove는 stdio를 통해 MCP 호환 AI 에이전트에게 문서를 제공합니다. 백그라운드 HTTP 서버가 실행 중이면(`alcove enable`), stdio 프로세스가 경량 프록시로 동작하여 요청을 HTTP 서버에 전달합니다 — 콜드 스타트 없이 즉시 응답. 백그라운드 서버가 없으면 자체 엔진을 로드하여 직접 처리합니다.
 
 ## 문서 분류
 
@@ -273,7 +273,7 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 
 ### 백그라운드 서버
 
-Alcove는 REST API로 접근 가능한 상시 HTTP RAG 서버로 실행할 수 있습니다. 외부 통합, 대시보드, 비MCP 클라이언트에 유용합니다. **활성화하면 MCP 에이전트가 HTTP로 직접 연결** — 매 새 세션의 콜드 스타트 지연(ONNX 모델 로드, 인덱스 열기)을 제거합니다.
+Alcove는 REST API로 접근 가능한 상시 HTTP RAG 서버로 실행할 수 있습니다. 외부 통합, 대시보드, 비MCP 클라이언트에 유용합니다. **활성화하면 MCP stdio 프로세스가 자동으로 경량 프록시로 동작** — 매 새 세션의 콜드 스타트 지연(ONNX 모델 로드, 인덱스 열기)을 제거합니다.
 
 ```bash
 # 포그라운드에서 서버 시작
@@ -315,19 +315,25 @@ alcove disable
 
 `~/Library/LaunchAgents/com.epicsagas.alcove.plist`에 LaunchAgent가 설치됩니다. 로그는 `~/.alcove/logs/`에 기록됩니다.
 
-#### 연결 모드
+#### 하이브리드 프록시 모드
 
-백그라운드 HTTP 서버가 실행 중이면 MCP 에이전트가 HTTP로 직접 연결합니다 — 콜드 스타트 없음, 세션당 프로세스 생성 없음. 백그라운드 서버가 없으면 stdio 모드로 폴백합니다 (alcove 바이너리가 서브프로세스로 시작).
+에이전트는 항상 **stdio**로 alcove에 연결합니다 (MCP 표준). 백그라운드 HTTP 서버가 실행 중이면, stdio 프로세스가 **경량 프록시**로 동작합니다 — 검색 엔진을 직접 로드하지 않고 JSON-RPC 메시지를 HTTP 서버로 전달합니다. 매 에이전트 세션의 콜드 스타트(ONNX 모델 로드, 인덱스 열기)를 제거합니다.
 
 ```
-alcove setup (enable = 예):
-  에이전트 → HTTP POST http://127.0.0.1:8080/mcp → 실행 중인 서버 (즉시)
+백그라운드 서버 있음 (프록시 모드):
+  에이전트 ──stdio──→ alcove (경량 프록시)
+                       │ stdin → HTTP POST /mcp
+                       │ HTTP 응답 → stdout
+                       └──HTTP──→ alcove serve (상시 대기, ~5ms)
 
-alcove setup (enable = 아니오):
-  에이전트 → alcove 실행 (stdio) → 엔진 로드 (콜드 스타트)
+백그라운드 서버 없음 (직접 모드):
+  에이전트 ──stdio──→ alcove (전체 엔진)
+                       ├─ ONNX 모델 로드 (2-5초 콜드 스타트)
+                       ├─ 검색 인덱스 열기
+                       └─ 요청 처리
 ```
 
-설정은 각 에이전트의 MCP 설정 파일에 자동으로 올바른 모드를 구성합니다 — 활성화 시 HTTP `url`, 비활성화 시 `command` (stdio).
+시작 시 stdio 프로세스가 설정된 호스트/포트로 `GET /health`를 확인합니다. 서버가 응답하면 자동으로 프록시 모드로 진입합니다 — 설정 변경 불필요. JSON-RPC 페이로드는 양쪽 모드에서 동일하며, 내부 전송 방식만 다릅니다.
 
 ## 검색
 
