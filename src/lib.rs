@@ -4,6 +4,7 @@ pub mod index;
 pub mod lint;
 pub mod policy;
 pub mod promote;
+pub mod vault;
 
 #[cfg(feature = "alcove-full")]
 pub mod vector;
@@ -15,6 +16,10 @@ pub use index::{
 };
 
 pub use policy::validate_doc_name;
+
+pub use vault::{
+    add_to_vault, create_vault, link_vault, list_vaults, remove_vault, vaults_root, VaultInfo,
+};
 
 #[cfg(feature = "alcove-full")]
 pub use embedding::{EmbeddingModelChoice, EmbeddingService, ModelState};

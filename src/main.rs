@@ -9,6 +9,7 @@ mod mcp;
 mod policy;
 mod promote;
 mod tools;
+mod vault;
 
 #[cfg(feature = "alcove-full")]
 mod vector;

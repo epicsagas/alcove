@@ -44,10 +44,21 @@ struct CachedReaderEntry {
     last_used: Instant,
 }
 
-static INDEX_READER_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedReaderEntry>>> = OnceLock::new();
+static PROJECT_READER_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedReaderEntry>>> = OnceLock::new();
+static VAULT_READER_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedReaderEntry>>> = OnceLock::new();
 
-fn reader_cache() -> &'static Mutex<HashMap<PathBuf, CachedReaderEntry>> {
-    INDEX_READER_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+/// Cache category — determines which reader cache to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheCategory {
+    Project,
+    Vault,
+}
+
+fn reader_cache_for(cat: CacheCategory) -> &'static Mutex<HashMap<PathBuf, CachedReaderEntry>> {
+    match cat {
+        CacheCategory::Project => PROJECT_READER_CACHE.get_or_init(|| Mutex::new(HashMap::new())),
+        CacheCategory::Vault => VAULT_READER_CACHE.get_or_init(|| Mutex::new(HashMap::new())),
+    }
 }
 
 /// Return a cached reader for `index_dir`, creating one if absent.
@@ -57,7 +68,7 @@ fn reader_cache() -> &'static Mutex<HashMap<PathBuf, CachedReaderEntry>> {
 /// TTL eviction runs on every call: idle entries where no external Arc clone
 /// is held are dropped.  The cache is also bounded by `memory.max_cached_readers`
 /// (default 1); excess entries are evicted LRU-first.
-fn get_cached_reader(index_dir: &Path, index: &Index) -> Result<Arc<IndexReader>> {
+fn get_cached_reader(index_dir: &Path, index: &Index, cat: CacheCategory) -> Result<Arc<IndexReader>> {
     let mem_cfg = crate::config::load_config().memory_config_with_defaults();
     let ttl = if mem_cfg.reader_ttl_secs > 0 {
         Some(Duration::from_secs(mem_cfg.reader_ttl_secs))
@@ -66,7 +77,7 @@ fn get_cached_reader(index_dir: &Path, index: &Index) -> Result<Arc<IndexReader>
     };
     let max_readers = mem_cfg.max_cached_readers.clamp(1, 4);
 
-    let mut cache = reader_cache().lock().unwrap_or_else(|e| {
+    let mut cache = reader_cache_for(cat).lock().unwrap_or_else(|e| {
         eprintln!("[alcove] reader cache mutex poisoned — clearing stale entries and recovering");
         let mut guard = e.into_inner();
         guard.clear();
@@ -124,9 +135,9 @@ fn get_cached_reader(index_dir: &Path, index: &Index) -> Result<Arc<IndexReader>
 /// Evict the cached reader for `docs_root`.
 /// Must be called whenever the index is fully rebuilt so the next search
 /// does not read stale segment data.
-fn invalidate_reader_cache(docs_root: &Path) {
+fn invalidate_reader_cache(docs_root: &Path, cat: CacheCategory) {
     let dir = index_dir(docs_root);
-    if let Ok(mut cache) = reader_cache().lock() {
+    if let Ok(mut cache) = reader_cache_for(cat).lock() {
         cache.remove(&dir);
     }
 }
@@ -784,7 +795,7 @@ pub fn build_index(docs_root: &Path) -> Result<JsonValue> {
 pub fn rebuild_index(docs_root: &Path) -> Result<JsonValue> {
     // Evict the cached reader before wiping the index directory so that any
     // search initiated after this call opens a fresh reader on the new data.
-    invalidate_reader_cache(docs_root);
+    invalidate_reader_cache(docs_root, CacheCategory::Project);
     build_index_with_mode(docs_root, true)
 }
 
@@ -1208,7 +1219,7 @@ fn search_with_index(
     let line_start_field = schema.get_field("line_start").context("missing 'line_start' field")?;
 
     // Use the process-level cached reader (creates one on first call per path).
-    let reader = get_cached_reader(&dir, index)?;
+    let reader = get_cached_reader(&dir, index, CacheCategory::Project)?;
     let searcher = reader.searcher();
 
     let query_parser = QueryParser::for_index(index, vec![body_field]);
@@ -1442,7 +1453,7 @@ pub fn search_hybrid(
     // For vector-only cache misses we need a Tantivy searcher.  We reuse the
     // already-open `index` instead of calling Index::open_in_dir a second time.
     // The reader is fetched from the process-level cache (same as BM25 above).
-    let miss_reader = get_cached_reader(&dir, &index)?;
+    let miss_reader = get_cached_reader(&dir, &index, CacheCategory::Project)?;
     let miss_searcher = miss_reader.searcher();
     let miss_schema = index.schema();
     let miss_project_field = miss_schema.get_field("project").context("missing 'project' field")?;
@@ -2217,6 +2228,52 @@ mod tests {
     // We test the helper by pointing it at a valid (non-PDF) file path so
     // pdftotext exits quickly with a non-zero status — the important thing is
     // that read_file_content returns Ok/Err without hanging.
+    #[test]
+    fn test_project_vault_cache_isolation() {
+        // Build two separate indexes in different temp dirs.
+        let tmp_project = TempDir::new().unwrap();
+        let tmp_vault = TempDir::new().unwrap();
+
+        // Create minimal index content for project.
+        let proj_docs = tmp_project.path().join("docs");
+        fs::create_dir_all(&proj_docs).unwrap();
+        fs::write(proj_docs.join("proj.md"), "# Project doc\nHello project world.\n").unwrap();
+
+        // Create minimal index content for vault.
+        let vault_docs = tmp_vault.path().join("docs");
+        fs::create_dir_all(&vault_docs).unwrap();
+        fs::write(vault_docs.join("vault.md"), "# Vault doc\nHello vault world.\n").unwrap();
+
+        // Build indexes.
+        let proj_index_dir = index_dir(tmp_project.path());
+        let vault_index_dir = index_dir(tmp_vault.path());
+        build_index(tmp_project.path()).expect("project index build");
+        build_index(tmp_vault.path()).expect("vault index build");
+
+        // Open indexes and get cached readers with different categories.
+        let proj_index = Index::open_in_dir(&proj_index_dir).expect("open project index");
+        let vault_index = Index::open_in_dir(&vault_index_dir).expect("open vault index");
+
+        let _proj_reader = get_cached_reader(&proj_index_dir, &proj_index, CacheCategory::Project)
+            .expect("project reader");
+        let _vault_reader = get_cached_reader(&vault_index_dir, &vault_index, CacheCategory::Vault)
+            .expect("vault reader");
+
+        // Verify isolation: project cache has the project entry but not the vault entry.
+        {
+            let proj_cache = reader_cache_for(CacheCategory::Project).lock().unwrap();
+            assert!(proj_cache.contains_key(&proj_index_dir), "project cache must contain project index");
+            assert!(!proj_cache.contains_key(&vault_index_dir), "project cache must not contain vault index");
+        }
+
+        // Verify isolation: vault cache has the vault entry but not the project entry.
+        {
+            let vault_cache = reader_cache_for(CacheCategory::Vault).lock().unwrap();
+            assert!(vault_cache.contains_key(&vault_index_dir), "vault cache must contain vault index");
+            assert!(!vault_cache.contains_key(&proj_index_dir), "vault cache must not contain project index");
+        }
+    }
+
     #[cfg(feature = "alcove-full")]
     #[test]
     fn read_file_content_pdf_does_not_hang() {
