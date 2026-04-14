@@ -184,7 +184,6 @@ mod tests {
     /// that creates the vaults structure under a temp dir.
     /// Since we can't easily override alcove_home(), we test the internal
     /// functions directly with explicit paths.
-
     fn setup_vaults_dir(tmp: &TempDir) -> PathBuf {
         let vaults = tmp.path().join("vaults");
         fs::create_dir_all(&vaults).unwrap();

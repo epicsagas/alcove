@@ -583,10 +583,10 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             };
             let mut all_matches: Vec<Value> = Vec::new();
             for vault in &vaults {
-                if let Ok(result) = crate::index::search_vault(&vault.path, query, limit) {
-                    if let Some(matches) = result["matches"].as_array() {
-                        all_matches.extend(matches.iter().cloned());
-                    }
+                if let Ok(result) = crate::index::search_vault(&vault.path, query, limit)
+                    && let Some(matches) = result["matches"].as_array()
+                {
+                    all_matches.extend(matches.iter().cloned());
                 }
             }
             // Sort by score descending
