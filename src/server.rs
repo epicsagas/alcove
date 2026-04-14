@@ -193,6 +193,33 @@ async fn handle_search(
         ));
     }
 
+    // Validate project existence if a project filter is specified.
+    if let Some(ref project) = req.project {
+        use std::path::Component;
+        let p = std::path::Path::new(project);
+        let components: Vec<_> = p.components().collect();
+        // Reject path traversal: must be a single normal component
+        if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Project not found".to_string(),
+                    code: 404,
+                }),
+            ));
+        }
+        let project_dir = state.docs_root.join(project);
+        if !project_dir.is_dir() {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Project not found".to_string(),
+                    code: 404,
+                }),
+            ));
+        }
+    }
+
     let docs_root = state.docs_root.clone();
     let project_filter_owned = req.project.clone();
     let q = req.q.clone();
@@ -281,31 +308,53 @@ async fn handle_search(
             }),
         ))?;
 
-        if let Ok(json) = result {
-            let results: Vec<SearchResult> = json["matches"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|m| {
-                            Some(SearchResult {
-                                project: m["project"].as_str()?.to_string(),
-                                file: m["file"].as_str()?.to_string(),
-                                line: m["line_start"].as_u64()?,
-                                snippet: m["snippet"].as_str().unwrap_or("").to_string(),
-                                score: m["score"].as_f64().unwrap_or(0.0),
-                                source: "bm25".to_string(),
+        match result {
+            Ok(json) => {
+                let results: Vec<SearchResult> = json["matches"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|m| {
+                                Some(SearchResult {
+                                    project: m["project"].as_str()?.to_string(),
+                                    file: m["file"].as_str()?.to_string(),
+                                    line: m["line_start"].as_u64()?,
+                                    snippet: m["snippet"].as_str().unwrap_or("").to_string(),
+                                    score: m["score"].as_f64().unwrap_or(0.0),
+                                    source: "bm25".to_string(),
+                                })
                             })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+                            .collect()
+                    })
+                    .unwrap_or_default();
 
-            return Ok(Json(SearchResponse {
-                query: req.q,
-                results,
-                mode: "bm25".to_string(),
-                truncated: json["truncated"].as_bool().unwrap_or(false),
-            }));
+                return Ok(Json(SearchResponse {
+                    query: req.q,
+                    results,
+                    mode: "bm25".to_string(),
+                    truncated: json["truncated"].as_bool().unwrap_or(false),
+                }));
+            }
+            Err(err) => {
+                let msg = err.to_string();
+                if msg.contains("parse") || msg.contains("query") || msg.contains("syntax") {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: format!("Invalid search query: {msg}"),
+                            code: 400,
+                        }),
+                    ));
+                }
+                eprintln!("[alcove] BM25 search error: {err}");
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: "Search failed".to_string(),
+                        code: 500,
+                    }),
+                ));
+            }
         }
     }
 
@@ -544,4 +593,62 @@ pub async fn run_server(
     anyhow::bail!(
         "HTTP server requires 'alcove-server' feature. Install with: cargo install alcove --features alcove-server"
     )
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+#[cfg(feature = "alcove-server")]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+    use std::sync::Arc;
+
+    fn make_state(docs_root: std::path::PathBuf) -> Arc<ServerState> {
+        Arc::new(ServerState {
+            docs_root,
+            token: None,
+            #[cfg(feature = "alcove-full")]
+            embedding_service: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn search_nonexistent_project_returns_404() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = make_state(tmp.path().to_path_buf());
+        let headers = HeaderMap::new();
+        let req = SearchRequest {
+            q: "test".to_string(),
+            limit: 10,
+            project: Some("nonexistent".to_string()),
+            mode: "bm25".to_string(),
+        };
+
+        let result = handle_search(state, headers, req).await;
+        assert!(result.is_err());
+        let (status, body) = result.unwrap_err();
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body.0.code, 404);
+    }
+
+    #[tokio::test]
+    async fn search_path_traversal_project_returns_404() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = make_state(tmp.path().to_path_buf());
+        let headers = HeaderMap::new();
+        let req = SearchRequest {
+            q: "test".to_string(),
+            limit: 10,
+            project: Some("../etc".to_string()),
+            mode: "bm25".to_string(),
+        };
+
+        let result = handle_search(state, headers, req).await;
+        assert!(result.is_err());
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
 }

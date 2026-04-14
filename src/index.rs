@@ -447,7 +447,8 @@ pub fn check_doc_changes(docs_root: &Path) -> JsonValue {
         for walk_entry in WalkDir::new(&path)
             .into_iter()
             .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path()))
+            .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())
+                && !e.path().file_name().unwrap_or_default().to_string_lossy().starts_with('_'))
         {
             let file_path = walk_entry.path();
             if let Ok(canonical) = file_path.canonicalize()
@@ -523,7 +524,8 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
         for walk_entry in WalkDir::new(&path)
             .into_iter()
             .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path()))
+            .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())
+                && !e.path().file_name().unwrap_or_default().to_string_lossy().starts_with('_'))
         {
             let file_path = walk_entry.path();
             if let Ok(canonical) = file_path.canonicalize()
@@ -856,7 +858,8 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
 
         let proj_cfg = effective_config(&path);
         let docs_root_canonical = docs_root.canonicalize().unwrap_or_else(|_| docs_root.to_path_buf());
-        for walk_entry in WalkDir::new(&path).into_iter().flatten().filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())) {
+        for walk_entry in WalkDir::new(&path).into_iter().flatten().filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())
+            && !e.path().file_name().unwrap_or_default().to_string_lossy().starts_with('_')) {
             let file_path = walk_entry.path().to_path_buf();
             if let Ok(canonical) = file_path.canonicalize()
                 && !canonical.starts_with(&docs_root_canonical)
@@ -1126,6 +1129,7 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
 fn sanitize_query(query: &str) -> String {
     let special = [
         '+', '-', '(', ')', '{', '}', '[', ']', '^', '~', '*', '?', '\\', '/', ':', '!',
+        '<', '>', '"',
     ];
     let mut sanitized = String::with_capacity(query.len());
     for ch in query.chars() {
@@ -1809,6 +1813,32 @@ mod tests {
     }
 
     #[test]
+    fn search_indexed_xss_special_chars_no_panic() {
+        let tmp = setup_indexed_root();
+        build_index_inner(tmp.path(), true).unwrap();
+
+        // Angle brackets and quotes are tantivy special chars that must be escaped
+        let result = search_indexed(tmp.path(), "<script>alert()</script>", 10, None).unwrap();
+        assert!(result["matches"].is_array());
+
+        let result = search_indexed(tmp.path(), "foo<bar>baz", 10, None).unwrap();
+        assert!(result["matches"].is_array());
+
+        let result = search_indexed(tmp.path(), r#""quoted phrase""#, 10, None).unwrap();
+        assert!(result["matches"].is_array());
+    }
+
+    #[test]
+    fn sanitize_query_escapes_angle_brackets_and_quotes() {
+        assert_eq!(sanitize_query("<script>"), "\\<script\\>");
+        assert_eq!(sanitize_query(r#""hello""#), "\\\"hello\\\"");
+        assert_eq!(
+            sanitize_query("<script>alert()</script>"),
+            "\\<script\\>alert\\(\\)\\<\\/script\\>"
+        );
+    }
+
+    #[test]
     fn search_indexed_empty_query() {
         let tmp = setup_indexed_root();
         build_index_inner(tmp.path(), true).unwrap();
@@ -2147,6 +2177,39 @@ mod tests {
             // bm25-only path: status must NOT be "ready"
             assert_ne!(status, "ready",
                 "embedding_status should reflect the failure reason, not 'ready'");
+        }
+    }
+
+    #[test]
+    fn search_indexed_skips_underscore_prefixed_files() {
+        let tmp = TempDir::new().unwrap();
+        // Create a normal project with a real doc and a _template.md file
+        let proj = tmp.path().join("myproject");
+        fs::create_dir_all(&proj).unwrap();
+        fs::write(
+            proj.join("PRD.md"),
+            "# PRD\n\nThis project uses OAuth 2.0 authentication flow.",
+        )
+        .unwrap();
+        fs::write(
+            proj.join("_template.md"),
+            "# Template\n\nOAuth placeholder for template files.",
+        )
+        .unwrap();
+
+        build_index_inner(tmp.path(), true).unwrap();
+
+        let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        assert!(!matches.is_empty(), "should find OAuth in PRD.md");
+
+        // Verify no match comes from _template.md
+        for m in matches {
+            let file = m["file"].as_str().unwrap_or("");
+            assert!(
+                !file.contains("_template.md"),
+                "_template.md should be excluded from search results, but found: {file}"
+            );
         }
     }
 
