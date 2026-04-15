@@ -7,7 +7,7 @@
 use anyhow::Result;
 #[cfg(feature = "alcove-server")]
 use axum::{
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     http::{HeaderMap, Method, StatusCode, header},
     response::Json,
     routing::{get, post},
@@ -96,6 +96,11 @@ pub struct ErrorResponse {
 // In-memory sliding-window rate limiter
 // ---------------------------------------------------------------------------
 
+/// Maximum number of distinct IPs tracked by the rate limiter.
+/// Prevents unbounded HashMap growth when exposed to the internet.
+#[cfg(feature = "alcove-server")]
+const RATE_LIMITER_MAX_IPS: usize = 10_000;
+
 #[cfg(feature = "alcove-server")]
 #[derive(Clone)]
 pub struct RateLimiter {
@@ -106,7 +111,8 @@ pub struct RateLimiter {
 
 #[cfg(feature = "alcove-server")]
 struct RateLimiterInner {
-    timestamps: std::collections::VecDeque<std::time::Instant>,
+    /// Per-IP sliding-window timestamp buckets.
+    buckets: std::collections::HashMap<std::net::IpAddr, std::collections::VecDeque<std::time::Instant>>,
 }
 
 #[cfg(feature = "alcove-server")]
@@ -114,29 +120,53 @@ impl RateLimiter {
     pub fn new(max_requests: usize, window: std::time::Duration) -> Self {
         Self {
             state: Arc::new(std::sync::Mutex::new(RateLimiterInner {
-                timestamps: std::collections::VecDeque::new(),
+                buckets: std::collections::HashMap::new(),
             })),
             max_requests,
             window,
         }
     }
 
-    /// Returns `true` if the request is allowed, `false` if rate-limited.
-    pub fn check(&self) -> bool {
+    /// Returns `true` if the request from `ip` is within budget, `false` if rate-limited.
+    ///
+    /// Each IP gets its own independent sliding-window budget so one abusive client
+    /// cannot block legitimate users.  At most `RATE_LIMITER_MAX_IPS` IPs are tracked;
+    /// if the table is full and no stale entries can be evicted, the new IP is denied.
+    pub fn check(&self, ip: std::net::IpAddr) -> bool {
         let now = std::time::Instant::now();
         let mut inner = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        // Remove timestamps outside the sliding window
-        while let Some(&front) = inner.timestamps.front() {
+
+        // Evict fully-expired buckets when the table would exceed the cap.
+        if !inner.buckets.contains_key(&ip) && inner.buckets.len() >= RATE_LIMITER_MAX_IPS {
+            let stale: Vec<_> = inner
+                .buckets
+                .iter()
+                .filter(|(_, q)| q.iter().all(|t| now.duration_since(*t) > self.window))
+                .map(|(k, _)| *k)
+                .take(64) // evict up to 64 at a time to amortise cost
+                .collect();
+            for k in stale {
+                inner.buckets.remove(&k);
+            }
+            // Still full → deny the unknown IP rather than growing unboundedly.
+            if inner.buckets.len() >= RATE_LIMITER_MAX_IPS {
+                return false;
+            }
+        }
+
+        let bucket = inner.buckets.entry(ip).or_default();
+        // Drop timestamps outside the sliding window.
+        while let Some(&front) = bucket.front() {
             if now.duration_since(front) > self.window {
-                inner.timestamps.pop_front();
+                bucket.pop_front();
             } else {
                 break;
             }
         }
-        if inner.timestamps.len() >= self.max_requests {
+        if bucket.len() >= self.max_requests {
             false
         } else {
-            inner.timestamps.push_back(now);
+            bucket.push_back(now);
             true
         }
     }
@@ -224,11 +254,12 @@ fn check_auth(
 async fn handle_search(
     state: Arc<ServerState>,
     headers: HeaderMap,
+    peer_ip: std::net::IpAddr,
     req: SearchRequest,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
     check_auth(&state, &headers)?;
 
-    if !state.search_rate_limiter.check() {
+    if !state.search_rate_limiter.check(peer_ip) {
         return Err((
             StatusCode::TOO_MANY_REQUESTS,
             Json(ErrorResponse {
@@ -650,20 +681,22 @@ async fn health(
 #[cfg(feature = "alcove-server")]
 async fn get_search(
     State(state): State<Arc<ServerState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Query(req): Query<SearchRequest>,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
-    handle_search(state, headers, req).await
+    handle_search(state, headers, peer.ip(), req).await
 }
 
 /// POST /v1/search — JSON body (OpenAI-compatible)
 #[cfg(feature = "alcove-server")]
 async fn post_search(
     State(state): State<Arc<ServerState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     axum::Json(req): axum::Json<SearchRequest>,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
-    handle_search(state, headers, req).await
+    handle_search(state, headers, peer.ip(), req).await
 }
 
 // ---------------------------------------------------------------------------
@@ -765,7 +798,7 @@ pub async fn run_server(
     println!("      POST /mcp        - MCP JSON-RPC dispatch (proxy target)");
     println!();
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
 
     Ok(())
 }
@@ -885,7 +918,7 @@ mod tests {
             vault: None,
         };
 
-        let result = handle_search(state, headers, req).await;
+        let result = handle_search(state, headers, "127.0.0.1".parse().unwrap(), req).await;
         assert!(result.is_err());
         let (status, body) = result.unwrap_err();
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -905,7 +938,7 @@ mod tests {
             vault: None,
         };
 
-        let result = handle_search(state, headers, req).await;
+        let result = handle_search(state, headers, "127.0.0.1".parse().unwrap(), req).await;
         assert!(result.is_err());
         let (status, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -924,7 +957,7 @@ mod tests {
             vault: Some("nonexistent_vault".to_string()),
         };
 
-        let result = handle_search(state, headers, req).await;
+        let result = handle_search(state, headers, "127.0.0.1".parse().unwrap(), req).await;
         assert!(result.is_err());
         let (status, body) = result.unwrap_err();
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -945,7 +978,7 @@ mod tests {
             vault: Some("myvault".to_string()),
         };
 
-        let result = handle_search(state, headers, req).await;
+        let result = handle_search(state, headers, "127.0.0.1".parse().unwrap(), req).await;
         assert!(result.is_err());
         let (status, body) = result.unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1087,11 +1120,13 @@ mod tests {
     // Rate limiter tests
     // -----------------------------------------------------------------------
 
+    fn ip(s: &str) -> std::net::IpAddr { s.parse().unwrap() }
+
     #[test]
     fn rate_limiter_allows_within_budget() {
         let limiter = super::RateLimiter::new(5, std::time::Duration::from_secs(60));
         for _ in 0..5 {
-            assert!(limiter.check());
+            assert!(limiter.check(ip("127.0.0.1")));
         }
     }
 
@@ -1099,19 +1134,42 @@ mod tests {
     fn rate_limiter_rejects_over_budget() {
         let limiter = super::RateLimiter::new(3, std::time::Duration::from_secs(60));
         for _ in 0..3 {
-            assert!(limiter.check());
+            assert!(limiter.check(ip("127.0.0.1")));
         }
-        assert!(!limiter.check());
+        assert!(!limiter.check(ip("127.0.0.1")));
     }
 
     #[test]
     fn rate_limiter_resets_after_window() {
         let limiter = super::RateLimiter::new(2, std::time::Duration::from_millis(50));
-        assert!(limiter.check());
-        assert!(limiter.check());
-        assert!(!limiter.check());
+        assert!(limiter.check(ip("127.0.0.1")));
+        assert!(limiter.check(ip("127.0.0.1")));
+        assert!(!limiter.check(ip("127.0.0.1")));
         std::thread::sleep(std::time::Duration::from_millis(60));
-        assert!(limiter.check());
+        assert!(limiter.check(ip("127.0.0.1")));
+    }
+
+    #[test]
+    fn rate_limiter_per_ip_independent_budgets() {
+        // IP A exhausts its budget; IP B should still be allowed
+        let limiter = super::RateLimiter::new(2, std::time::Duration::from_secs(60));
+        assert!(limiter.check(ip("10.0.0.1")));
+        assert!(limiter.check(ip("10.0.0.1")));
+        assert!(!limiter.check(ip("10.0.0.1"))); // A exhausted
+        assert!(limiter.check(ip("10.0.0.2"))); // B unaffected
+        assert!(limiter.check(ip("10.0.0.2")));
+        assert!(!limiter.check(ip("10.0.0.2"))); // B also exhausted now
+    }
+
+    #[test]
+    fn rate_limiter_evicts_stale_ip_entries() {
+        // After window expires, stale IPs should be evictable to make room for new ones
+        let limiter = super::RateLimiter::new(1, std::time::Duration::from_millis(30));
+        assert!(limiter.check(ip("10.0.0.1")));
+        assert!(!limiter.check(ip("10.0.0.1"))); // exhausted within window
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        // After window, same IP gets a fresh budget
+        assert!(limiter.check(ip("10.0.0.1")));
     }
 
     #[tokio::test]
