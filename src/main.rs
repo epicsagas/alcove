@@ -282,7 +282,13 @@ fn main() -> Result<()> {
                     println!("  ✓ Indexed vault '{}' ({} files)", name, files);
                 } else {
                     let result = index::build_all_vault_indexes()?;
-                    println!("  ✓ {}", result["summary"].as_str().unwrap_or("done"));
+                    let indexed = result["vaults_indexed"].as_u64().unwrap_or(0);
+                    let failed = result["vaults_failed"].as_u64().unwrap_or(0);
+                    if failed > 0 {
+                        println!("  ✓ Indexed {} vault(s), {} failed", indexed, failed);
+                    } else {
+                        println!("  ✓ Indexed {} vault(s)", indexed);
+                    }
                 }
                 Ok(())
             }

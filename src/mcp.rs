@@ -555,6 +555,9 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             .get("query")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        if query.len() > 8192 {
+            return RpcResponse::err(id, -32002, "Query too long (max 8192 bytes)".to_string());
+        }
         let vault_name = call
             .arguments
             .get("vault")
@@ -603,6 +606,19 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             });
             return RpcResponse::ok(id, mcp_text_result(&result));
         } else {
+            // Validate vault name: single normal path component (prevent traversal)
+            {
+                use std::path::Component;
+                let p = std::path::Path::new(vault_name);
+                let components: Vec<_> = p.components().collect();
+                if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
+                    return RpcResponse::err(
+                        id,
+                        -32002,
+                        format!("Invalid vault name: '{vault_name}'"),
+                    );
+                }
+            }
             let vault_path = crate::vault::vaults_root().join(vault_name);
             if !vault_path.is_dir() {
                 return RpcResponse::err(
