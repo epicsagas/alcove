@@ -378,7 +378,12 @@ fn detect_proxy_target() -> Option<String> {
         .unwrap_or(("127.0.0.1", 8080));
     let base = format!("http://{host}:{port}");
 
-    match ureq::get(&format!("{base}/health")).call() {
+    match ureq::get(&format!("{base}/health"))
+        .config()
+        .timeout_global(Some(std::time::Duration::from_secs(2)))
+        .build()
+        .call()
+    {
         Ok(resp) if resp.status() == 200 => {
             eprintln!("[alcove] proxy mode → {base}");
             Some(base)
@@ -397,7 +402,20 @@ fn proxy_request(base: &str, line: &str, token: Option<&str>) -> Option<String> 
     match req.send(line) {
         Ok(mut resp) if resp.status() == 200 => resp.body_mut().read_to_string().ok(),
         Ok(resp) if resp.status() == 204 => None, // notification, no response
-        _ => None,
+        _ => {
+            // If the request has an id, return a JSON-RPC error so the client isn't left hanging
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                if let Some(id) = v.get("id") {
+                    let err = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {"code": -32603, "message": "Proxy request to background server failed"}
+                    });
+                    return Some(err.to_string());
+                }
+            }
+            None
+        }
     }
 }
 

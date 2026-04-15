@@ -93,6 +93,56 @@ pub struct ErrorResponse {
 }
 
 // ---------------------------------------------------------------------------
+// In-memory sliding-window rate limiter
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "alcove-server")]
+#[derive(Clone)]
+pub struct RateLimiter {
+    state: Arc<std::sync::Mutex<RateLimiterInner>>,
+    max_requests: usize,
+    window: std::time::Duration,
+}
+
+#[cfg(feature = "alcove-server")]
+struct RateLimiterInner {
+    timestamps: std::collections::VecDeque<std::time::Instant>,
+}
+
+#[cfg(feature = "alcove-server")]
+impl RateLimiter {
+    pub fn new(max_requests: usize, window: std::time::Duration) -> Self {
+        Self {
+            state: Arc::new(std::sync::Mutex::new(RateLimiterInner {
+                timestamps: std::collections::VecDeque::new(),
+            })),
+            max_requests,
+            window,
+        }
+    }
+
+    /// Returns `true` if the request is allowed, `false` if rate-limited.
+    pub fn check(&self) -> bool {
+        let now = std::time::Instant::now();
+        let mut inner = self.state.lock().unwrap();
+        // Remove timestamps outside the sliding window
+        while let Some(&front) = inner.timestamps.front() {
+            if now.duration_since(front) > self.window {
+                inner.timestamps.pop_front();
+            } else {
+                break;
+            }
+        }
+        if inner.timestamps.len() >= self.max_requests {
+            false
+        } else {
+            inner.timestamps.push_back(now);
+            true
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Server state
 // ---------------------------------------------------------------------------
 
@@ -104,6 +154,8 @@ pub struct ServerState {
     /// Shared embedding service — initialised once at startup, reused per request.
     #[cfg(feature = "alcove-full")]
     pub embedding_service: Option<Arc<crate::embedding::EmbeddingService>>,
+    /// Per-endpoint rate limiter for search routes (sliding window).
+    pub search_rate_limiter: RateLimiter,
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +228,16 @@ async fn handle_search(
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
     check_auth(&state, &headers)?;
 
+    if !state.search_rate_limiter.check() {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                error: "Rate limit exceeded. Try again later.".to_string(),
+                code: 429,
+            }),
+        ));
+    }
+
     if req.q.trim().is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -230,10 +292,11 @@ async fn handle_search(
         if vault_name == "*" {
             // Search all vaults — collect results from each, merge by score
             let vaults = crate::vault::list_vaults().map_err(|e| {
+                eprintln!("[alcove] Failed to list vaults: {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
-                        error: format!("Failed to list vaults: {e}"),
+                        error: "Internal server error".into(),
                         code: 500,
                     }),
                 )
@@ -254,10 +317,11 @@ async fn handle_search(
 
             while let Some(res) = join_set.join_next().await {
                 let (vault_name, result) = res.map_err(|e| {
+                    eprintln!("[alcove] Vault search task failed: {e}");
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(ErrorResponse {
-                            error: format!("Vault search failed: {e}"),
+                            error: "Internal server error".into(),
                             code: 500,
                         }),
                     )
@@ -331,19 +395,21 @@ async fn handle_search(
         })
         .await
         .map_err(|e| {
+            eprintln!("[alcove] Vault search task failed: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: format!("Vault search failed: {e}"),
+                    error: "Internal server error".into(),
                     code: 500,
                 }),
             )
         })?
         .map_err(|e| {
+            eprintln!("[alcove] Vault search failed: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: format!("Vault search failed: {e}"),
+                    error: "Internal server error".into(),
                     code: 500,
                 }),
             )
@@ -662,6 +728,7 @@ pub async fn run_server(
         token,
         #[cfg(feature = "alcove-full")]
         embedding_service,
+        search_rate_limiter: RateLimiter::new(60, std::time::Duration::from_secs(60)),
     });
 
     let app = Router::new()
@@ -801,6 +868,7 @@ mod tests {
             token: None,
             #[cfg(feature = "alcove-full")]
             embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         })
     }
 
@@ -959,6 +1027,7 @@ mod tests {
             token: None,
             #[cfg(feature = "alcove-full")]
             embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         });
         let headers = HeaderMap::new();
         assert!(check_auth(&state, &headers).is_ok());
@@ -971,6 +1040,7 @@ mod tests {
             token: Some("my-secret".to_string()),
             #[cfg(feature = "alcove-full")]
             embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         });
         let headers = HeaderMap::new();
         assert!(check_auth(&state, &headers).is_err());
@@ -983,10 +1053,65 @@ mod tests {
             token: Some("my-secret".to_string()),
             #[cfg(feature = "alcove-full")]
             embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         });
         let mut headers = HeaderMap::new();
         headers.insert("authorization", "Bearer my-secret".parse().unwrap());
         assert!(check_auth(&state, &headers).is_ok());
+    }
+
+    // -----------------------------------------------------------------------
+    // Error sanitization tests — 500-level errors must NOT leak details
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn error_response_500_should_not_contain_internal_paths() {
+        // All 500-level ErrorResponse messages used in the codebase should be
+        // generic strings that do not include dynamic error details.
+        let generic_msgs = vec![
+            "Internal server error",
+            "Search failed",
+            "Internal search error",
+        ];
+        for msg in &generic_msgs {
+            // Must NOT contain filesystem path fragments
+            assert!(!msg.contains('/'), "500 error message leaks a path: {msg}");
+            assert!(
+                !msg.contains("Failed to"),
+                "500 error should not expose failure context: {msg}"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Rate limiter tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn rate_limiter_allows_within_budget() {
+        let limiter = super::RateLimiter::new(5, std::time::Duration::from_secs(60));
+        for _ in 0..5 {
+            assert!(limiter.check());
+        }
+    }
+
+    #[test]
+    fn rate_limiter_rejects_over_budget() {
+        let limiter = super::RateLimiter::new(3, std::time::Duration::from_secs(60));
+        for _ in 0..3 {
+            assert!(limiter.check());
+        }
+        assert!(!limiter.check());
+    }
+
+    #[test]
+    fn rate_limiter_resets_after_window() {
+        let limiter = super::RateLimiter::new(2, std::time::Duration::from_millis(50));
+        assert!(limiter.check());
+        assert!(limiter.check());
+        assert!(!limiter.check());
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        assert!(limiter.check());
     }
 
     #[tokio::test]
@@ -996,6 +1121,7 @@ mod tests {
             token: Some("my-secret".to_string()),
             #[cfg(feature = "alcove-full")]
             embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         });
         let mut headers = HeaderMap::new();
         headers.insert("authorization", "Bearer wrong-token".parse().unwrap());

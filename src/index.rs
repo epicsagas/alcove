@@ -163,12 +163,17 @@ fn try_acquire_lock(docs_root: &Path) -> bool {
     if lock_path.exists() && is_lock_stale(&lock_path) {
         let _ = std::fs::remove_file(&lock_path);
     }
-    if std::fs::File::create_new(&lock_path).is_ok() {
-        // Write PID so we can detect stale locks from dead processes
-        let _ = std::fs::write(&lock_path, std::process::id().to_string());
-        return true;
+    // create_new is atomic (O_CREAT | O_EXCL) — if two processes race past the
+    // stale-check above, only one will succeed here.
+    match std::fs::File::create_new(&lock_path) {
+        Ok(mut f) => {
+            // Write PID directly to the opened fd — no window with empty content.
+            use std::io::Write;
+            let _ = write!(f, "{}", std::process::id());
+            true
+        }
+        Err(_) => false,
     }
-    false
 }
 
 fn release_lock(docs_root: &Path) {

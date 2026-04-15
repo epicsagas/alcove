@@ -501,7 +501,44 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     };
 
     let docs_root = match std::env::var("DOCS_ROOT") {
-        Ok(v) => PathBuf::from(v),
+        Ok(v) => {
+            let path = PathBuf::from(&v);
+            const BLOCKED: &[&str] = &[
+                "/etc",
+                "/proc",
+                "/sys",
+                "/dev",
+                "/bin",
+                "/sbin",
+                "/lib",
+                "/lib64",
+                "/usr/bin",
+                "/usr/sbin",
+                "/usr/lib",
+                "/boot",
+                "/root",
+                "/run",
+                "/var/run",
+                "/tmp",
+                "/private/etc",
+                "/private/var/run",
+                "/private/var/db",
+            ];
+            let is_blocked = if let Ok(canonical) = path.canonicalize() {
+                BLOCKED.iter().any(|b| canonical.starts_with(b))
+            } else {
+                let raw = path.to_string_lossy();
+                BLOCKED.iter().any(|b| raw.starts_with(b))
+            };
+            if is_blocked {
+                return RpcResponse::err(
+                    id,
+                    -32000,
+                    "DOCS_ROOT points to a restricted system directory.".into(),
+                );
+            }
+            path
+        }
         Err(_) => match load_config().docs_root() {
             Some(p) if p.is_dir() => p,
             _ => {

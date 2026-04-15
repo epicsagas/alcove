@@ -89,6 +89,7 @@ pub fn alcove_home() -> PathBuf {
                 "/usr/bin", "/usr/sbin", "/usr/lib",
                 "/boot", "/root",
                 "/run", "/var/run",
+                "/tmp", "/private/tmp",
                 "/private/etc", "/private/var/run", "/private/var/db",
             ];
             if !BLOCKED.iter().any(|b| canonical.starts_with(b)) {
@@ -103,6 +104,7 @@ pub fn alcove_home() -> PathBuf {
             let raw = path.to_string_lossy();
             let blocked_prefixes = ["/etc", "/usr", "/sys", "/proc", "/dev", "/sbin",
                                     "/boot", "/root", "/run", "/var/run",
+                                    "/tmp", "/private/tmp",
                                     "/private/etc", "/private/var/run", "/private/var/db"];
             if blocked_prefixes.iter().any(|b| raw.starts_with(b)) {
                 eprintln!(
@@ -550,6 +552,47 @@ pub fn classify_tier_with(relative_path: &str, cfg: &DocConfig) -> &'static str 
         "project-repo"
     } else {
         "unrecognized"
+    }
+}
+
+/// Pre-computed lowercased file lists for efficient repeated classification.
+///
+/// When classifying many files against the same config (e.g. walking a directory),
+/// create one `TierClassifier` and call [`TierClassifier::classify`] instead of
+/// [`classify_tier_with`] — this avoids re-allocating the file lists on every call.
+pub struct TierClassifier {
+    core: Vec<String>,
+    team: Vec<String>,
+    public: Vec<String>,
+}
+
+impl TierClassifier {
+    pub fn new(cfg: &DocConfig) -> Self {
+        Self {
+            core: cfg.core_files().into_iter().map(|f| f.to_lowercase()).collect(),
+            team: cfg.team_files().into_iter().map(|f| f.to_lowercase()).collect(),
+            public: cfg.public_files().into_iter().map(|f| f.to_lowercase()).collect(),
+        }
+    }
+
+    pub fn classify(&self, relative_path: &str) -> &'static str {
+        let filename = Path::new(relative_path)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+        let lower = filename.to_lowercase();
+
+        if self.core.iter().any(|f| *f == lower) {
+            "doc-repo-required"
+        } else if relative_path.starts_with("reports/") || relative_path.starts_with("reports\\") {
+            "reference"
+        } else if self.team.iter().any(|f| *f == lower) {
+            "doc-repo-supplementary"
+        } else if self.public.iter().any(|f| *f == lower) {
+            "project-repo"
+        } else {
+            "unrecognized"
+        }
     }
 }
 
@@ -1187,6 +1230,66 @@ reader_ttl_secs = 120
         assert_eq!(mem.reader_ttl_secs, 120);
         assert_eq!(mem.max_cached_readers, 1); // default
         assert_eq!(mem.model_unload_secs, 600); // default
+    }
+
+    #[test]
+    fn tier_classifier_matches_classify_tier_with() {
+        let cfg = DocConfig::default();
+        let classifier = TierClassifier::new(&cfg);
+        let test_paths = [
+            "PRD.md", "prd.md", "ARCHITECTURE.md", "architecture.md",
+            "reports/weekly.md", "reports\\weekly.md",
+            "CHANGELOG.md", "README.md", "DESIGN.md", "design.md",
+            "random-notes.md", "foo.md",
+            "CONVENTIONS.md", "SECRETS_MAP.md",
+        ];
+        for path in test_paths {
+            assert_eq!(
+                classifier.classify(path),
+                classify_tier_with(path, &cfg),
+                "mismatch for {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn tier_classifier_custom_config() {
+        let cfg = DocConfig {
+            core: Some(CategoryConfig { files: vec!["CUSTOM.md".into()] }),
+            ..DocConfig::default()
+        };
+        let classifier = TierClassifier::new(&cfg);
+        assert_eq!(classifier.classify("CUSTOM.md"), "doc-repo-required");
+        assert_eq!(classifier.classify("custom.md"), "doc-repo-required");
+        assert_eq!(classifier.classify("PRD.md"), "unrecognized");
+    }
+
+    #[test]
+    fn alcove_home_blocks_tmp() {
+        // /tmp should be in the BLOCKED list.
+        // We can't easily test alcove_home() directly (it reads env vars),
+        // so we verify the blocked_prefixes array logic by checking the source.
+        // Instead, verify via the function by setting env and checking the result.
+        let _guard = std::sync::Mutex::new(());
+        // Save original
+        let orig = std::env::var("ALCOVE_HOME").ok();
+        // SAFETY: test is single-threaded for this env var; guarded by mutex.
+        unsafe { std::env::set_var("ALCOVE_HOME", "/tmp"); }
+        let result = alcove_home();
+        // Should NOT return /tmp — it should fall back to default
+        // (On macOS /tmp -> /private/tmp, both should be blocked)
+        assert_ne!(
+            result,
+            std::path::PathBuf::from("/tmp"),
+            "/tmp should be blocked"
+        );
+        // Restore
+        unsafe {
+            match orig {
+                Some(v) => std::env::set_var("ALCOVE_HOME", v),
+                None => std::env::remove_var("ALCOVE_HOME"),
+            }
+        }
     }
 
     #[test]

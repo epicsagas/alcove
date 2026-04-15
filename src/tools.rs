@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use walkdir::WalkDir;
 
 use crate::config::{
-    classify_tier_with, effective_config, is_doc_file, load_config, suggest_categorization,
+    TierClassifier, effective_config, is_doc_file, load_config, suggest_categorization,
 };
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,11 @@ pub fn resolve_project(docs_root: &Path) -> Option<ResolvedProject> {
     // 1. Explicit env override
     if let Ok(name) = env::var("MCP_PROJECT_NAME") {
         let name = name.trim().to_string();
-        if !name.is_empty() && docs_root.join(&name).is_dir() {
+        let is_single_component = std::path::Path::new(&name)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+            && std::path::Path::new(&name).components().count() == 1;
+        if !name.is_empty() && is_single_component && docs_root.join(&name).is_dir() {
             let repo_path = detect_repo_path(&name);
             return Some(ResolvedProject {
                 name,
@@ -130,6 +134,7 @@ pub fn tool_overview(
     let cfg = repo_path
         .map(effective_config)
         .unwrap_or_else(|| load_config().clone());
+    let classifier = TierClassifier::new(&cfg);
 
     let mut bridge_files = Vec::new();
 
@@ -153,7 +158,7 @@ pub fn tool_overview(
         bridge_files.push(json!({
             "path": rel,
             "size_bytes": meta.len(),
-            "tier": classify_tier_with(&rel, &cfg),
+            "tier": classifier.classify(&rel),
         }));
     }
 
@@ -168,7 +173,7 @@ pub fn tool_overview(
                 repo_files.push(json!({
                     "path": filename,
                     "size_bytes": size,
-                    "tier": classify_tier_with(filename, &cfg),
+                    "tier": classifier.classify(filename),
                 }));
             }
         }
@@ -192,7 +197,7 @@ pub fn tool_overview(
                 repo_files.push(json!({
                     "path": rel,
                     "size_bytes": size,
-                    "tier": classify_tier_with(&rel, &cfg),
+                    "tier": classifier.classify(&rel),
                 }));
             }
         }
@@ -1029,6 +1034,7 @@ fn scan_repo_docs(
         return (repo_docs, repo_path_str);
     };
 
+    let classifier = TierClassifier::new(cfg);
     repo_path_str = rp.to_string_lossy().to_string();
 
     for entry in std::fs::read_dir(rp).into_iter().flatten().flatten() {
@@ -1037,7 +1043,7 @@ fn scan_repo_docs(
             let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
             let rel = filename.to_string();
             let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-            let tier = classify_tier_with(&rel, cfg);
+            let tier = classifier.classify(&rel);
             repo_docs.push(json!({
                 "path": rel,
                 "filename": filename,
@@ -1065,7 +1071,7 @@ fn scan_repo_docs(
                 .to_string();
             let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
             let size = entry.metadata().ok().map(|m| m.len()).unwrap_or(0);
-            let tier = classify_tier_with(&rel, cfg);
+            let tier = classifier.classify(&rel);
             repo_docs.push(json!({
                 "path": rel,
                 "filename": filename,
@@ -1131,6 +1137,7 @@ pub fn tool_audit(
 
     let mut supplementary_files = Vec::new();
     let mut unrecognized_files = Vec::new();
+    let classifier = TierClassifier::new(&cfg);
 
     for entry in WalkDir::new(project_root)
         .into_iter()
@@ -1158,7 +1165,7 @@ pub fn tool_audit(
         }
 
         let meta = entry.metadata()?;
-        let tier = classify_tier_with(&rel, &cfg);
+        let tier = classifier.classify(&rel);
 
         match tier {
             "doc-repo-supplementary" | "project-repo" => {
