@@ -169,6 +169,11 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                     "limit": {
                         "type": "integer",
                         "description": "Max results (default: 20)"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["grep"],
+                        "description": "Override search mode. Options: \"grep\" (regex-only search, skips BM25 index). Omit for default hybrid search."
                     }
                 },
                 "required": ["query"]
@@ -697,7 +702,6 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             .get("scope")
             .and_then(|v| v.as_str())
             .unwrap_or("project");
-        // Accept mode as hidden override (not in schema, but still honored if passed)
         let mode_override = call.arguments.get("mode").and_then(|v| v.as_str());
 
         let is_global = scope == "global";
@@ -1284,7 +1288,7 @@ mod tests {
     }
 
     #[test]
-    fn search_schema_has_scope_but_no_mode() {
+    fn search_schema_has_scope_and_mode() {
         let resp = handle_tools_list(Some(json!(1)));
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
         let search = tools
@@ -1294,13 +1298,16 @@ mod tests {
         let props = &search["inputSchema"]["properties"];
         assert!(props["scope"].is_object(), "scope param should exist");
         assert!(
-            !props["mode"].is_object(),
-            "mode param should NOT be in schema (auto selection)"
+            props["mode"].is_object(),
+            "mode param should be documented in schema"
         );
         // Check scope enum values
         let scope_enum = props["scope"]["enum"].as_array().unwrap();
         assert!(scope_enum.contains(&json!("project")));
         assert!(scope_enum.contains(&json!("global")));
+        // Check mode enum value
+        let mode_enum = props["mode"]["enum"].as_array().unwrap();
+        assert!(mode_enum.contains(&json!("grep")));
     }
 
     #[test]
@@ -1381,7 +1388,7 @@ mod tests {
         crate::index::build_index_unlocked(tmp.path()).unwrap();
 
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
-        // Explicitly force grep mode (hidden param)
+        // Explicitly force grep mode via documented "mode" parameter
         let req = make_req(
             "tools/call",
             json!({

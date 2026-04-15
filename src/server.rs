@@ -214,6 +214,7 @@ fn constant_time_eq_str(a: &str, b: &str) -> bool {
 fn is_allowed_origin(origin: &[u8]) -> bool {
     let s = std::str::from_utf8(origin).unwrap_or("");
     s == "http://localhost"
+        || s == "http://127.0.0.1"
         || s.strip_prefix("http://localhost:").and_then(|p| p.parse::<u16>().ok()).is_some()
         || s.strip_prefix("http://127.0.0.1:").and_then(|p| p.parse::<u16>().ok()).is_some()
 }
@@ -397,8 +398,9 @@ async fn handle_search(
                     .partial_cmp(&a.score)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            let truncated = any_truncated || all_results.len() > limit;
+            let original_len = all_results.len();
             all_results.truncate(limit);
+            let truncated = any_truncated || original_len > limit;
 
             return Ok(Json(SearchResponse {
                 query: req.q,
@@ -810,9 +812,18 @@ pub async fn run_server(
 #[cfg(feature = "alcove-server")]
 async fn mcp_dispatch(
     State(state): State<Arc<ServerState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     body: String,
 ) -> (StatusCode, Json<Value>) {
+    // Rate limit check (same as /search endpoints)
+    if !state.search_rate_limiter.check(peer.ip()) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({"error": "Too many requests"})),
+        );
+    }
+
     // Auth check (reuse existing token validation)
     if let Some(ref expected) = state.token {
         let provided = headers

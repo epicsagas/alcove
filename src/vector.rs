@@ -183,14 +183,11 @@ impl VectorStore {
         // Atomically clear stale vectors and update metadata in one transaction.
         {
             let tx = conn.transaction()?;
-            if let Some(em) = existing_model
-                && em != model {
-                    tx.execute("DELETE FROM vectors", [])?;
-                }
-            if let Some(ed) = existing_dim
-                && ed != dimension {
-                    tx.execute("DELETE FROM vectors", [])?;
-                }
+            let model_changed = existing_model.map_or(false, |em| em != model);
+            let dim_changed = existing_dim.map_or(false, |ed| ed != dimension);
+            if model_changed || dim_changed {
+                tx.execute("DELETE FROM vectors", [])?;
+            }
             tx.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('model', ?1)",
                 params![model],
@@ -514,7 +511,7 @@ impl VectorStore {
                 return Ok(Vec::new());
             }
 
-            let ef_build = (limit * 2).max(50);
+            let ef_build = 200;
             let hnsw = Hnsw::<f32, DistCosine>::new(
                 16,
                 vectors.len().max(1),
@@ -652,7 +649,7 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let mag_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let mag_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
 
-    if mag_a == 0.0 || mag_b == 0.0 {
+    if mag_a < f32::EPSILON || mag_b < f32::EPSILON {
         return 0.0;
     }
 

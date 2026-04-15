@@ -501,8 +501,14 @@ impl EmbeddingService {
             match TextEmbedding::try_new(options) {
                 Ok(embedding) => {
                     set_state!(ModelState::Downloading { progress_pct: 90 });
+                    // Acquire state lock FIRST, then session lock — same order as
+                    // remove_cache() and try_unload_if_idle() — to prevent ABBA deadlock.
+                    let mut state_guard =
+                        state_arc.lock().unwrap_or_else(|e| e.into_inner());
                     *session_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(embedding);
-                    set_state_and_notify!(ModelState::Ready);
+                    *state_guard = ModelState::Ready;
+                    drop(state_guard);
+                    cvar_arc.notify_all();
                 }
                 Err(e) => {
                     set_state_and_notify!(ModelState::Failed(e.to_string()));
