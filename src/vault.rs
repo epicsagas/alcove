@@ -37,8 +37,10 @@ fn validate_vault_name(name: &str) -> Result<()> {
 }
 
 /// Count `.md` files recursively under a directory.
+/// `follow_links(false)` prevents infinite loops from symlink cycles.
 fn count_md_files(dir: &Path) -> usize {
     WalkDir::new(dir)
+        .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
