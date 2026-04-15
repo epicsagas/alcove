@@ -3,6 +3,10 @@
 //! Stores document chunk embeddings as BLOBs and computes cosine similarity in Rust.
 //! This avoids complex FFI dependencies while providing efficient vector search.
 
+#[cfg(feature = "alcove-full")]
+use std::cmp::Ordering;
+#[cfg(feature = "alcove-full")]
+use std::collections::BinaryHeap;
 use std::path::Path;
 
 #[cfg(feature = "alcove-full")]
@@ -25,7 +29,7 @@ pub struct VectorMeta {
 
 /// Search result with similarity score
 #[cfg(feature = "alcove-full")]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VectorResult {
     /// Project name
     pub project: String,
@@ -35,6 +39,36 @@ pub struct VectorResult {
     pub chunk_id: u64,
     /// Cosine similarity score (0.0 to 1.0)
     pub score: f32,
+}
+
+/// Wrapper for min-heap ordering used by `search_linear` top-K selection.
+///
+/// `BinaryHeap` is a max-heap by default; reversing `Ord` makes it a min-heap
+/// so the *lowest* score sits at the top and can be cheaply evicted once the
+/// heap exceeds the desired limit.
+#[cfg(feature = "alcove-full")]
+#[derive(PartialEq)]
+struct MinScoreEntry {
+    score: f32,
+    result: VectorResult,
+}
+
+#[cfg(feature = "alcove-full")]
+impl Eq for MinScoreEntry {}
+
+#[cfg(feature = "alcove-full")]
+impl PartialOrd for MinScoreEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[cfg(feature = "alcove-full")]
+impl Ord for MinScoreEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reversed: smallest score at the top (min-heap)
+        other.score.partial_cmp(&self.score).unwrap_or(Ordering::Equal)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -334,15 +368,34 @@ impl VectorStore {
         limit: usize,
         project_filter: Option<&str>,
     ) -> Result<Vec<VectorResult>> {
-        // Process rows one at a time to avoid loading all embeddings into memory.
-        // We maintain a top-K buffer: collect all candidates then sort+truncate.
-        // The key improvement is that we do not collect() the full row set before
-        // scoring — each blob is decoded, scored, and discarded immediately.
-        let mut results: Vec<VectorResult> = Vec::new();
+        // Use a BinaryHeap (min-heap via reversed Ord) to maintain only the top-K
+        // results.  Each blob is decoded, scored, and discarded immediately — no
+        // full-set collect() before scoring.
+        let mut heap: BinaryHeap<MinScoreEntry> = BinaryHeap::with_capacity(limit + 1);
+
+        /// Score a single row and push into the min-heap, evicting the lowest
+        /// entry when the heap exceeds `limit`.
+        #[inline]
+        fn push_if_positive(
+            heap: &mut BinaryHeap<MinScoreEntry>,
+            limit: usize,
+            project: String,
+            file: String,
+            chunk_id: u64,
+            score: f32,
+        ) {
+            if score > 0.0 {
+                heap.push(MinScoreEntry {
+                    score,
+                    result: VectorResult { project, file, chunk_id, score },
+                });
+                if heap.len() > limit {
+                    heap.pop(); // evict the lowest score
+                }
+            }
+        }
 
         // Two separate prepare+query branches to keep rusqlite param types clean.
-        // Rows are processed one at a time: each blob is decoded, scored, and
-        // dropped immediately — no full-set collect() before scoring.
         if let Some(project) = project_filter {
             let mut stmt = self.conn.prepare(
                 "SELECT project, file, chunk_id, embedding \
@@ -357,12 +410,10 @@ impl VectorStore {
                 ))
             })?;
             for row_result in mapped {
-                let (project, file, chunk_id, blob) = row_result?;
+                let (proj, file, chunk_id, blob) = row_result?;
                 let embedding = Self::decode_embedding(&blob);
                 let score = cosine_similarity(query, &embedding);
-                if score > 0.0 {
-                    results.push(VectorResult { project, file, chunk_id, score });
-                }
+                push_if_positive(&mut heap, limit, proj, file, chunk_id, score);
             }
         } else {
             let mut stmt = self.conn.prepare(
@@ -377,18 +428,16 @@ impl VectorStore {
                 ))
             })?;
             for row_result in mapped {
-                let (project, file, chunk_id, blob) = row_result?;
+                let (proj, file, chunk_id, blob) = row_result?;
                 let embedding = Self::decode_embedding(&blob);
                 let score = cosine_similarity(query, &embedding);
-                if score > 0.0 {
-                    results.push(VectorResult { project, file, chunk_id, score });
-                }
+                push_if_positive(&mut heap, limit, proj, file, chunk_id, score);
             }
         }
 
-        // Sort by score descending and keep only top-K results.
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-        results.truncate(limit);
+        // Convert heap to a Vec sorted by score descending.
+        let mut results: Vec<VectorResult> = heap.into_iter().map(|e| e.result).collect();
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
 
         Ok(results)
     }

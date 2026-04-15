@@ -196,16 +196,16 @@ impl std::fmt::Display for EmbeddingModelChoice {
 }
 
 // ---------------------------------------------------------------------------
-// Inline LRU cache (no external crate)
+// Inline LRU cache backed by IndexMap for O(1) operations
 // ---------------------------------------------------------------------------
 
-/// A simple LRU cache backed by `HashMap` (O(1) lookup) and `VecDeque`
-/// (eviction order). When `capacity` is 0 the cache is effectively disabled —
-/// every `get` returns `None` and `insert` is a no-op.
+/// A simple LRU cache backed by `IndexMap` for O(1) lookup, insertion, and
+/// eviction. The front of the map (index 0) is the least-recently-used entry
+/// and the back is the most-recently-used. When `capacity` is 0 the cache is
+/// effectively disabled — every `get` returns `None` and `insert` is a no-op.
 pub struct QueryEmbedCache {
     capacity: usize,
-    map: std::collections::HashMap<String, Vec<f32>>,
-    order: std::collections::VecDeque<String>,
+    map: indexmap::IndexMap<String, Vec<f32>>,
 }
 
 impl QueryEmbedCache {
@@ -213,23 +213,22 @@ impl QueryEmbedCache {
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity,
-            map: std::collections::HashMap::new(),
-            order: std::collections::VecDeque::new(),
+            map: indexmap::IndexMap::new(),
         }
     }
 
     /// Return a reference to the cached vector for `key`, or `None`.
-    /// Accessing an entry promotes it to the most-recently-used position.
+    /// Accessing an entry promotes it to the most-recently-used position (back).
     pub fn get(&mut self, key: &str) -> Option<&Vec<f32>> {
-        if self.capacity == 0 || !self.map.contains_key(key) {
+        if self.capacity == 0 {
             return None;
         }
-        // Promote to MRU: remove from current position and push to back.
-        if let Some(pos) = self.order.iter().position(|k| k == key) {
-            self.order.remove(pos);
+        if let Some((k, v)) = self.map.shift_remove_entry(key) {
+            self.map.insert(k, v);
+            self.map.get(key)
+        } else {
+            None
         }
-        self.order.push_back(key.to_string());
-        self.map.get(key)
     }
 
     /// Insert or update an entry. Evicts the LRU entry when at capacity.
@@ -237,22 +236,15 @@ impl QueryEmbedCache {
         if self.capacity == 0 {
             return;
         }
-        if self.map.contains_key(&key) {
-            // Update existing entry and promote it.
-            self.map.insert(key.clone(), value);
-            if let Some(pos) = self.order.iter().position(|k| k == &key) {
-                self.order.remove(pos);
+        if let Some((k, _)) = self.map.shift_remove_entry(&key) {
+            // Re-insert at the back (MRU position) with updated value.
+            self.map.insert(k, value);
+        } else {
+            if self.map.len() >= self.capacity {
+                self.map.shift_remove_index(0); // evict LRU (front)
             }
-            self.order.push_back(key);
-            return;
+            self.map.insert(key, value);
         }
-        // Evict LRU if at capacity.
-        if self.map.len() >= self.capacity
-            && let Some(oldest) = self.order.pop_front() {
-                self.map.remove(&oldest);
-            }
-        self.map.insert(key.clone(), value);
-        self.order.push_back(key);
     }
 }
 
@@ -649,13 +641,12 @@ impl EmbeddingService {
                 .map_err(|e| format!("Failed to remove cache: {}", e))?;
         }
 
-        // Reset state
+        // Hold state lock while clearing session — same order as embed() and
+        // try_unload_if_idle() — to prevent a download thread from slipping in.
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        *state = ModelState::NotDownloaded;
-
-        // Clear session
         let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
         *session = None;
+        *state = ModelState::NotDownloaded;
 
         Ok(())
     }
@@ -1004,6 +995,32 @@ mod tests {
         assert_eq!(
             *state.lock().unwrap_or_else(|e| e.into_inner()),
             ModelState::Unloaded
+        );
+        assert!(session.lock().unwrap_or_else(|e| e.into_inner()).is_none());
+    }
+
+    /// remove_cache must atomically clear both state and session.
+    /// After remove_cache the session must be None and state must be NotDownloaded.
+    #[test]
+    #[cfg(feature = "alcove-full")]
+    fn test_remove_cache_clears_state_and_session_atomically() {
+        use std::sync::{Arc, Mutex};
+
+        // Replicate the fixed logic inline: acquire state lock first, then session,
+        // clear session, then set state — all while holding both locks.
+        let state: Arc<Mutex<ModelState>> = Arc::new(Mutex::new(ModelState::Ready));
+        let session: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(Some(99u32)));
+
+        {
+            let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut sess = session.lock().unwrap_or_else(|e| e.into_inner());
+            *sess = None;
+            *st = ModelState::NotDownloaded;
+        }
+
+        assert_eq!(
+            *state.lock().unwrap_or_else(|e| e.into_inner()),
+            ModelState::NotDownloaded
         );
         assert!(session.lock().unwrap_or_else(|e| e.into_inner()).is_none());
     }

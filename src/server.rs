@@ -242,14 +242,18 @@ async fn handle_search(
             let mut all_results: Vec<SearchResult> = Vec::new();
             let mut any_truncated = false;
 
+            let mut join_set = tokio::task::JoinSet::new();
             for vi in vaults {
                 let vault_path = vi.path.clone();
+                let vault_name = vi.name.clone();
                 let q = req.q.clone();
-                let result = tokio::task::spawn_blocking(move || {
-                    crate::index::search_vault(&vault_path, &q, limit)
-                })
-                .await
-                .map_err(|e| {
+                join_set.spawn_blocking(move || {
+                    (vault_name, crate::index::search_vault(&vault_path, &q, limit))
+                });
+            }
+
+            while let Some(res) = join_set.join_next().await {
+                let (vault_name, result) = res.map_err(|e| {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(ErrorResponse {
@@ -287,7 +291,7 @@ async fn handle_search(
                         }
                     }
                     Err(e) => {
-                        eprintln!("[alcove] vault search error for '{}': {e}", vi.name);
+                        eprintln!("[alcove] vault search error for '{vault_name}': {e}");
                     }
                 }
             }
@@ -608,10 +612,18 @@ pub async fn run_server(
     token: Option<String>,
 ) -> Result<()> {
     if token.is_none() {
-        eprintln!(
-            "  {} Alcove server running without authentication — anyone on the network can query it.",
-            console::style("WARNING").yellow().bold()
-        );
+        let is_local = host == "127.0.0.1" || host == "localhost" || host == "::1";
+        if is_local {
+            eprintln!(
+                "  {} Alcove server running without authentication on localhost.",
+                console::style("WARNING").yellow().bold()
+            );
+        } else {
+            anyhow::bail!(
+                "Refusing to start without --token on non-localhost address '{host}'. \
+                 Use --token <secret> to enable bearer auth, or bind to 127.0.0.1."
+            );
+        }
     }
 
     #[cfg(feature = "alcove-full")]
@@ -871,5 +883,122 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body.0.code, 400);
         assert!(body.0.error.contains("Cannot specify both"));
+    }
+
+    // -----------------------------------------------------------------------
+    // constant_time_eq_str tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn constant_time_eq_str_equal() {
+        assert!(constant_time_eq_str("secret-token-123", "secret-token-123"));
+    }
+
+    #[test]
+    fn constant_time_eq_str_not_equal() {
+        assert!(!constant_time_eq_str("secret-token-123", "wrong-token-456"));
+    }
+
+    #[test]
+    fn constant_time_eq_str_different_lengths() {
+        assert!(!constant_time_eq_str("short", "much-longer-string"));
+    }
+
+    #[test]
+    fn constant_time_eq_str_empty() {
+        assert!(constant_time_eq_str("", ""));
+        assert!(!constant_time_eq_str("", "notempty"));
+    }
+
+    // -----------------------------------------------------------------------
+    // is_allowed_origin tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn is_allowed_origin_localhost_with_port() {
+        assert!(is_allowed_origin(b"http://localhost:3000"));
+        assert!(is_allowed_origin(b"http://localhost:8080"));
+    }
+
+    #[test]
+    fn is_allowed_origin_localhost_bare() {
+        assert!(is_allowed_origin(b"http://localhost"));
+    }
+
+    #[test]
+    fn is_allowed_origin_127_0_0_1() {
+        assert!(is_allowed_origin(b"http://127.0.0.1:3000"));
+        assert!(is_allowed_origin(b"http://127.0.0.1:8080"));
+    }
+
+    #[test]
+    fn is_allowed_origin_rejects_evil_prefix() {
+        assert!(!is_allowed_origin(b"http://localhost.evil.com"));
+        assert!(!is_allowed_origin(b"http://localhost.evil.com:3000"));
+    }
+
+    #[test]
+    fn is_allowed_origin_rejects_https() {
+        assert!(!is_allowed_origin(b"https://localhost:3000"));
+    }
+
+    #[test]
+    fn is_allowed_origin_rejects_random() {
+        assert!(!is_allowed_origin(b"http://example.com"));
+        assert!(!is_allowed_origin(b""));
+    }
+
+    // -----------------------------------------------------------------------
+    // Auth middleware tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn auth_check_passes_when_no_token_configured() {
+        let state = Arc::new(ServerState {
+            docs_root: std::path::PathBuf::from("/tmp"),
+            token: None,
+            #[cfg(feature = "alcove-full")]
+            embedding_service: None,
+        });
+        let headers = HeaderMap::new();
+        assert!(check_auth(&state, &headers).is_ok());
+    }
+
+    #[tokio::test]
+    async fn auth_check_fails_without_bearer_token() {
+        let state = Arc::new(ServerState {
+            docs_root: std::path::PathBuf::from("/tmp"),
+            token: Some("my-secret".to_string()),
+            #[cfg(feature = "alcove-full")]
+            embedding_service: None,
+        });
+        let headers = HeaderMap::new();
+        assert!(check_auth(&state, &headers).is_err());
+    }
+
+    #[tokio::test]
+    async fn auth_check_passes_with_correct_token() {
+        let state = Arc::new(ServerState {
+            docs_root: std::path::PathBuf::from("/tmp"),
+            token: Some("my-secret".to_string()),
+            #[cfg(feature = "alcove-full")]
+            embedding_service: None,
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer my-secret".parse().unwrap());
+        assert!(check_auth(&state, &headers).is_ok());
+    }
+
+    #[tokio::test]
+    async fn auth_check_fails_with_wrong_token() {
+        let state = Arc::new(ServerState {
+            docs_root: std::path::PathBuf::from("/tmp"),
+            token: Some("my-secret".to_string()),
+            #[cfg(feature = "alcove-full")]
+            embedding_service: None,
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer wrong-token".parse().unwrap());
+        assert!(check_auth(&state, &headers).is_err());
     }
 }

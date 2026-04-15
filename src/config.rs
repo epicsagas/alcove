@@ -99,8 +99,19 @@ pub fn alcove_home() -> PathBuf {
                 canonical.display()
             );
         } else {
-            // Path doesn't exist yet — allow it (will be created on first use)
-            return path;
+            // Path doesn't exist yet — check raw string for blocked patterns.
+            let raw = path.to_string_lossy();
+            let blocked_prefixes = ["/etc", "/usr", "/sys", "/proc", "/dev", "/sbin",
+                                    "/boot", "/root", "/run", "/var/run",
+                                    "/private/etc", "/private/var/run", "/private/var/db"];
+            if blocked_prefixes.iter().any(|b| raw.starts_with(b)) {
+                eprintln!(
+                    "[alcove] ALCOVE_HOME points to restricted path: {} — ignoring",
+                    path.display()
+                );
+            } else {
+                return path;
+            }
         }
     }
     dirs::home_dir()

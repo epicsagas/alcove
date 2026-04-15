@@ -82,6 +82,19 @@ pub fn link_vault(name: &str, target: &Path) -> Result<PathBuf> {
             target.display()
         );
     }
+    // Block symlinks to sensitive system directories
+    let canonical = target.canonicalize()
+        .unwrap_or_else(|_| target.to_path_buf());
+    let canonical_str = canonical.to_string_lossy();
+    let blocked = ["/etc", "/usr", "/sys", "/proc", "/dev", "/sbin",
+                   "/boot", "/root", "/run", "/var/run",
+                   "/private/etc", "/private/var/run", "/private/var/db"];
+    if blocked.iter().any(|b| canonical_str.starts_with(b)) {
+        anyhow::bail!(
+            "Refusing to link vault to sensitive system directory: {}",
+            canonical.display()
+        );
+    }
     let link_path = vaults_root().join(name);
     if link_path.exists() || link_path.symlink_metadata().is_ok() {
         anyhow::bail!("Vault '{}' already exists", name);

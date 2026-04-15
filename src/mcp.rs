@@ -584,11 +584,16 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     );
                 }
             };
+            use rayon::prelude::*;
+            let vault_results: Vec<_> = vaults
+                .par_iter()
+                .filter_map(|vault| {
+                    crate::index::search_vault(&vault.path, query, limit).ok()
+                })
+                .collect();
             let mut all_matches: Vec<Value> = Vec::new();
-            for vault in &vaults {
-                if let Ok(result) = crate::index::search_vault(&vault.path, query, limit)
-                    && let Some(matches) = result["matches"].as_array()
-                {
+            for result in vault_results {
+                if let Some(matches) = result["matches"].as_array() {
                     all_matches.extend(matches.iter().cloned());
                 }
             }
@@ -820,6 +825,7 @@ pub fn mcp_text_result(value: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn rpc_ok_response() {
@@ -959,6 +965,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_tool_call_unknown_tool_with_docs_root() {
         // Unknown tools (other than list_projects / init_project) require
         // project resolution first. With an empty DOCS_ROOT, resolution fails
@@ -1098,6 +1105,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_list_projects_with_valid_docs_root() {
         let tmp = tempfile::tempdir().unwrap();
         // Create a fake project directory inside the temp DOCS_ROOT
@@ -1128,6 +1136,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_rebuild_index() {
         let tmp = tempfile::tempdir().unwrap();
         // Create a project with a doc
@@ -1155,6 +1164,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_search_global_grep() {
         let tmp = tempfile::tempdir().unwrap();
         let p1 = tmp.path().join("alpha");
@@ -1189,6 +1199,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_search_ranked_fallback_to_grep() {
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("falltest");
@@ -1222,6 +1233,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_search_ranked_with_index() {
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("ranked");
@@ -1279,6 +1291,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_search_auto_uses_ranked_when_index_exists() {
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("autoproj");
@@ -1313,6 +1326,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_search_auto_falls_back_to_grep_no_index() {
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("grepproj");
@@ -1343,6 +1357,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_search_force_grep_mode() {
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("forceproj");
@@ -1378,6 +1393,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_check_doc_changes() {
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("changeproj");
@@ -1403,6 +1419,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_check_doc_changes_with_auto_rebuild() {
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("rebuildproj");
@@ -1426,6 +1443,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_search_vault_returns_results() {
         let tmp = tempfile::tempdir().unwrap();
         // Set ALCOVE_HOME so vaults_root() points to our temp dir
@@ -1480,6 +1498,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn dispatch_list_vaults() {
         let tmp = tempfile::tempdir().unwrap();
         // Set ALCOVE_HOME so vaults_root() points to our temp dir
