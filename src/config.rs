@@ -77,9 +77,31 @@ pub const PROJECT_REPO_FILES: &[&str] = &[
 
 /// Returns `~/.alcove` — the canonical home directory for all alcove data.
 /// Respects `ALCOVE_HOME` env var if set (useful for testing and custom installations).
+/// Rejects system-sensitive paths to prevent env var injection when serving remotely.
 pub fn alcove_home() -> PathBuf {
     if let Ok(custom) = std::env::var("ALCOVE_HOME") {
-        return PathBuf::from(custom);
+        let path = PathBuf::from(&custom);
+        // Validate: reject OS-sensitive directories
+        if let Ok(canonical) = path.canonicalize() {
+            const BLOCKED: &[&str] = &[
+                "/etc", "/proc", "/sys", "/dev",
+                "/bin", "/sbin", "/lib", "/lib64",
+                "/usr/bin", "/usr/sbin", "/usr/lib",
+                "/boot", "/root",
+                "/run", "/var/run",
+                "/private/etc", "/private/var/run", "/private/var/db",
+            ];
+            if !BLOCKED.iter().any(|b| canonical.starts_with(b)) {
+                return path;
+            }
+            eprintln!(
+                "[alcove] ALCOVE_HOME points to restricted path: {} — ignoring",
+                canonical.display()
+            );
+        } else {
+            // Path doesn't exist yet — allow it (will be created on first use)
+            return path;
+        }
     }
     dirs::home_dir()
         .map(|p| p.join(".alcove"))
