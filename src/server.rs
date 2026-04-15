@@ -124,7 +124,7 @@ impl RateLimiter {
     /// Returns `true` if the request is allowed, `false` if rate-limited.
     pub fn check(&self) -> bool {
         let now = std::time::Instant::now();
-        let mut inner = self.state.lock().unwrap();
+        let mut inner = self.state.lock().unwrap_or_else(|e| e.into_inner());
         // Remove timestamps outside the sliding window
         while let Some(&front) = inner.timestamps.front() {
             if now.duration_since(front) > self.window {

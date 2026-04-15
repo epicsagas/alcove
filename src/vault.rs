@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use walkdir::WalkDir;
 
-use crate::config::alcove_home;
+use crate::config::{alcove_home, is_blocked_system_path};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -83,16 +83,10 @@ pub fn link_vault(name: &str, target: &Path) -> Result<PathBuf> {
         );
     }
     // Block symlinks to sensitive system directories
-    let canonical = target.canonicalize()
-        .unwrap_or_else(|_| target.to_path_buf());
-    let canonical_str = canonical.to_string_lossy();
-    let blocked = ["/etc", "/usr", "/sys", "/proc", "/dev", "/sbin",
-                   "/boot", "/root", "/run", "/var/run",
-                   "/private/etc", "/private/var/run", "/private/var/db"];
-    if blocked.iter().any(|b| canonical_str.starts_with(b)) {
+    if is_blocked_system_path(target) {
         anyhow::bail!(
             "Refusing to link vault to sensitive system directory: {}",
-            canonical.display()
+            target.display()
         );
     }
     let link_path = vaults_root().join(name);

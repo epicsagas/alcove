@@ -75,45 +75,44 @@ pub const PROJECT_REPO_FILES: &[&str] = &[
 // Alcove home directory helpers
 // ---------------------------------------------------------------------------
 
+/// Canonical list of OS-sensitive paths that alcove must never read from or write to.
+/// Used by `is_blocked_system_path` to guard `ALCOVE_HOME`, vault links, and `DOCS_ROOT`.
+const BLOCKED_SYSTEM_PATHS: &[&str] = &[
+    "/etc", "/proc", "/sys", "/dev",
+    "/bin", "/sbin", "/lib", "/lib64",
+    "/usr/bin", "/usr/sbin", "/usr/lib",
+    "/boot", "/root",
+    "/run", "/var/run",
+    "/tmp", "/private/tmp",
+    "/private/etc", "/private/var/run", "/private/var/db",
+];
+
+/// Returns `true` when `path` refers to (or is a parent of) a sensitive system directory.
+///
+/// Tries to canonicalize first; falls back to a raw prefix check when the path does not
+/// exist yet (e.g. a future `ALCOVE_HOME` that will be created on first run).
+pub fn is_blocked_system_path(path: &Path) -> bool {
+    if let Ok(canonical) = path.canonicalize() {
+        BLOCKED_SYSTEM_PATHS.iter().any(|b| canonical.starts_with(b))
+    } else {
+        let raw = path.to_string_lossy();
+        BLOCKED_SYSTEM_PATHS.iter().any(|b| raw.starts_with(b))
+    }
+}
+
 /// Returns `~/.alcove` — the canonical home directory for all alcove data.
 /// Respects `ALCOVE_HOME` env var if set (useful for testing and custom installations).
 /// Rejects system-sensitive paths to prevent env var injection when serving remotely.
 pub fn alcove_home() -> PathBuf {
     if let Ok(custom) = std::env::var("ALCOVE_HOME") {
         let path = PathBuf::from(&custom);
-        // Validate: reject OS-sensitive directories
-        if let Ok(canonical) = path.canonicalize() {
-            const BLOCKED: &[&str] = &[
-                "/etc", "/proc", "/sys", "/dev",
-                "/bin", "/sbin", "/lib", "/lib64",
-                "/usr/bin", "/usr/sbin", "/usr/lib",
-                "/boot", "/root",
-                "/run", "/var/run",
-                "/tmp", "/private/tmp",
-                "/private/etc", "/private/var/run", "/private/var/db",
-            ];
-            if !BLOCKED.iter().any(|b| canonical.starts_with(b)) {
-                return path;
-            }
+        if is_blocked_system_path(&path) {
             eprintln!(
                 "[alcove] ALCOVE_HOME points to restricted path: {} — ignoring",
-                canonical.display()
+                path.display()
             );
         } else {
-            // Path doesn't exist yet — check raw string for blocked patterns.
-            let raw = path.to_string_lossy();
-            let blocked_prefixes = ["/etc", "/usr", "/sys", "/proc", "/dev", "/sbin",
-                                    "/boot", "/root", "/run", "/var/run",
-                                    "/tmp", "/private/tmp",
-                                    "/private/etc", "/private/var/run", "/private/var/db"];
-            if blocked_prefixes.iter().any(|b| raw.starts_with(b)) {
-                eprintln!(
-                    "[alcove] ALCOVE_HOME points to restricted path: {} — ignoring",
-                    path.display()
-                );
-            } else {
-                return path;
-            }
+            return path;
         }
     }
     dirs::home_dir()

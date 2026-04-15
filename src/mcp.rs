@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::config::load_config;
+use crate::config::{is_blocked_system_path, load_config};
 use crate::tools;
 
 // ---------------------------------------------------------------------------
@@ -503,34 +503,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     let docs_root = match std::env::var("DOCS_ROOT") {
         Ok(v) => {
             let path = PathBuf::from(&v);
-            const BLOCKED: &[&str] = &[
-                "/etc",
-                "/proc",
-                "/sys",
-                "/dev",
-                "/bin",
-                "/sbin",
-                "/lib",
-                "/lib64",
-                "/usr/bin",
-                "/usr/sbin",
-                "/usr/lib",
-                "/boot",
-                "/root",
-                "/run",
-                "/var/run",
-                "/tmp",
-                "/private/etc",
-                "/private/var/run",
-                "/private/var/db",
-            ];
-            let is_blocked = if let Ok(canonical) = path.canonicalize() {
-                BLOCKED.iter().any(|b| canonical.starts_with(b))
-            } else {
-                let raw = path.to_string_lossy();
-                BLOCKED.iter().any(|b| raw.starts_with(b))
-            };
-            if is_blocked {
+            if is_blocked_system_path(&path) {
                 return RpcResponse::err(
                     id,
                     -32000,
@@ -592,6 +565,9 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             .get("query")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        if query.is_empty() {
+            return RpcResponse::err(id, -32602, "Query must not be empty".to_string());
+        }
         if query.len() > 8192 {
             return RpcResponse::err(id, -32002, "Query too long (max 8192 bytes)".to_string());
         }
