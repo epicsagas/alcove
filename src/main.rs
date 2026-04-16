@@ -404,8 +404,9 @@ fn proxy_request(base: &str, line: &str, token: Option<&str>) -> Option<String> 
         Ok(resp) if resp.status() == 204 => None, // notification, no response
         _ => {
             // If the request has an id, return a JSON-RPC error so the client isn't left hanging
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-                if let Some(id) = v.get("id") {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line)
+                && let Some(id) = v.get("id")
+            {
                     let err = serde_json::json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -413,7 +414,6 @@ fn proxy_request(base: &str, line: &str, token: Option<&str>) -> Option<String> 
                     });
                     return Some(err.to_string());
                 }
-            }
             None
         }
     }

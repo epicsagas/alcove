@@ -534,6 +534,7 @@ pub fn load_config() -> &'static DocConfig {
 }
 
 /// Classify a doc file path using a provided config (enables project-level overrides).
+#[cfg(test)]
 pub fn classify_tier_with(relative_path: &str, cfg: &DocConfig) -> &'static str {
     let filename = Path::new(relative_path)
         .file_name()
@@ -581,13 +582,13 @@ impl TierClassifier {
             .unwrap_or("");
         let lower = filename.to_lowercase();
 
-        if self.core.iter().any(|f| *f == lower) {
+        if self.core.contains(&lower) {
             "doc-repo-required"
         } else if relative_path.starts_with("reports/") || relative_path.starts_with("reports\\") {
             "reference"
-        } else if self.team.iter().any(|f| *f == lower) {
+        } else if self.team.contains(&lower) {
             "doc-repo-supplementary"
-        } else if self.public.iter().any(|f| *f == lower) {
+        } else if self.public.contains(&lower) {
             "project-repo"
         } else {
             "unrecognized"

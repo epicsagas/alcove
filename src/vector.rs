@@ -183,8 +183,8 @@ impl VectorStore {
         // Atomically clear stale vectors and update metadata in one transaction.
         {
             let tx = conn.transaction()?;
-            let model_changed = existing_model.map_or(false, |em| em != model);
-            let dim_changed = existing_dim.map_or(false, |ed| ed != dimension);
+            let model_changed = existing_model.is_some_and(|em| em != model);
+            let dim_changed = existing_dim.is_some_and(|ed| ed != dimension);
             if model_changed || dim_changed {
                 tx.execute("DELETE FROM vectors", [])?;
             }
