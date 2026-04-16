@@ -24,7 +24,7 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: alcove-x86_64-pc-windows-msvc.zip
-            features: full
+            features: alcove-server
 
     steps:
       - uses: actions/checkout@v4
