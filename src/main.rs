@@ -404,16 +404,18 @@ fn proxy_request(base: &str, line: &str, token: Option<&str>) -> Option<String> 
         Ok(resp) if resp.status() == 204 => None, // notification, no response
         _ => {
             // If the request has an id, return a JSON-RPC error so the client isn't left hanging
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line)
-                && let Some(id) = v.get("id")
-            {
-                    let err = serde_json::json!({
+            if let Some(err) = serde_json::from_str::<serde_json::Value>(line)
+                .ok()
+                .and_then(|v| v.get("id").map(|id| {
+                    serde_json::json!({
                         "jsonrpc": "2.0",
                         "id": id,
                         "error": {"code": -32603, "message": "Proxy request to background server failed"}
-                    });
-                    return Some(err.to_string());
-                }
+                    })
+                }))
+            {
+                return Some(err.to_string());
+            }
             None
         }
     }
