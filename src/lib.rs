@@ -1,4 +1,5 @@
 pub mod config;
+#[cfg(feature = "alcove-full")]
 pub mod embedding;
 pub mod index;
 pub mod lint;
@@ -23,6 +24,7 @@ pub use vault::{
 
 #[cfg(feature = "alcove-full")]
 pub use embedding::{EmbeddingModelChoice, EmbeddingService, ModelState};
+#[cfg(feature = "alcove-full")]
 pub use config::EmbeddingConfig;
 
 #[cfg(feature = "alcove-full")]

@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::config::alcove_home;
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -95,6 +97,45 @@ pub fn promote(docs_root: &Path, opts: PromoteOptions) -> Result<PromoteResult> 
 
     if !source.exists() {
         anyhow::bail!("Source file does not exist: {}", source.display());
+    }
+
+    // Whitelist check: source must be under ALCOVE_HOME or docs_root.
+    // This prevents SSRF-equivalent arbitrary file reads: an MCP caller cannot
+    // pass ~/.ssh/id_rsa or ~/.aws/credentials because those paths are outside
+    // the permitted zone.
+    {
+        let canonical_source = source
+            .canonicalize()
+            .with_context(|| format!("Failed to resolve source path: {}", source.display()))?;
+
+        let safe_roots: Vec<PathBuf> = {
+            let home = alcove_home();
+            // Also accept files directly under docs_root's parent (the alcove
+            // data directory, typically ALCOVE_HOME itself) to allow vault
+            // directories that sit alongside docs_root.
+            let mut roots = vec![home];
+            if let Ok(canonical_docs) = docs_root.canonicalize() {
+                // docs_root itself is always safe.
+                roots.push(canonical_docs.clone());
+                // docs_root's parent (the container directory, e.g. ALCOVE_HOME)
+                // is also safe so vault siblings of docs_root are permitted.
+                if let Some(parent) = canonical_docs.parent() {
+                    roots.push(parent.to_path_buf());
+                }
+            }
+            roots
+        };
+
+        let allowed = safe_roots
+            .iter()
+            .any(|root| canonical_source.starts_with(root));
+
+        if !allowed {
+            anyhow::bail!(
+                "Source path is outside the permitted directories (ALCOVE_HOME and docs_root): {}",
+                canonical_source.display()
+            );
+        }
     }
 
     // Block access to OS-sensitive directories.
@@ -447,6 +488,35 @@ mod tests {
     }
 
     #[test]
+    fn test_promote_source_outside_safe_root_rejected() {
+        // docs_root lives inside alcove_tmp (simulates ALCOVE_HOME/docs).
+        let alcove_tmp = TempDir::new().unwrap();
+        let docs_root = alcove_tmp.path().join("docs");
+        fs::create_dir_all(docs_root.join("proj")).unwrap();
+
+        // Source file is in a completely separate temp directory — outside the
+        // safe zone (alcove_tmp and its children).
+        let outside_tmp = TempDir::new().unwrap();
+        let src = write(outside_tmp.path(), "secret.md", "# Secret\n");
+
+        let result = promote(
+            &docs_root,
+            PromoteOptions {
+                source: src.clone(),
+                project: Some("proj".into()),
+                copy: true,
+            },
+        );
+
+        assert!(result.is_err(), "source outside safe root should be rejected");
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("outside the permitted"),
+            "expected safe-root error, got: {err_msg}"
+        );
+    }
+
+    #[test]
     #[cfg(unix)]
     fn test_promote_system_dir_source_rejected() {
         let tmp = TempDir::new().unwrap();
@@ -469,9 +539,13 @@ mod tests {
         );
         assert!(result.is_err(), "should reject system-directory source");
         let err_msg = result.err().unwrap().to_string();
+        // The whitelist check fires first ("outside the permitted") for paths
+        // outside ALCOVE_HOME; the blocked-path check fires for paths inside
+        // ALCOVE_HOME that happen to be system dirs.  Either message is correct.
         assert!(
-            err_msg.contains("restricted system directory"),
-            "expected system-directory error, got: {err_msg}"
+            err_msg.contains("restricted system directory")
+                || err_msg.contains("outside the permitted"),
+            "expected rejection error, got: {err_msg}"
         );
     }
 }

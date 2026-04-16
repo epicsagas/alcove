@@ -10,7 +10,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
+use tantivy::query::{BooleanQuery, Occur, QueryParser, TermQuery};
 use tantivy::schema::{self, *};
 use tantivy::{DocAddress, Score};
 use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
@@ -163,12 +163,17 @@ fn try_acquire_lock(docs_root: &Path) -> bool {
     if lock_path.exists() && is_lock_stale(&lock_path) {
         let _ = std::fs::remove_file(&lock_path);
     }
-    if std::fs::File::create_new(&lock_path).is_ok() {
-        // Write PID so we can detect stale locks from dead processes
-        let _ = std::fs::write(&lock_path, std::process::id().to_string());
-        return true;
+    // create_new is atomic (O_CREAT | O_EXCL) — if two processes race past the
+    // stale-check above, only one will succeed here.
+    match std::fs::File::create_new(&lock_path) {
+        Ok(mut f) => {
+            // Write PID directly to the opened fd — no window with empty content.
+            use std::io::Write;
+            let _ = write!(f, "{}", std::process::id());
+            true
+        }
+        Err(_) => false,
     }
-    false
 }
 
 fn release_lock(docs_root: &Path) {
@@ -601,14 +606,22 @@ fn extract_xml_text(content: &str, tag_name: &[u8]) -> Result<String> {
     Ok(text)
 }
 
-/// Ensure index is up-to-date, rebuilding in background if stale.
+/// Ensure index is up-to-date, rebuilding synchronously if stale and not locked.
 ///
-/// Returns true if a rebuild was triggered.
+/// If the index is stale but a rebuild is already in progress (locked), the
+/// function skips the rebuild and returns true so callers can serve stale
+/// results rather than blocking for minutes.
+///
+/// Returns true if a rebuild was triggered or the index is stale-but-locked.
 pub fn ensure_index_fresh(docs_root: &Path) -> bool {
     if !is_index_stale(docs_root) {
         return false;
     }
-    // Rebuild synchronously (called from search path, needs result immediately)
+    if is_locked(docs_root) {
+        eprintln!("[alcove] index is stale but a rebuild is already in progress — serving stale results");
+        return true;
+    }
+    // Index is stale and no rebuild is running: rebuild synchronously.
     let _ = build_index(docs_root);
     true
 }
@@ -942,8 +955,13 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
             pb.set_message(label);
 
             if !needs_full_rebuild {
-                let term = tantivy::Term::from_field_text(file_field, rel);
-                writer.delete_term(term);
+                let proj_term = tantivy::Term::from_field_text(project_field, proj);
+                let file_term = tantivy::Term::from_field_text(file_field, rel);
+                let delete_query = BooleanQuery::new(vec![
+                    (Occur::Must, Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+                    (Occur::Must, Box::new(TermQuery::new(file_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+                ]);
+                writer.delete_query(Box::new(delete_query))?;
             }
 
             if let Ok(content) = read_file_content(full) {
@@ -971,9 +989,13 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
     // Vector indexing (alcove-full feature) — skipped when skip_embedding=true
     // ---------------------------------------------------------------------------
 
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
     let mut vector_status = if skip_embedding { "skipped".to_string() } else { "disabled".to_string() };
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
     let mut vectors_indexed = 0u64;
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
     let mut vector_errors = 0u64;
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
     let mut embedding_model = String::new();
 
     #[cfg(feature = "alcove-full")]
@@ -1050,15 +1072,16 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
                                         pending.push((proj.clone(), rel.clone(), i as u64, chunk.text));
 
                                         if pending.len() >= embed_batch {
+                                            let actual = pending.len();
                                             let texts: Vec<&str> = pending.iter().map(|(_, _, _, t)| t.as_str()).collect();
                                             match service.embed(&texts) {
                                                 Ok(embeddings) => {
                                                     let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
                                                     if let Err(e) = store.batch_upsert(it) {
                                                         eprintln!("[alcove] batch upsert failed: {}", e);
-                                                        vector_errors += embed_batch as u64;
+                                                        vector_errors += actual as u64;
                                                     } else {
-                                                        vectors_indexed += embed_batch as u64;
+                                                        vectors_indexed += actual as u64;
                                                     }
                                                 }
                                                 Err(e) => {

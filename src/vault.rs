@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use walkdir::WalkDir;
 
-use crate::config::alcove_home;
+use crate::config::{alcove_home, is_blocked_system_path};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -37,8 +37,10 @@ fn validate_vault_name(name: &str) -> Result<()> {
 }
 
 /// Count `.md` files recursively under a directory.
+/// `follow_links(false)` prevents infinite loops from symlink cycles.
 fn count_md_files(dir: &Path) -> usize {
     WalkDir::new(dir)
+        .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
@@ -77,6 +79,13 @@ pub fn link_vault(name: &str, target: &Path) -> Result<PathBuf> {
     if !target.exists() || !target.is_dir() {
         anyhow::bail!(
             "Target does not exist or is not a directory: {}",
+            target.display()
+        );
+    }
+    // Block symlinks to sensitive system directories
+    if is_blocked_system_path(target) {
+        anyhow::bail!(
+            "Refusing to link vault to sensitive system directory: {}",
             target.display()
         );
     }

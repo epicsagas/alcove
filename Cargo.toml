@@ -26,6 +26,7 @@ pkg-fmt = "zip"
 
 [dependencies]
 anyhow = "1"
+indexmap = "2"
 clap = { version = "4", features = ["derive"] }
 dialoguer = { version = "0.12", features = ["fuzzy-select"] }
 console = "0.16"
@@ -71,6 +72,7 @@ full = ["alcove-full", "alcove-server"]
 
 [dev-dependencies]
 tempfile = "3.26.0"
+serial_test = "3"
 
 # ---------------------------------------------------------------------------
 # Build optimizations

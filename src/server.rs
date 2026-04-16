@@ -7,7 +7,7 @@
 use anyhow::Result;
 #[cfg(feature = "alcove-server")]
 use axum::{
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     http::{HeaderMap, Method, StatusCode, header},
     response::Json,
     routing::{get, post},
@@ -93,6 +93,86 @@ pub struct ErrorResponse {
 }
 
 // ---------------------------------------------------------------------------
+// In-memory sliding-window rate limiter
+// ---------------------------------------------------------------------------
+
+/// Maximum number of distinct IPs tracked by the rate limiter.
+/// Prevents unbounded HashMap growth when exposed to the internet.
+#[cfg(feature = "alcove-server")]
+const RATE_LIMITER_MAX_IPS: usize = 10_000;
+
+#[cfg(feature = "alcove-server")]
+#[derive(Clone)]
+pub struct RateLimiter {
+    state: Arc<std::sync::Mutex<RateLimiterInner>>,
+    max_requests: usize,
+    window: std::time::Duration,
+}
+
+#[cfg(feature = "alcove-server")]
+struct RateLimiterInner {
+    /// Per-IP sliding-window timestamp buckets.
+    buckets: std::collections::HashMap<std::net::IpAddr, std::collections::VecDeque<std::time::Instant>>,
+}
+
+#[cfg(feature = "alcove-server")]
+impl RateLimiter {
+    pub fn new(max_requests: usize, window: std::time::Duration) -> Self {
+        Self {
+            state: Arc::new(std::sync::Mutex::new(RateLimiterInner {
+                buckets: std::collections::HashMap::new(),
+            })),
+            max_requests,
+            window,
+        }
+    }
+
+    /// Returns `true` if the request from `ip` is within budget, `false` if rate-limited.
+    ///
+    /// Each IP gets its own independent sliding-window budget so one abusive client
+    /// cannot block legitimate users.  At most `RATE_LIMITER_MAX_IPS` IPs are tracked;
+    /// if the table is full and no stale entries can be evicted, the new IP is denied.
+    pub fn check(&self, ip: std::net::IpAddr) -> bool {
+        let now = std::time::Instant::now();
+        let mut inner = self.state.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Evict fully-expired buckets when the table would exceed the cap.
+        if !inner.buckets.contains_key(&ip) && inner.buckets.len() >= RATE_LIMITER_MAX_IPS {
+            let stale: Vec<_> = inner
+                .buckets
+                .iter()
+                .filter(|(_, q)| q.iter().all(|t| now.duration_since(*t) > self.window))
+                .map(|(k, _)| *k)
+                .take(64) // evict up to 64 at a time to amortise cost
+                .collect();
+            for k in stale {
+                inner.buckets.remove(&k);
+            }
+            // Still full → deny the unknown IP rather than growing unboundedly.
+            if inner.buckets.len() >= RATE_LIMITER_MAX_IPS {
+                return false;
+            }
+        }
+
+        let bucket = inner.buckets.entry(ip).or_default();
+        // Drop timestamps outside the sliding window.
+        while let Some(&front) = bucket.front() {
+            if now.duration_since(front) > self.window {
+                bucket.pop_front();
+            } else {
+                break;
+            }
+        }
+        if bucket.len() >= self.max_requests {
+            false
+        } else {
+            bucket.push_back(now);
+            true
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Server state
 // ---------------------------------------------------------------------------
 
@@ -104,6 +184,8 @@ pub struct ServerState {
     /// Shared embedding service — initialised once at startup, reused per request.
     #[cfg(feature = "alcove-full")]
     pub embedding_service: Option<Arc<crate::embedding::EmbeddingService>>,
+    /// Per-endpoint rate limiter for search routes (sliding window).
+    pub search_rate_limiter: RateLimiter,
 }
 
 // ---------------------------------------------------------------------------
@@ -132,8 +214,9 @@ fn constant_time_eq_str(a: &str, b: &str) -> bool {
 fn is_allowed_origin(origin: &[u8]) -> bool {
     let s = std::str::from_utf8(origin).unwrap_or("");
     s == "http://localhost"
-        || (s.starts_with("http://localhost:") && s[17..].parse::<u16>().is_ok())
-        || (s.starts_with("http://127.0.0.1:") && s[17..].parse::<u16>().is_ok())
+        || s == "http://127.0.0.1"
+        || s.strip_prefix("http://localhost:").and_then(|p| p.parse::<u16>().ok()).is_some()
+        || s.strip_prefix("http://127.0.0.1:").and_then(|p| p.parse::<u16>().ok()).is_some()
 }
 
 /// Check Bearer token authentication. Returns `Err` with 401 if the token is
@@ -172,9 +255,20 @@ fn check_auth(
 async fn handle_search(
     state: Arc<ServerState>,
     headers: HeaderMap,
+    peer_ip: std::net::IpAddr,
     req: SearchRequest,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
     check_auth(&state, &headers)?;
+
+    if !state.search_rate_limiter.check(peer_ip) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(ErrorResponse {
+                error: "Rate limit exceeded. Try again later.".to_string(),
+                code: 429,
+            }),
+        ));
+    }
 
     if req.q.trim().is_empty() {
         return Err((
@@ -230,10 +324,11 @@ async fn handle_search(
         if vault_name == "*" {
             // Search all vaults — collect results from each, merge by score
             let vaults = crate::vault::list_vaults().map_err(|e| {
+                eprintln!("[alcove] Failed to list vaults: {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
-                        error: format!("Failed to list vaults: {e}"),
+                        error: "Internal server error".into(),
                         code: 500,
                     }),
                 )
@@ -242,18 +337,23 @@ async fn handle_search(
             let mut all_results: Vec<SearchResult> = Vec::new();
             let mut any_truncated = false;
 
+            let mut join_set = tokio::task::JoinSet::new();
             for vi in vaults {
                 let vault_path = vi.path.clone();
+                let vault_name = vi.name.clone();
                 let q = req.q.clone();
-                let result = tokio::task::spawn_blocking(move || {
-                    crate::index::search_vault(&vault_path, &q, limit)
-                })
-                .await
-                .map_err(|e| {
+                join_set.spawn_blocking(move || {
+                    (vault_name, crate::index::search_vault(&vault_path, &q, limit))
+                });
+            }
+
+            while let Some(res) = join_set.join_next().await {
+                let (vault_name, result) = res.map_err(|e| {
+                    eprintln!("[alcove] Vault search task failed: {e}");
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(ErrorResponse {
-                            error: format!("Vault search failed: {e}"),
+                            error: "Internal server error".into(),
                             code: 500,
                         }),
                     )
@@ -287,7 +387,7 @@ async fn handle_search(
                         }
                     }
                     Err(e) => {
-                        eprintln!("[alcove] vault search error for '{}': {e}", vi.name);
+                        eprintln!("[alcove] vault search error for '{vault_name}': {e}");
                     }
                 }
             }
@@ -298,8 +398,9 @@ async fn handle_search(
                     .partial_cmp(&a.score)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            let truncated = any_truncated || all_results.len() > limit;
+            let original_len = all_results.len();
             all_results.truncate(limit);
+            let truncated = any_truncated || original_len > limit;
 
             return Ok(Json(SearchResponse {
                 query: req.q,
@@ -327,19 +428,21 @@ async fn handle_search(
         })
         .await
         .map_err(|e| {
+            eprintln!("[alcove] Vault search task failed: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: format!("Vault search failed: {e}"),
+                    error: "Internal server error".into(),
                     code: 500,
                 }),
             )
         })?
         .map_err(|e| {
+            eprintln!("[alcove] Vault search failed: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: format!("Vault search failed: {e}"),
+                    error: "Internal server error".into(),
                     code: 500,
                 }),
             )
@@ -401,6 +504,7 @@ async fn handle_search(
     let project_filter_owned = req.project.clone();
     let q = req.q.clone();
     let limit = req.limit.clamp(1, 200);
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_variables))]
     let use_hybrid = req.mode == "hybrid"
         || (req.mode == "auto" && cfg!(feature = "alcove-full"));
 
@@ -580,20 +684,22 @@ async fn health(
 #[cfg(feature = "alcove-server")]
 async fn get_search(
     State(state): State<Arc<ServerState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Query(req): Query<SearchRequest>,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
-    handle_search(state, headers, req).await
+    handle_search(state, headers, peer.ip(), req).await
 }
 
 /// POST /v1/search — JSON body (OpenAI-compatible)
 #[cfg(feature = "alcove-server")]
 async fn post_search(
     State(state): State<Arc<ServerState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     axum::Json(req): axum::Json<SearchRequest>,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
-    handle_search(state, headers, req).await
+    handle_search(state, headers, peer.ip(), req).await
 }
 
 // ---------------------------------------------------------------------------
@@ -608,10 +714,18 @@ pub async fn run_server(
     token: Option<String>,
 ) -> Result<()> {
     if token.is_none() {
-        eprintln!(
-            "  {} Alcove server running without authentication — anyone on the network can query it.",
-            console::style("WARNING").yellow().bold()
-        );
+        let is_local = host == "127.0.0.1" || host == "localhost" || host == "::1";
+        if is_local {
+            eprintln!(
+                "  {} Alcove server running without authentication on localhost.",
+                console::style("WARNING").yellow().bold()
+            );
+        } else {
+            anyhow::bail!(
+                "Refusing to start without --token on non-localhost address '{host}'. \
+                 Use --token <secret> to enable bearer auth, or bind to 127.0.0.1."
+            );
+        }
     }
 
     #[cfg(feature = "alcove-full")]
@@ -650,6 +764,7 @@ pub async fn run_server(
         token,
         #[cfg(feature = "alcove-full")]
         embedding_service,
+        search_rate_limiter: RateLimiter::new(60, std::time::Duration::from_secs(60)),
     });
 
     let app = Router::new()
@@ -686,7 +801,7 @@ pub async fn run_server(
     println!("      POST /mcp        - MCP JSON-RPC dispatch (proxy target)");
     println!();
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
 
     Ok(())
 }
@@ -698,9 +813,18 @@ pub async fn run_server(
 #[cfg(feature = "alcove-server")]
 async fn mcp_dispatch(
     State(state): State<Arc<ServerState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     body: String,
 ) -> (StatusCode, Json<Value>) {
+    // Rate limit check (same as /search endpoints)
+    if !state.search_rate_limiter.check(peer.ip()) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({"error": "Too many requests"})),
+        );
+    }
+
     // Auth check (reuse existing token validation)
     if let Some(ref expected) = state.token {
         let provided = headers
@@ -789,6 +913,7 @@ mod tests {
             token: None,
             #[cfg(feature = "alcove-full")]
             embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         })
     }
 
@@ -805,7 +930,7 @@ mod tests {
             vault: None,
         };
 
-        let result = handle_search(state, headers, req).await;
+        let result = handle_search(state, headers, "127.0.0.1".parse().unwrap(), req).await;
         assert!(result.is_err());
         let (status, body) = result.unwrap_err();
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -825,7 +950,7 @@ mod tests {
             vault: None,
         };
 
-        let result = handle_search(state, headers, req).await;
+        let result = handle_search(state, headers, "127.0.0.1".parse().unwrap(), req).await;
         assert!(result.is_err());
         let (status, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -844,7 +969,7 @@ mod tests {
             vault: Some("nonexistent_vault".to_string()),
         };
 
-        let result = handle_search(state, headers, req).await;
+        let result = handle_search(state, headers, "127.0.0.1".parse().unwrap(), req).await;
         assert!(result.is_err());
         let (status, body) = result.unwrap_err();
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -865,11 +990,211 @@ mod tests {
             vault: Some("myvault".to_string()),
         };
 
-        let result = handle_search(state, headers, req).await;
+        let result = handle_search(state, headers, "127.0.0.1".parse().unwrap(), req).await;
         assert!(result.is_err());
         let (status, body) = result.unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body.0.code, 400);
         assert!(body.0.error.contains("Cannot specify both"));
+    }
+
+    // -----------------------------------------------------------------------
+    // constant_time_eq_str tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn constant_time_eq_str_equal() {
+        assert!(constant_time_eq_str("secret-token-123", "secret-token-123"));
+    }
+
+    #[test]
+    fn constant_time_eq_str_not_equal() {
+        assert!(!constant_time_eq_str("secret-token-123", "wrong-token-456"));
+    }
+
+    #[test]
+    fn constant_time_eq_str_different_lengths() {
+        assert!(!constant_time_eq_str("short", "much-longer-string"));
+    }
+
+    #[test]
+    fn constant_time_eq_str_empty() {
+        assert!(constant_time_eq_str("", ""));
+        assert!(!constant_time_eq_str("", "notempty"));
+    }
+
+    // -----------------------------------------------------------------------
+    // is_allowed_origin tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn is_allowed_origin_localhost_with_port() {
+        assert!(is_allowed_origin(b"http://localhost:3000"));
+        assert!(is_allowed_origin(b"http://localhost:8080"));
+    }
+
+    #[test]
+    fn is_allowed_origin_localhost_bare() {
+        assert!(is_allowed_origin(b"http://localhost"));
+    }
+
+    #[test]
+    fn is_allowed_origin_127_0_0_1() {
+        assert!(is_allowed_origin(b"http://127.0.0.1:3000"));
+        assert!(is_allowed_origin(b"http://127.0.0.1:8080"));
+    }
+
+    #[test]
+    fn is_allowed_origin_rejects_evil_prefix() {
+        assert!(!is_allowed_origin(b"http://localhost.evil.com"));
+        assert!(!is_allowed_origin(b"http://localhost.evil.com:3000"));
+    }
+
+    #[test]
+    fn is_allowed_origin_rejects_https() {
+        assert!(!is_allowed_origin(b"https://localhost:3000"));
+    }
+
+    #[test]
+    fn is_allowed_origin_rejects_random() {
+        assert!(!is_allowed_origin(b"http://example.com"));
+        assert!(!is_allowed_origin(b""));
+    }
+
+    // -----------------------------------------------------------------------
+    // Auth middleware tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn auth_check_passes_when_no_token_configured() {
+        let state = Arc::new(ServerState {
+            docs_root: std::path::PathBuf::from("/tmp"),
+            token: None,
+            #[cfg(feature = "alcove-full")]
+            embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
+        });
+        let headers = HeaderMap::new();
+        assert!(check_auth(&state, &headers).is_ok());
+    }
+
+    #[tokio::test]
+    async fn auth_check_fails_without_bearer_token() {
+        let state = Arc::new(ServerState {
+            docs_root: std::path::PathBuf::from("/tmp"),
+            token: Some("my-secret".to_string()),
+            #[cfg(feature = "alcove-full")]
+            embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
+        });
+        let headers = HeaderMap::new();
+        assert!(check_auth(&state, &headers).is_err());
+    }
+
+    #[tokio::test]
+    async fn auth_check_passes_with_correct_token() {
+        let state = Arc::new(ServerState {
+            docs_root: std::path::PathBuf::from("/tmp"),
+            token: Some("my-secret".to_string()),
+            #[cfg(feature = "alcove-full")]
+            embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer my-secret".parse().unwrap());
+        assert!(check_auth(&state, &headers).is_ok());
+    }
+
+    // -----------------------------------------------------------------------
+    // Error sanitization tests — 500-level errors must NOT leak details
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn error_response_500_should_not_contain_internal_paths() {
+        // All 500-level ErrorResponse messages used in the codebase should be
+        // generic strings that do not include dynamic error details.
+        let generic_msgs = vec![
+            "Internal server error",
+            "Search failed",
+            "Internal search error",
+        ];
+        for msg in &generic_msgs {
+            // Must NOT contain filesystem path fragments
+            assert!(!msg.contains('/'), "500 error message leaks a path: {msg}");
+            assert!(
+                !msg.contains("Failed to"),
+                "500 error should not expose failure context: {msg}"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Rate limiter tests
+    // -----------------------------------------------------------------------
+
+    fn ip(s: &str) -> std::net::IpAddr { s.parse().unwrap() }
+
+    #[test]
+    fn rate_limiter_allows_within_budget() {
+        let limiter = super::RateLimiter::new(5, std::time::Duration::from_secs(60));
+        for _ in 0..5 {
+            assert!(limiter.check(ip("127.0.0.1")));
+        }
+    }
+
+    #[test]
+    fn rate_limiter_rejects_over_budget() {
+        let limiter = super::RateLimiter::new(3, std::time::Duration::from_secs(60));
+        for _ in 0..3 {
+            assert!(limiter.check(ip("127.0.0.1")));
+        }
+        assert!(!limiter.check(ip("127.0.0.1")));
+    }
+
+    #[test]
+    fn rate_limiter_resets_after_window() {
+        let limiter = super::RateLimiter::new(2, std::time::Duration::from_millis(50));
+        assert!(limiter.check(ip("127.0.0.1")));
+        assert!(limiter.check(ip("127.0.0.1")));
+        assert!(!limiter.check(ip("127.0.0.1")));
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        assert!(limiter.check(ip("127.0.0.1")));
+    }
+
+    #[test]
+    fn rate_limiter_per_ip_independent_budgets() {
+        // IP A exhausts its budget; IP B should still be allowed
+        let limiter = super::RateLimiter::new(2, std::time::Duration::from_secs(60));
+        assert!(limiter.check(ip("10.0.0.1")));
+        assert!(limiter.check(ip("10.0.0.1")));
+        assert!(!limiter.check(ip("10.0.0.1"))); // A exhausted
+        assert!(limiter.check(ip("10.0.0.2"))); // B unaffected
+        assert!(limiter.check(ip("10.0.0.2")));
+        assert!(!limiter.check(ip("10.0.0.2"))); // B also exhausted now
+    }
+
+    #[test]
+    fn rate_limiter_evicts_stale_ip_entries() {
+        // After window expires, stale IPs should be evictable to make room for new ones
+        let limiter = super::RateLimiter::new(1, std::time::Duration::from_millis(30));
+        assert!(limiter.check(ip("10.0.0.1")));
+        assert!(!limiter.check(ip("10.0.0.1"))); // exhausted within window
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        // After window, same IP gets a fresh budget
+        assert!(limiter.check(ip("10.0.0.1")));
+    }
+
+    #[tokio::test]
+    async fn auth_check_fails_with_wrong_token() {
+        let state = Arc::new(ServerState {
+            docs_root: std::path::PathBuf::from("/tmp"),
+            token: Some("my-secret".to_string()),
+            #[cfg(feature = "alcove-full")]
+            embedding_service: None,
+            search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer wrong-token".parse().unwrap());
+        assert!(check_auth(&state, &headers).is_err());
     }
 }

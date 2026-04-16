@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+#[cfg(feature = "alcove-full")]
 mod embedding;
 mod index;
 mod lint;
@@ -282,7 +283,13 @@ fn main() -> Result<()> {
                     println!("  ✓ Indexed vault '{}' ({} files)", name, files);
                 } else {
                     let result = index::build_all_vault_indexes()?;
-                    println!("  ✓ {}", result["summary"].as_str().unwrap_or("done"));
+                    let indexed = result["vaults_indexed"].as_u64().unwrap_or(0);
+                    let failed = result["vaults_failed"].as_u64().unwrap_or(0);
+                    if failed > 0 {
+                        println!("  ✓ Indexed {} vault(s), {} failed", indexed, failed);
+                    } else {
+                        println!("  ✓ Indexed {} vault(s)", indexed);
+                    }
                 }
                 Ok(())
             }
@@ -372,7 +379,12 @@ fn detect_proxy_target() -> Option<String> {
         .unwrap_or(("127.0.0.1", 8080));
     let base = format!("http://{host}:{port}");
 
-    match ureq::get(&format!("{base}/health")).call() {
+    match ureq::get(&format!("{base}/health"))
+        .config()
+        .timeout_global(Some(std::time::Duration::from_secs(2)))
+        .build()
+        .call()
+    {
         Ok(resp) if resp.status() == 200 => {
             eprintln!("[alcove] proxy mode → {base}");
             Some(base)
@@ -391,7 +403,22 @@ fn proxy_request(base: &str, line: &str, token: Option<&str>) -> Option<String> 
     match req.send(line) {
         Ok(mut resp) if resp.status() == 200 => resp.body_mut().read_to_string().ok(),
         Ok(resp) if resp.status() == 204 => None, // notification, no response
-        _ => None,
+        _ => {
+            // If the request has an id, return a JSON-RPC error so the client isn't left hanging
+            if let Some(err) = serde_json::from_str::<serde_json::Value>(line)
+                .ok()
+                .and_then(|v| v.get("id").map(|id| {
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {"code": -32603, "message": "Proxy request to background server failed"}
+                    })
+                }))
+            {
+                return Some(err.to_string());
+            }
+            None
+        }
     }
 }
 
