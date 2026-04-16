@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+#[cfg(feature = "alcove-full")]
 mod embedding;
 mod index;
 mod lint;

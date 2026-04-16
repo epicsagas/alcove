@@ -16,15 +16,15 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             artifact: alcove-x86_64-unknown-linux-musl.tar.gz
+            features: alcove-server
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: alcove-aarch64-apple-darwin.tar.gz
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact: alcove-x86_64-apple-darwin.tar.gz
+            features: full
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: alcove-x86_64-pc-windows-msvc.zip
+            features: full
 
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +49,7 @@ jobs:
         run: sudo apt-get install -y musl-tools
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
@@ -112,14 +112,12 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - name: Compute SHA256 for macOS tarballs
+      - name: Compute SHA256 for macOS tarball
         id: sha
         run: |
           BASE="https://github.com/epicsagas/alcove/releases/download/${GITHUB_REF_NAME}"
           curl -sLf --retry 5 --retry-delay 10 "${BASE}/alcove-aarch64-apple-darwin.tar.gz" -o arm.tar.gz
-          curl -sLf --retry 5 --retry-delay 10 "${BASE}/alcove-x86_64-apple-darwin.tar.gz" -o intel.tar.gz
           echo "arm=$(sha256sum arm.tar.gz | awk '{print $1}')" >> $GITHUB_OUTPUT
-          echo "intel=$(sha256sum intel.tar.gz | awk '{print $1}')" >> $GITHUB_OUTPUT
 
       - name: Checkout homebrew tap
         uses: actions/checkout@v4
@@ -131,9 +129,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           sed -i "s/version \".*\"/version \"${VERSION}\"/" Formula/alcove.rb
-          # Update sha256 lines in order: first = arm, second = intel
           sed -i "0,/sha256 \".*\"/s//sha256 \"${{ steps.sha.outputs.arm }}\"/" Formula/alcove.rb
-          sed -i "0,/sha256 \".*\"/! s/sha256 \".*\"/sha256 \"${{ steps.sha.outputs.intel }}\"/" Formula/alcove.rb
 
       - name: Commit and push
         run: |

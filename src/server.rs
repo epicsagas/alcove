@@ -504,6 +504,7 @@ async fn handle_search(
     let project_filter_owned = req.project.clone();
     let q = req.q.clone();
     let limit = req.limit.clamp(1, 200);
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_variables))]
     let use_hybrid = req.mode == "hybrid"
         || (req.mode == "auto" && cfg!(feature = "alcove-full"));
 

@@ -989,9 +989,13 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
     // Vector indexing (alcove-full feature) — skipped when skip_embedding=true
     // ---------------------------------------------------------------------------
 
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
     let mut vector_status = if skip_embedding { "skipped".to_string() } else { "disabled".to_string() };
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
     let mut vectors_indexed = 0u64;
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
     let mut vector_errors = 0u64;
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
     let mut embedding_model = String::new();
 
     #[cfg(feature = "alcove-full")]
