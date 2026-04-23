@@ -280,7 +280,16 @@ fn main() -> Result<()> {
                     }
                     let result = index::build_vault_index(&vault_path)?;
                     let files = result["files"].as_u64().unwrap_or(0);
-                    println!("  ✓ Indexed vault '{}' ({} files)", name, files);
+                    let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
+                    let vec_status = result["vector_status"].as_str().unwrap_or("disabled");
+                    let model = result["embedding_model"].as_str().unwrap_or("");
+                    if vectors > 0 {
+                        println!("  ✓ Indexed vault '{}' ({} files, {} vectors via {})", name, files, vectors, model);
+                    } else if vec_status != "disabled" {
+                        println!("  ✓ Indexed vault '{}' ({} files, vectors: {})", name, files, vec_status);
+                    } else {
+                        println!("  ✓ Indexed vault '{}' ({} files)", name, files);
+                    }
                 } else {
                     let result = index::build_all_vault_indexes()?;
                     let indexed = result["vaults_indexed"].as_u64().unwrap_or(0);
@@ -301,12 +310,24 @@ fn main() -> Result<()> {
                     }
                     let result = index::rebuild_vault_index(&vault_path)?;
                     let files = result["files"].as_u64().unwrap_or(0);
-                    println!("  ✓ Rebuilt vault '{}' ({} files)", name, files);
+                    let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
+                    let model = result["embedding_model"].as_str().unwrap_or("");
+                    if vectors > 0 {
+                        println!("  \u{2713} Rebuilt vault '{}' ({} files, {} vectors via {})", name, files, vectors, model);
+                    } else {
+                        println!("  \u{2713} Rebuilt vault '{}' ({} files)", name, files);
+                    }
                 } else {
                     for v in vault::list_vaults()? {
                         let result = index::rebuild_vault_index(&v.path)?;
                         let files = result["files"].as_u64().unwrap_or(0);
-                        println!("  ✓ Rebuilt vault '{}' ({} files)", v.name, files);
+                        let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
+                        let model = result["embedding_model"].as_str().unwrap_or("");
+                        if vectors > 0 {
+                            println!("  \u{2713} Rebuilt vault '{}' ({} files, {} vectors via {})", v.name, files, vectors, model);
+                        } else {
+                            println!("  \u{2713} Rebuilt vault '{}' ({} files)", v.name, files);
+                        }
                     }
                 }
                 Ok(())

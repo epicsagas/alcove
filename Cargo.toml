@@ -1,6 +1,6 @@
 [package]
 name = "alcove"
-version = "0.8.0"
+version = "0.8.1-dev"
 edition = "2024"
 description = "A quiet place for your project docs. MCP server that gives AI agents scoped access to private documentation."
 license = "Apache-2.0"
