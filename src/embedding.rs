@@ -186,6 +186,40 @@ impl EmbeddingModelChoice {
             Self::BGEM3 => "BAAI/bge-m3",
         }
     }
+
+    /// Prefix to prepend to queries before embedding.
+    ///
+    /// Some models require a task-specific prefix for retrieval queries to
+    /// produce meaningful similarity scores against document embeddings.
+    pub fn query_prefix(self) -> Option<&'static str> {
+        match self {
+            Self::SnowflakeArcticEmbedXS
+            | Self::SnowflakeArcticEmbedXSQ
+            | Self::SnowflakeArcticEmbedS
+            | Self::SnowflakeArcticEmbedSQ
+            | Self::SnowflakeArcticEmbedM
+            | Self::SnowflakeArcticEmbedMQ => {
+                Some("Represent this sentence for searching relevant passages: ")
+            }
+            Self::MultilingualE5Small
+            | Self::MultilingualE5Base
+            | Self::MultilingualE5Large => Some("query: "),
+            Self::BGEM3 => None,
+        }
+    }
+
+    /// Prefix to prepend to documents/passages before embedding.
+    ///
+    /// Some models distinguish between query and passage inputs at the
+    /// embedding level.  Returns `None` when no prefix is required.
+    pub fn doc_prefix(self) -> Option<&'static str> {
+        match self {
+            Self::MultilingualE5Small
+            | Self::MultilingualE5Base
+            | Self::MultilingualE5Large => Some("passage: "),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(feature = "alcove-full")]
@@ -667,6 +701,11 @@ impl EmbeddingService {
     pub fn model_name(&self) -> &'static str {
         self.internal_config.model.as_str()
     }
+
+    /// Get the underlying model choice (for prefix access)
+    pub fn model_choice(&self) -> EmbeddingModelChoice {
+        self.internal_config.model
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -686,6 +725,45 @@ mod tests {
             assert_eq!(EmbeddingModelChoice::MultilingualE5Base.dimension(), 768);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Large.dimension(), 1024);
             assert_eq!(EmbeddingModelChoice::SnowflakeArcticEmbedXS.dimension(), 384);
+        }
+    }
+
+    /// Query and document prefixes must match the investigated values exactly.
+    #[test]
+    fn test_model_prefixes() {
+        #[cfg(feature = "alcove-full")]
+        {
+            // Snowflake Arctic models: query prefix only, no doc prefix
+            for m in [
+                EmbeddingModelChoice::SnowflakeArcticEmbedXS,
+                EmbeddingModelChoice::SnowflakeArcticEmbedXSQ,
+                EmbeddingModelChoice::SnowflakeArcticEmbedS,
+                EmbeddingModelChoice::SnowflakeArcticEmbedSQ,
+                EmbeddingModelChoice::SnowflakeArcticEmbedM,
+                EmbeddingModelChoice::SnowflakeArcticEmbedMQ,
+            ] {
+                assert_eq!(
+                    m.query_prefix(),
+                    Some("Represent this sentence for searching relevant passages: "),
+                    "{:?} query prefix mismatch",
+                    m
+                );
+                assert_eq!(m.doc_prefix(), None, "{:?} should have no doc prefix", m);
+            }
+
+            // E5 models: both query and passage prefix
+            for m in [
+                EmbeddingModelChoice::MultilingualE5Small,
+                EmbeddingModelChoice::MultilingualE5Base,
+                EmbeddingModelChoice::MultilingualE5Large,
+            ] {
+                assert_eq!(m.query_prefix(), Some("query: "), "{:?} query prefix", m);
+                assert_eq!(m.doc_prefix(), Some("passage: "), "{:?} doc prefix", m);
+            }
+
+            // BGEM3: no prefixes
+            assert_eq!(EmbeddingModelChoice::BGEM3.query_prefix(), None);
+            assert_eq!(EmbeddingModelChoice::BGEM3.doc_prefix(), None);
         }
     }
 

@@ -1073,8 +1073,15 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
 
                                         if pending.len() >= embed_batch {
                                             let actual = pending.len();
-                                            let texts: Vec<&str> = pending.iter().map(|(_, _, _, t)| t.as_str()).collect();
-                                            match service.embed(&texts) {
+                                            let doc_pfx = model.doc_prefix();
+                                            let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
+                                                match doc_pfx {
+                                                    Some(pfx) => format!("{}{}", pfx, t),
+                                                    None => t.clone(),
+                                                }
+                                            }).collect();
+                                            let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                                            match service.embed(&text_refs) {
                                                 Ok(embeddings) => {
                                                     let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
                                                     if let Err(e) = store.batch_upsert(it) {
@@ -1098,8 +1105,15 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
 
                             // Flush remaining
                             if !pending.is_empty() {
-                                let texts: Vec<&str> = pending.iter().map(|(_, _, _, t)| t.as_str()).collect();
-                                match service.embed(&texts) {
+                                let doc_pfx = model.doc_prefix();
+                                let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
+                                    match doc_pfx {
+                                        Some(pfx) => format!("{}{}", pfx, t),
+                                        None => t.clone(),
+                                    }
+                                }).collect();
+                                let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                                match service.embed(&text_refs) {
                                     Ok(embeddings) => {
                                         let count = pending.len() as u64;
                                         let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
@@ -1404,7 +1418,12 @@ pub fn search_hybrid(
     }
 
     // 6. Generate query embedding
-    let query_embedding = match embedding_service.embed(&[query]) {
+    let query_pfx = embedding_service.model_choice().query_prefix();
+    let prefixed_query = match query_pfx {
+        Some(pfx) => format!("{}{}", pfx, query),
+        None => query.to_string(),
+    };
+    let query_embedding = match embedding_service.embed(&[&prefixed_query]) {
         Ok(emb) => emb.into_iter().next().unwrap_or_default(),
         Err(e) => {
             return Ok(json!({
