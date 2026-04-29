@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod telemetry;
 #[cfg(feature = "alcove-full")]
 mod embedding;
 mod index;
@@ -154,8 +155,17 @@ enum Commands {
         #[command(subcommand)]
         subcmd: VaultCommands,
     },
+    /// Manage telemetry consent
+    Telemetry {
+        /// on, off, or status (default)
+        #[arg(default_value = "status")]
+        action: String,
+    },
     /// Print the bearer token from config (for team sharing)
     Token,
+    /// Reap orphaned alcove stdio proxy processes
+    #[cfg(unix)]
+    Reap,
 }
 
 #[derive(Subcommand)]
@@ -216,8 +226,18 @@ fn main() -> Result<()> {
     };
 
     match cli.command {
+        // setup and telemetry manage consent — skip auto-enable
+        Some(Commands::Setup) => return cli::cmd_setup(),
+        Some(Commands::Telemetry { action }) => return telemetry::run_cli(&action),
+        _ => {}
+    }
+
+    // All other commands: auto-enable telemetry on first run (opt-out model).
+    telemetry::ensure_consent_or_set_default();
+
+    match cli.command {
         None => serve(),
-        Some(Commands::Setup) => cli::cmd_setup(),
+        Some(Commands::Setup) | Some(Commands::Telemetry { .. }) => unreachable!(),
         Some(Commands::Uninstall) => cli::cmd_uninstall(),
         Some(Commands::Validate { format, exit_code }) => cli::cmd_validate(&format, exit_code),
         Some(Commands::Index) => cli::cmd_index(),
@@ -280,7 +300,16 @@ fn main() -> Result<()> {
                     }
                     let result = index::build_vault_index(&vault_path)?;
                     let files = result["files"].as_u64().unwrap_or(0);
-                    println!("  ✓ Indexed vault '{}' ({} files)", name, files);
+                    let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
+                    let vec_status = result["vector_status"].as_str().unwrap_or("disabled");
+                    let model = result["embedding_model"].as_str().unwrap_or("");
+                    if vectors > 0 {
+                        println!("  ✓ Indexed vault '{}' ({} files, {} vectors via {})", name, files, vectors, model);
+                    } else if vec_status != "disabled" {
+                        println!("  ✓ Indexed vault '{}' ({} files, vectors: {})", name, files, vec_status);
+                    } else {
+                        println!("  ✓ Indexed vault '{}' ({} files)", name, files);
+                    }
                 } else {
                     let result = index::build_all_vault_indexes()?;
                     let indexed = result["vaults_indexed"].as_u64().unwrap_or(0);
@@ -301,12 +330,24 @@ fn main() -> Result<()> {
                     }
                     let result = index::rebuild_vault_index(&vault_path)?;
                     let files = result["files"].as_u64().unwrap_or(0);
-                    println!("  ✓ Rebuilt vault '{}' ({} files)", name, files);
+                    let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
+                    let model = result["embedding_model"].as_str().unwrap_or("");
+                    if vectors > 0 {
+                        println!("  \u{2713} Rebuilt vault '{}' ({} files, {} vectors via {})", name, files, vectors, model);
+                    } else {
+                        println!("  \u{2713} Rebuilt vault '{}' ({} files)", name, files);
+                    }
                 } else {
                     for v in vault::list_vaults()? {
                         let result = index::rebuild_vault_index(&v.path)?;
                         let files = result["files"].as_u64().unwrap_or(0);
-                        println!("  ✓ Rebuilt vault '{}' ({} files)", v.name, files);
+                        let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
+                        let model = result["embedding_model"].as_str().unwrap_or("");
+                        if vectors > 0 {
+                            println!("  \u{2713} Rebuilt vault '{}' ({} files, {} vectors via {})", v.name, files, vectors, model);
+                        } else {
+                            println!("  \u{2713} Rebuilt vault '{}' ({} files)", v.name, files);
+                        }
                     }
                 }
                 Ok(())
@@ -325,6 +366,8 @@ fn main() -> Result<()> {
         #[cfg(feature = "alcove-server")]
         Some(Commands::Restart) => launchd::restart(),
         Some(Commands::Token) => cli::cmd_token(),
+        #[cfg(unix)]
+        Some(Commands::Reap) => cli::cmd_reap(),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Serve { host, port, token }) => {
             let cfg = config::load_config();

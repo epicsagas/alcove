@@ -325,7 +325,7 @@ fn write_codex_mcp(config_path: &Path, binary: &Path, docs_root: &Path, server_u
 // ---------------------------------------------------------------------------
 
 /// Total number of setup steps (for progress indicator)
-const SETUP_STEPS: usize = 7;
+const SETUP_STEPS: usize = 8;
 
 /// Setup wizard steps
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -336,7 +336,8 @@ enum Step {
     Embedding = 3,
     Server = 4,
     Agents = 5,
-    Summary = 6,
+    Telemetry = 6,
+    Summary = 7,
 }
 
 impl Step {
@@ -350,6 +351,7 @@ impl Step {
             Step::Embedding => Cow::Borrowed("Embedding Model (Hybrid Search)"),
             Step::Server => Cow::Borrowed("HTTP RAG Server"),
             Step::Agents => t!("setup.agents"),
+            Step::Telemetry => Cow::Borrowed("Telemetry"),
             Step::Summary => t!("setup.done"),
         };
         format!("[{}/{}] ── {} ──", step_num, SETUP_STEPS, title.as_ref())
@@ -362,7 +364,8 @@ impl Step {
             Step::Diagram => Some(Step::Embedding),
             Step::Embedding => Some(Step::Server),
             Step::Server => Some(Step::Agents),
-            Step::Agents => Some(Step::Summary),
+            Step::Agents => Some(Step::Telemetry),
+            Step::Telemetry => Some(Step::Summary),
             Step::Summary => None,
         }
     }
@@ -375,7 +378,8 @@ impl Step {
             Step::Embedding => Some(Step::Diagram),
             Step::Server => Some(Step::Embedding),
             Step::Agents => Some(Step::Server),
-            Step::Summary => Some(Step::Agents),
+            Step::Telemetry => Some(Step::Agents),
+            Step::Summary => Some(Step::Telemetry),
         }
     }
 }
@@ -988,7 +992,23 @@ fn step_agents(state: &mut SetupState) -> Result<StepResult> {
     }
 }
 
-/// Step 6: Summary and finalization
+/// Step 7: Telemetry consent
+fn step_telemetry() -> Result<StepResult> {
+    print_step_header(&Step::Telemetry);
+    let level = crate::telemetry::prompt_consent_interactive();
+    crate::telemetry::write_consent(level);
+    match level {
+        crate::telemetry::ConsentLevel::On => {
+            println!("  {} Telemetry enabled. To opt out later: alcove telemetry off", style("✓").green());
+        }
+        crate::telemetry::ConsentLevel::Off => {
+            println!("  {} Telemetry disabled. To enable later: alcove telemetry on", style("✓").green());
+        }
+    }
+    Ok(StepResult::Continue)
+}
+
+/// Step 8: Summary and finalization
 fn step_summary(state: &mut SetupState) -> Result<StepResult> {
     print_step_header(&Step::Summary);
 
@@ -1267,6 +1287,7 @@ pub fn cmd_setup() -> Result<()> {
             Step::Embedding => step_embedding(&mut state)?,
             Step::Server => step_server(&mut state)?,
             Step::Agents => step_agents(&mut state)?,
+            Step::Telemetry => step_telemetry()?,
             Step::Summary => {
                 step_summary(&mut state)?;
                 break; // Done!
@@ -2470,6 +2491,85 @@ pub fn cmd_promote(source: &std::path::Path, project: Option<&str>, mv: bool) ->
 
     Ok(())
 }
+// ---------------------------------------------------------------------------
+// alcove reap
+// ---------------------------------------------------------------------------
+
+#[cfg(unix)]
+pub fn cmd_reap() -> Result<()> {
+    let self_pid = std::process::id();
+    let self_bin = std::env::current_exe()?;
+
+    let output = std::process::Command::new("ps")
+        .args(["-eo", "pid=,ppid=,args="])
+        .output()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut reaped = 0u32;
+    let mut protected = 0u32;
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.splitn(3, ' ').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let pid: u32 = match parts[0].trim().parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let ppid: u32 = match parts[1].trim().parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let args = parts[2].trim();
+
+        if ppid != 1 {
+            continue;
+        }
+        if pid == self_pid {
+            continue;
+        }
+
+        let bin_part = args.split_whitespace().next().unwrap_or("");
+        if bin_part != self_bin.to_string_lossy() {
+            continue;
+        }
+
+        // Protect `alcove serve` — managed by launchd, ppid=1 is expected
+        if args.contains(" serve") || args.ends_with(" serve") {
+            protected += 1;
+            continue;
+        }
+
+        unsafe {
+            libc::kill(pid as i32, libc::SIGTERM);
+        }
+        reaped += 1;
+    }
+
+    if reaped == 0 && protected == 0 {
+        println!("  {} No orphaned processes found.", style("✓").green());
+    } else {
+        if reaped > 0 {
+            println!(
+                "  {} Reaped {} orphaned process(es).",
+                style("✓").green(),
+                style(reaped).bold()
+            );
+        }
+        if protected > 0 {
+            println!(
+                "  {} Kept {} alcove serve process(es) (launchd-managed).",
+                style("·").dim(),
+                protected
+            );
+        }
+    }
+
+    Ok(())
+}
+
 // Tests
 // ---------------------------------------------------------------------------
 

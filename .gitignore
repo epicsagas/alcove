@@ -212,3 +212,5 @@ $RECYCLE.BIN/
 .agents/
 .harness/
 .aider*
+# collet
+.collet/*.secrets.tmp

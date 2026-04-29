@@ -533,6 +533,37 @@ pub fn load_config() -> &'static DocConfig {
     })
 }
 
+/// Load vault-specific embedding config, falling back to the global default.
+///
+/// Reads `VAULT_PATH/.alcove/vault.toml` for an `[embedding]` section.
+/// If missing or partially specified, fields fall back to the global config.
+#[cfg(feature = "alcove-full")]
+pub fn vault_embedding_config(vault_path: &Path) -> EmbeddingConfig {
+    // Check two locations in priority order:
+    //   1. VAULT_PATH/.alcove/vault.toml  (alcove-native, takes precedence)
+    //   2. VAULT_PATH/vault.toml           (user-facing, e.g. Obsidian Forge config)
+    let candidates = [
+        vault_path.join(".alcove").join("vault.toml"),
+        vault_path.join("vault.toml"),
+    ];
+
+    for vault_cfg_path in &candidates {
+        if vault_cfg_path.exists() {
+            if let Ok(contents) = std::fs::read_to_string(vault_cfg_path) {
+                if let Ok(vault_cfg) = toml::from_str::<DocConfig>(&contents) {
+                    if vault_cfg.embedding.is_some() {
+                        let global = load_config();
+                        let merged = vault_cfg.overlay(global);
+                        return merged.embedding_config_with_defaults();
+                    }
+                }
+            }
+        }
+    }
+
+    load_config().embedding_config_with_defaults()
+}
+
 /// Classify a doc file path using a provided config (enables project-level overrides).
 #[cfg(test)]
 pub fn classify_tier_with(relative_path: &str, cfg: &DocConfig) -> &'static str {

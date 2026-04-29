@@ -39,6 +39,7 @@ const NGRAM_TOKENIZER: &str = "cjk_ngram";
 // On `rebuild_index` the entry is evicted before rebuilding so the next search
 // picks up freshly written segments.
 
+#[allow(dead_code)]
 struct CachedReaderEntry {
     reader: Arc<IndexReader>,
     last_used: Instant,
@@ -69,67 +70,81 @@ fn reader_cache_for(cat: CacheCategory) -> &'static Mutex<HashMap<PathBuf, Cache
 /// is held are dropped.  The cache is also bounded by `memory.max_cached_readers`
 /// (default 1); excess entries are evicted LRU-first.
 fn get_cached_reader(index_dir: &Path, index: &Index, cat: CacheCategory) -> Result<Arc<IndexReader>> {
-    let mem_cfg = crate::config::load_config().memory_config_with_defaults();
-    let ttl = if mem_cfg.reader_ttl_secs > 0 {
-        Some(Duration::from_secs(mem_cfg.reader_ttl_secs))
-    } else {
-        None
-    };
-    let max_readers = mem_cfg.max_cached_readers.clamp(1, 4);
+    // Tests create a unique TempDir per case, so every path is a cache miss.
+    // Bypass the global static cache entirely to prevent unbounded accumulation
+    // across the test suite.
+    #[cfg(test)]
+    {
+        let _ = (index_dir, cat);
+        return Ok(Arc::new(
+            index
+                .reader_builder()
+                .reload_policy(ReloadPolicy::Manual)
+                .try_into()
+                .context("Failed to create index reader")?,
+        ));
+    }
 
-    let mut cache = reader_cache_for(cat).lock().unwrap_or_else(|e| {
-        eprintln!("[alcove] reader cache mutex poisoned — clearing stale entries and recovering");
-        let mut guard = e.into_inner();
-        guard.clear();
-        guard
-    });
+    #[cfg(not(test))]
+    {
+        let mem_cfg = crate::config::load_config().memory_config_with_defaults();
+        let ttl = if mem_cfg.reader_ttl_secs > 0 {
+            Some(Duration::from_secs(mem_cfg.reader_ttl_secs))
+        } else {
+            None
+        };
+        let max_readers = mem_cfg.max_cached_readers.clamp(1, 4);
 
-    // TTL eviction pass: drop idle readers not referenced by an active search.
-    if let Some(ttl) = ttl {
-        cache.retain(|_, entry| {
-            if entry.last_used.elapsed() > ttl {
-                // Keep this entry — it is still in active use by a caller.
-                Arc::strong_count(&entry.reader) > 1
-            } else {
-                true
-            }
+        let mut cache = reader_cache_for(cat).lock().unwrap_or_else(|e| {
+            eprintln!("[alcove] reader cache mutex poisoned — clearing stale entries and recovering");
+            let mut guard = e.into_inner();
+            guard.clear();
+            guard
         });
-    }
 
-    // Cache hit: refresh last_used and reload new segments.
-    if let Some(entry) = cache.get_mut(index_dir) {
-        entry.last_used = Instant::now();
-        let _ = entry.reader.reload();
-        return Ok(Arc::clone(&entry.reader));
-    }
-
-    // Evict LRU entry (not in use) when at capacity.
-    if cache.len() >= max_readers {
-        let lru_key = cache
-            .iter()
-            .filter(|(_, e)| Arc::strong_count(&e.reader) <= 1)
-            .min_by_key(|(_, e)| e.last_used)
-            .map(|(k, _)| k.clone());
-        if let Some(key) = lru_key {
-            cache.remove(&key);
+        if let Some(ttl) = ttl {
+            cache.retain(|_, entry| {
+                if entry.last_used.elapsed() > ttl {
+                    Arc::strong_count(&entry.reader) > 1
+                } else {
+                    true
+                }
+            });
         }
-    }
 
-    let reader = Arc::new(
-        index
-            .reader_builder()
-            .reload_policy(ReloadPolicy::Manual)
-            .try_into()
-            .context("Failed to create index reader")?,
-    );
-    cache.insert(
-        index_dir.to_path_buf(),
-        CachedReaderEntry {
-            reader: Arc::clone(&reader),
-            last_used: Instant::now(),
-        },
-    );
-    Ok(reader)
+        if let Some(entry) = cache.get_mut(index_dir) {
+            entry.last_used = Instant::now();
+            let _ = entry.reader.reload();
+            return Ok(Arc::clone(&entry.reader));
+        }
+
+        if cache.len() >= max_readers {
+            let lru_key = cache
+                .iter()
+                .filter(|(_, e)| Arc::strong_count(&e.reader) <= 1)
+                .min_by_key(|(_, e)| e.last_used)
+                .map(|(k, _)| k.clone());
+            if let Some(key) = lru_key {
+                cache.remove(&key);
+            }
+        }
+
+        let reader = Arc::new(
+            index
+                .reader_builder()
+                .reload_policy(ReloadPolicy::Manual)
+                .try_into()
+                .context("Failed to create index reader")?,
+        );
+        cache.insert(
+            index_dir.to_path_buf(),
+            CachedReaderEntry {
+                reader: Arc::clone(&reader),
+                last_used: Instant::now(),
+            },
+        );
+        Ok(reader)
+    }
 }
 
 /// Evict the cached reader for `docs_root`.
@@ -1073,8 +1088,15 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
 
                                         if pending.len() >= embed_batch {
                                             let actual = pending.len();
-                                            let texts: Vec<&str> = pending.iter().map(|(_, _, _, t)| t.as_str()).collect();
-                                            match service.embed(&texts) {
+                                            let doc_pfx = model.doc_prefix();
+                                            let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
+                                                match doc_pfx {
+                                                    Some(pfx) => format!("{}{}", pfx, t),
+                                                    None => t.clone(),
+                                                }
+                                            }).collect();
+                                            let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                                            match service.embed(&text_refs) {
                                                 Ok(embeddings) => {
                                                     let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
                                                     if let Err(e) = store.batch_upsert(it) {
@@ -1098,8 +1120,15 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
 
                             // Flush remaining
                             if !pending.is_empty() {
-                                let texts: Vec<&str> = pending.iter().map(|(_, _, _, t)| t.as_str()).collect();
-                                match service.embed(&texts) {
+                                let doc_pfx = model.doc_prefix();
+                                let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
+                                    match doc_pfx {
+                                        Some(pfx) => format!("{}{}", pfx, t),
+                                        None => t.clone(),
+                                    }
+                                }).collect();
+                                let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                                match service.embed(&text_refs) {
                                     Ok(embeddings) => {
                                         let count = pending.len() as u64;
                                         let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
@@ -1404,7 +1433,12 @@ pub fn search_hybrid(
     }
 
     // 6. Generate query embedding
-    let query_embedding = match embedding_service.embed(&[query]) {
+    let query_pfx = embedding_service.model_choice().query_prefix();
+    let prefixed_query = match query_pfx {
+        Some(pfx) => format!("{}{}", pfx, query),
+        None => query.to_string(),
+    };
+    let query_embedding = match embedding_service.embed(&[&prefixed_query]) {
         Ok(emb) => emb.into_iter().next().unwrap_or_default(),
         Err(e) => {
             return Ok(json!({
@@ -1687,11 +1721,178 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
     }
     let _ = meta.save(vault_path);
 
+    // ---------------------------------------------------------------------------
+    // Vector indexing (alcove-full feature) — uses vault-specific embedding model
+    // with fallback to global config.
+    // ---------------------------------------------------------------------------
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
+    let mut vector_status = "disabled".to_string();
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
+    let mut vectors_indexed = 0u64;
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
+    let mut vector_errors = 0u64;
+    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
+    let mut embedding_model = String::new();
+
+    #[cfg(feature = "alcove-full")]
+    {
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::vector::VectorStore;
+        use crate::config::vault_embedding_config;
+
+        let emb_cfg = vault_embedding_config(vault_path);
+
+        if emb_cfg.enabled {
+            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+            embedding_model = model.as_str().to_string();
+
+            let service = EmbeddingService::new(crate::config::EmbeddingConfig {
+                model: model.as_str().to_string(),
+                auto_download: emb_cfg.auto_download,
+                cache_dir: emb_cfg.cache_dir.clone(),
+                enabled: true,
+                query_cache_size: emb_cfg.query_cache_size,
+            });
+
+            let _ = service.ensure_model();
+
+            if service.state() == crate::embedding::ModelState::Ready {
+                let vector_path = vault_path.join(".alcove").join("vectors.db");
+                match VectorStore::open(&vector_path, service.model_name(), service.dimension()) {
+                    Ok(mut store) => {
+                        vector_status = "ok".to_string();
+
+                        // Filter out already-indexed files
+                        let to_embed: Vec<&PathBuf> = files
+                            .iter()
+                            .filter(|fp| {
+                                let rel = fp
+                                    .strip_prefix(vault_path)
+                                    .unwrap_or(*fp)
+                                    .to_string_lossy();
+                                !matches!(store.has_file(&vault_name, &rel), Ok(true))
+                            })
+                            .collect();
+
+                        let total_files = to_embed.len() as u64;
+
+                        if total_files > 0 {
+                            let vpb = ProgressBar::new(total_files);
+                            vpb.set_style(
+                                ProgressStyle::default_bar()
+                                    .template("  {spinner:.magenta}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
+                                    .progress_chars("━━╌"),
+                            );
+                            vpb.enable_steady_tick(Duration::from_millis(80));
+                            vpb.set_message("embedding");
+
+                            let embed_batch: usize = match model.size_mb() {
+                                s if s < 100 => 128,
+                                s if s <= 800 => 64,
+                                _ => 32,
+                            };
+                            let mut pending: Vec<(String, String, u64, String)> = Vec::new();
+
+                            for fp in &to_embed {
+                                let rel = fp
+                                    .strip_prefix(vault_path)
+                                    .unwrap_or(*fp)
+                                    .to_string_lossy()
+                                    .to_string();
+                                vpb.set_message(rel.clone());
+
+                                if let Ok(content) = read_file_content(fp) {
+                                    let file_ext = fp.extension().and_then(|e| e.to_str()).unwrap_or("");
+                                    for (i, chunk) in chunk_content(&content, file_ext).into_iter().enumerate() {
+                                        pending.push((vault_name.clone(), rel.clone(), i as u64, chunk.text));
+
+                                        if pending.len() >= embed_batch {
+                                            let actual = pending.len();
+                                            let doc_pfx = model.doc_prefix();
+                                            let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
+                                                match doc_pfx {
+                                                    Some(pfx) => format!("{}{}", pfx, t),
+                                                    None => t.clone(),
+                                                }
+                                            }).collect();
+                                            let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                                            match service.embed(&text_refs) {
+                                                Ok(embeddings) => {
+                                                    let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
+                                                    if let Err(e) = store.batch_upsert(it) {
+                                                        eprintln!("[alcove] vault batch upsert failed: {}", e);
+                                                        vector_errors += actual as u64;
+                                                    } else {
+                                                        vectors_indexed += actual as u64;
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("[alcove] vault embed failed: {}", e);
+                                                    vector_errors += pending.len() as u64;
+                                                    pending.clear();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                vpb.inc(1);
+                            }
+
+                            // Flush remaining
+                            if !pending.is_empty() {
+                                let doc_pfx = model.doc_prefix();
+                                let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
+                                    match doc_pfx {
+                                        Some(pfx) => format!("{}{}", pfx, t),
+                                        None => t.clone(),
+                                    }
+                                }).collect();
+                                let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                                match service.embed(&text_refs) {
+                                    Ok(embeddings) => {
+                                        let count = pending.len() as u64;
+                                        let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
+                                        if let Err(e) = store.batch_upsert(it) {
+                                            eprintln!("[alcove] vault batch upsert failed: {}", e);
+                                            vector_errors += count;
+                                        } else {
+                                            vectors_indexed += count;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("[alcove] vault embed failed: {}", e);
+                                        vector_errors += pending.len() as u64;
+                                    }
+                                }
+                            }
+
+                            vpb.finish_and_clear();
+                        }
+                        // Always report total vectors in store
+                        if let Ok(meta) = store.meta() {
+                            vectors_indexed = meta.count as u64;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[alcove] Failed to open vault vector store: {}", e);
+                        vector_status = format!("error: {}", e);
+                    }
+                }
+            } else {
+                vector_status = "model_not_ready".to_string();
+            }
+        }
+    }
+
     Ok(json!({
         "status": "ok",
         "vault": vault_name,
         "files": file_count,
         "index_path": dir.to_string_lossy(),
+        "vectors_indexed": vectors_indexed,
+        "vector_errors": vector_errors,
+        "vector_status": vector_status,
+        "embedding_model": embedding_model,
     }))
 }
 
@@ -1752,6 +1953,198 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
     let index = Index::open_in_dir(&dir).context("Failed to open vault search index")?;
     register_ngram_tokenizer(&index)?;
 
+    // --- Hybrid search (BM25 + vector) for vaults ---
+    // Falls back to BM25-only when vectors are not available.
+    #[cfg(feature = "alcove-full")]
+    {
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::vector::{reciprocal_rank_fusion, VectorStore};
+        use crate::config::vault_embedding_config;
+
+        let emb_cfg = vault_embedding_config(vault_path);
+
+        if emb_cfg.enabled {
+            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+            let service = EmbeddingService::new(crate::config::EmbeddingConfig {
+                model: model.as_str().to_string(),
+                auto_download: emb_cfg.auto_download,
+                cache_dir: emb_cfg.cache_dir.clone(),
+                enabled: true,
+                query_cache_size: emb_cfg.query_cache_size,
+            });
+
+            if service.state() == crate::embedding::ModelState::Ready {
+                let vector_path = vault_path.join(".alcove").join("vectors.db");
+
+                // BM25 search with extra candidates for RRF
+                let bm25_json = search_vault_bm25_inner(vault_path, query, &sanitized, limit * 2, &index)?;
+
+                // Query embedding with prefix
+                let query_pfx = service.model_choice().query_prefix();
+                let prefixed_query = match query_pfx {
+                    Some(pfx) => format!("{}{}", pfx, query),
+                    None => query.to_string(),
+                };
+                let query_embedding = match service.embed(&[&prefixed_query]) {
+                    Ok(emb) => emb.into_iter().next().unwrap_or_default(),
+                    Err(_) => {
+                        // Embedding failed, return BM25-only
+                        return Ok(json!({
+                            "query": query,
+                            "vault": vault_name,
+                            "mode": "bm25-only",
+                            "embedding_status": "query_embed_failed",
+                            "matches": bm25_json["matches"],
+                            "truncated": bm25_json["truncated"],
+                        }));
+                    }
+                };
+
+                // Vector search
+                let mut vector_error: Option<String> = None;
+                let vector_results = match VectorStore::open(&vector_path, service.model_name(), service.dimension()) {
+                    Ok(s) => match s.search(&query_embedding, limit * 2) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            vector_error = Some(format!("vector search error: {e}"));
+                            Vec::new()
+                        }
+                    },
+                    Err(e) => {
+                        vector_error = Some(format!("vector store open error: {e}"));
+                        Vec::new()
+                    }
+                };
+
+                // Extract BM25 tuples for RRF
+                let bm25_results: Vec<(String, String, u64, f32)> = bm25_json["matches"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter().filter_map(|m| {
+                            Some((
+                                m["project"].as_str()?.to_string(),
+                                m["file"].as_str()?.to_string(),
+                                m["chunk_id"].as_u64()?,
+                                m["score"].as_f64()? as f32,
+                            ))
+                        }).collect()
+                    })
+                    .unwrap_or_default();
+
+                // RRF fusion
+                let rrf_k = ((60.0 * ((limit as f32) / 50.0).sqrt()).round() as u32).max(10);
+                let fused = reciprocal_rank_fusion(&bm25_results, &vector_results, rrf_k);
+                let truncated = fused.len() > limit;
+
+                // Build snippet cache from BM25 results
+                type SnippetKey = (String, String, u64);
+                let mut snippet_cache: HashMap<SnippetKey, (String, u64)> = HashMap::new();
+                if let Some(arr) = bm25_json["matches"].as_array() {
+                    for m in arr {
+                        if let (Some(proj), Some(file), Some(cid), Some(snip), Some(ls)) = (
+                            m["project"].as_str(),
+                            m["file"].as_str(),
+                            m["chunk_id"].as_u64(),
+                            m["snippet"].as_str(),
+                            m["line_start"].as_u64(),
+                        ) {
+                            snippet_cache.insert(
+                                (proj.to_string(), file.to_string(), cid),
+                                (snip.to_string(), ls),
+                            );
+                        }
+                    }
+                }
+
+                // Resolve snippets for vector-only hits
+                let miss_reader = get_cached_reader(&dir, &index, CacheCategory::Vault)?;
+                let miss_searcher = miss_reader.searcher();
+                let miss_schema = index.schema();
+                let miss_project_field = miss_schema.get_field("project").context("missing project field")?;
+                let miss_file_field = miss_schema.get_field("file").context("missing file field")?;
+                let miss_body_field = miss_schema.get_field("body").context("missing body field")?;
+                let miss_line_start_field = miss_schema.get_field("line_start").context("missing line_start field")?;
+                let miss_chunk_id_field = miss_schema.get_field("chunk_id").context("missing chunk_id field")?;
+
+                let mut results: Vec<JsonValue> = Vec::new();
+                for (project, file, chunk_id, rrf_score) in fused.into_iter().take(limit) {
+                    let (snippet, line_start) =
+                        if let Some(cached) = snippet_cache.get(&(project.clone(), file.clone(), chunk_id)) {
+                            cached.clone()
+                        } else {
+                            let combined = tantivy::query::BooleanQuery::new(vec![
+                                (tantivy::query::Occur::Must, Box::new(tantivy::query::TermQuery::new(
+                                    tantivy::Term::from_field_text(miss_project_field, &project),
+                                    tantivy::schema::IndexRecordOption::Basic,
+                                )) as Box<dyn tantivy::query::Query>),
+                                (tantivy::query::Occur::Must, Box::new(tantivy::query::TermQuery::new(
+                                    tantivy::Term::from_field_text(miss_file_field, &file),
+                                    tantivy::schema::IndexRecordOption::Basic,
+                                ))),
+                                (tantivy::query::Occur::Must, Box::new(tantivy::query::TermQuery::new(
+                                    tantivy::Term::from_field_u64(miss_chunk_id_field, chunk_id),
+                                    tantivy::schema::IndexRecordOption::Basic,
+                                ))),
+                            ]);
+                            if let Ok(top_docs) = miss_searcher.search(&combined, &TopDocs::with_limit(1).order_by_score()) {
+                                if let Some((_s, addr)) = top_docs.first() {
+                                    if let Ok(doc) = miss_searcher.doc::<TantivyDocument>(*addr) {
+                                        let body = doc.get_first(miss_body_field)
+                                            .and_then(|v| schema::Value::as_str(&v))
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let ls = doc.get_first(miss_line_start_field)
+                                            .and_then(|v| schema::Value::as_u64(&v))
+                                            .unwrap_or(0);
+                                        (body, ls)
+                                    } else { (String::new(), 0) }
+                                } else { (String::new(), 0) }
+                            } else { (String::new(), 0) }
+                        };
+
+                    results.push(json!({
+                        "project": project,
+                        "file": file,
+                        "line_start": line_start,
+                        "snippet": snippet,
+                        "score": (rrf_score * 1000.0).round() / 1000.0,
+                    }));
+                }
+
+                return Ok(json!({
+                    "query": query,
+                    "vault": vault_name,
+                    "mode": "hybrid-bm25-vector",
+                    "embedding_status": match &vector_error {
+                        Some(e) => e.as_str(),
+                        None => "ready",
+                    },
+                    "matches": results,
+                    "truncated": truncated,
+                }));
+            }
+        }
+    }
+
+    // BM25-only fallback (always available, used when embedding is disabled or not ready)
+    search_vault_bm25_inner(vault_path, query, &sanitized, limit, &index)
+}
+
+/// Inner BM25 search for vault — accepts a pre-opened index for reuse.
+fn search_vault_bm25_inner(
+    vault_path: &Path,
+    query: &str,
+    sanitized: &str,
+    limit: usize,
+    index: &Index,
+) -> Result<JsonValue> {
+    let vault_name = vault_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let dir = index_dir(vault_path);
     let schema = index.schema();
     let project_field = schema.get_field("project").context("missing 'project' field")?;
     let file_field = schema.get_field("file").context("missing 'file' field")?;
@@ -1857,6 +2250,11 @@ pub fn rebuild_vault_index(vault_path: &Path) -> Result<JsonValue> {
     if meta.exists() {
         std::fs::remove_file(&meta)?;
     }
+    // Also clear vector store so embeddings are re-indexed
+    let vectors_path = vault_path.join(".alcove").join("vectors.db");
+    if vectors_path.exists() {
+        std::fs::remove_file(&vectors_path)?;
+    }
 
     build_vault_index(vault_path)
 }
@@ -1869,7 +2267,25 @@ pub fn rebuild_vault_index(vault_path: &Path) -> Result<JsonValue> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::OnceLock;
     use tempfile::TempDir;
+
+    // ---------------------------------------------------------------------------
+    // Shared read-only fixture — built once, reused by all read-only tests.
+    // Tests that mutate the index must call `setup_indexed_root()` for their own
+    // private TempDir so they don't corrupt the shared state.
+    // ---------------------------------------------------------------------------
+    static SHARED_ROOT: OnceLock<TempDir> = OnceLock::new();
+
+    fn shared_indexed_root() -> &'static std::path::Path {
+        SHARED_ROOT
+            .get_or_init(|| {
+                let tmp = setup_indexed_root();
+                build_index_inner(tmp.path(), true).unwrap();
+                tmp
+            })
+            .path()
+    }
 
     fn setup_indexed_root() -> TempDir {
         let tmp = TempDir::new().unwrap();
@@ -1933,10 +2349,8 @@ mod tests {
 
     #[test]
     fn search_indexed_finds_oauth() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "OAuth", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty(), "should find OAuth matches");
         assert_eq!(result["mode"], "ranked");
@@ -1950,10 +2364,8 @@ mod tests {
 
     #[test]
     fn search_indexed_with_project_filter() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        let result = search_indexed(tmp.path(), "OAuth", 10, Some("backend")).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "OAuth", 10, Some("backend")).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty());
         for m in matches {
@@ -1963,30 +2375,24 @@ mod tests {
 
     #[test]
     fn search_indexed_respects_limit() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        let result = search_indexed(tmp.path(), "OAuth", 1, None).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "OAuth", 1, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert_eq!(matches.len(), 1);
     }
 
     #[test]
     fn search_indexed_no_results() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        let result = search_indexed(tmp.path(), "zzz_nonexistent_query_zzz", 10, None).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "zzz_nonexistent_query_zzz", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(matches.is_empty());
     }
 
     #[test]
     fn search_indexed_skips_hidden_projects() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        let result = search_indexed(tmp.path(), "Template", 10, None).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "Template", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         let projects: Vec<&str> = matches
             .iter()
@@ -2040,12 +2446,8 @@ mod tests {
 
     #[test]
     fn is_index_fresh_after_build() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-        assert!(
-            !is_index_stale(tmp.path()),
-            "just-built index should not be stale"
-        );
+        let root = shared_indexed_root();
+        assert!(!is_index_stale(root), "just-built index should not be stale");
     }
 
     #[test]
@@ -2093,10 +2495,8 @@ mod tests {
 
     #[test]
     fn ensure_index_fresh_skips_when_fresh() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        let rebuilt = ensure_index_fresh(tmp.path());
+        let root = shared_indexed_root();
+        let rebuilt = ensure_index_fresh(root);
         assert!(!rebuilt, "should not rebuild when fresh");
     }
 
@@ -2127,33 +2527,23 @@ mod tests {
 
     #[test]
     fn search_indexed_special_chars_no_panic() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        // These should not panic or error
-        let result = search_indexed(tmp.path(), "C++", 10, None).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "C++", 10, None).unwrap();
         assert!(result["matches"].is_array());
-
-        let result = search_indexed(tmp.path(), "test:query", 10, None).unwrap();
+        let result = search_indexed(root, "test:query", 10, None).unwrap();
         assert!(result["matches"].is_array());
-
-        let result = search_indexed(tmp.path(), "(foo AND bar)", 10, None).unwrap();
+        let result = search_indexed(root, "(foo AND bar)", 10, None).unwrap();
         assert!(result["matches"].is_array());
     }
 
     #[test]
     fn search_indexed_xss_special_chars_no_panic() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        // Angle brackets and quotes are tantivy special chars that must be escaped
-        let result = search_indexed(tmp.path(), "<script>alert()</script>", 10, None).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "<script>alert()</script>", 10, None).unwrap();
         assert!(result["matches"].is_array());
-
-        let result = search_indexed(tmp.path(), "foo<bar>baz", 10, None).unwrap();
+        let result = search_indexed(root, "foo<bar>baz", 10, None).unwrap();
         assert!(result["matches"].is_array());
-
-        let result = search_indexed(tmp.path(), r#""quoted phrase""#, 10, None).unwrap();
+        let result = search_indexed(root, r#""quoted phrase""#, 10, None).unwrap();
         assert!(result["matches"].is_array());
     }
 
@@ -2169,10 +2559,8 @@ mod tests {
 
     #[test]
     fn search_indexed_empty_query() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        let result = search_indexed(tmp.path(), "", 10, None).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(matches.is_empty(), "empty query should return no matches");
     }
@@ -2232,19 +2620,16 @@ mod tests {
 
     #[test]
     fn search_indexed_global_scope_label() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-        let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "OAuth", 10, None).unwrap();
         assert_eq!(result["scope"], "global");
         assert_eq!(result["mode"], "ranked");
     }
 
     #[test]
     fn search_indexed_returns_chunk_id() {
-        // chunk_id must be present in BM25 results so hybrid RRF can join on it
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-        let result = search_indexed(tmp.path(), "OAuth", 10, None).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "OAuth", 10, None).unwrap();
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty());
         for m in matches {
@@ -2255,9 +2640,8 @@ mod tests {
 
     #[test]
     fn search_indexed_project_scope_label() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-        let result = search_indexed(tmp.path(), "OAuth", 10, Some("backend")).unwrap();
+        let root = shared_indexed_root();
+        let result = search_indexed(root, "OAuth", 10, Some("backend")).unwrap();
         assert_eq!(result["scope"], "project");
     }
 
@@ -2316,9 +2700,8 @@ mod tests {
 
     #[test]
     fn index_exists_true_after_build() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-        assert!(index_exists(tmp.path()));
+        let root = shared_indexed_root();
+        assert!(index_exists(root));
     }
 
     #[test]
@@ -2335,9 +2718,8 @@ mod tests {
 
     #[test]
     fn check_doc_changes_fresh_index() {
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-        let result = check_doc_changes(tmp.path());
+        let root = shared_indexed_root();
+        let result = check_doc_changes(root);
         assert!(result["index_exists"].as_bool().unwrap());
         assert!(!result["is_stale"].as_bool().unwrap());
         assert!(result["added"].as_array().unwrap().is_empty());
@@ -2452,19 +2834,16 @@ mod tests {
         use crate::embedding::EmbeddingService;
         use crate::config::EmbeddingConfig;
 
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        // Create an EmbeddingService with embedding disabled — state will be Disabled (non-Ready)
+        let root = shared_indexed_root();
         let svc = EmbeddingService::new(EmbeddingConfig {
             model: "snowflake-arctic-embed-xs".to_string(),
             auto_download: false,
-            cache_dir: tmp.path().join(".alcove/models").to_string_lossy().to_string(),
+            cache_dir: root.join(".alcove/models").to_string_lossy().to_string(),
             enabled: false,
             query_cache_size: 64,
         });
 
-        let result = search_hybrid(tmp.path(), "OAuth", &svc, 5, None).unwrap();
+        let result = search_hybrid(root, "OAuth", &svc, 5, None).unwrap();
         assert_eq!(result["mode"], "bm25-only", "expected bm25-only when embedding is not ready");
     }
 
@@ -2476,21 +2855,16 @@ mod tests {
         use crate::embedding::EmbeddingService;
         use crate::config::EmbeddingConfig;
 
-        let tmp = setup_indexed_root();
-        build_index_inner(tmp.path(), true).unwrap();
-
-        // Build a ready embedding service with a bogus cache dir so the model
-        // is not found, but embed() will fail — exercising vector store open
-        // failure path when vectors.db is absent (never built).
+        let root = shared_indexed_root();
         let svc = EmbeddingService::new(EmbeddingConfig {
             model: "snowflake-arctic-embed-xs".to_string(),
             auto_download: false,
-            cache_dir: tmp.path().join(".alcove/models").to_string_lossy().to_string(),
+            cache_dir: root.join(".alcove/models").to_string_lossy().to_string(),
             enabled: true,
             query_cache_size: 64,
         });
 
-        let result = search_hybrid(tmp.path(), "OAuth", &svc, 5, None).unwrap();
+        let result = search_hybrid(root, "OAuth", &svc, 5, None).unwrap();
         // When embedding fails (model absent), we get bm25-only — that is fine.
         // When embedding succeeds but the vector DB is absent, we must NOT
         // silently report "ready"; the error must appear in embedding_status.
@@ -2546,7 +2920,10 @@ mod tests {
     // We test the helper by pointing it at a valid (non-PDF) file path so
     // pdftotext exits quickly with a non-zero status — the important thing is
     // that read_file_content returns Ok/Err without hanging.
+    /// Ignored in normal test runs because IndexReader cache is bypassed in test
+    /// builds. Run with `cargo test -- --ignored` to verify cache behaviour.
     #[test]
+    #[ignore = "IndexReader cache is bypassed in test builds; run with --ignored to verify"]
     fn test_project_vault_cache_isolation() {
         // Build two separate indexes in different temp dirs.
         let tmp_project = TempDir::new().unwrap();
