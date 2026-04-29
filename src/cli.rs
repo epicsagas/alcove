@@ -2474,6 +2474,7 @@ pub fn cmd_promote(source: &std::path::Path, project: Option<&str>, mv: bool) ->
 // alcove reap
 // ---------------------------------------------------------------------------
 
+#[cfg(unix)]
 pub fn cmd_reap() -> Result<()> {
     let self_pid = std::process::id();
     let self_bin = std::env::current_exe()?;
