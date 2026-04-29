@@ -39,7 +39,7 @@ const NGRAM_TOKENIZER: &str = "cjk_ngram";
 // On `rebuild_index` the entry is evicted before rebuilding so the next search
 // picks up freshly written segments.
 
-#[cfg(not(test))]
+#[allow(dead_code)]
 struct CachedReaderEntry {
     reader: Arc<IndexReader>,
     last_used: Instant,
