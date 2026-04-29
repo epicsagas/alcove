@@ -2470,6 +2470,84 @@ pub fn cmd_promote(source: &std::path::Path, project: Option<&str>, mv: bool) ->
 
     Ok(())
 }
+// ---------------------------------------------------------------------------
+// alcove reap
+// ---------------------------------------------------------------------------
+
+pub fn cmd_reap() -> Result<()> {
+    let self_pid = std::process::id();
+    let self_bin = std::env::current_exe()?;
+
+    let output = std::process::Command::new("ps")
+        .args(["-eo", "pid=,ppid=,args="])
+        .output()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut reaped = 0u32;
+    let mut protected = 0u32;
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.splitn(3, ' ').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let pid: u32 = match parts[0].trim().parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let ppid: u32 = match parts[1].trim().parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let args = parts[2].trim();
+
+        if ppid != 1 {
+            continue;
+        }
+        if pid == self_pid {
+            continue;
+        }
+
+        let bin_part = args.split_whitespace().next().unwrap_or("");
+        if bin_part != self_bin.to_string_lossy() {
+            continue;
+        }
+
+        // Protect `alcove serve` — managed by launchd, ppid=1 is expected
+        if args.contains(" serve") || args.ends_with(" serve") {
+            protected += 1;
+            continue;
+        }
+
+        unsafe {
+            libc::kill(pid as i32, libc::SIGTERM);
+        }
+        reaped += 1;
+    }
+
+    if reaped == 0 && protected == 0 {
+        println!("  {} No orphaned processes found.", style("✓").green());
+    } else {
+        if reaped > 0 {
+            println!(
+                "  {} Reaped {} orphaned process(es).",
+                style("✓").green(),
+                style(reaped).bold()
+            );
+        }
+        if protected > 0 {
+            println!(
+                "  {} Kept {} alcove serve process(es) (launchd-managed).",
+                style("·").dim(),
+                protected
+            );
+        }
+    }
+
+    Ok(())
+}
+
 // Tests
 // ---------------------------------------------------------------------------
 

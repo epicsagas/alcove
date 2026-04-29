@@ -156,6 +156,8 @@ enum Commands {
     },
     /// Print the bearer token from config (for team sharing)
     Token,
+    /// Reap orphaned alcove stdio proxy processes
+    Reap,
 }
 
 #[derive(Subcommand)]
@@ -346,6 +348,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "alcove-server")]
         Some(Commands::Restart) => launchd::restart(),
         Some(Commands::Token) => cli::cmd_token(),
+        Some(Commands::Reap) => cli::cmd_reap(),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Serve { host, port, token }) => {
             let cfg = config::load_config();

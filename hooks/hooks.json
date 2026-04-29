@@ -13,6 +13,19 @@
         ],
         "description": "Auto-install alcove binary if missing, register MCP server"
       }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "alcove reap",
+            "async": true
+          }
+        ],
+        "description": "Reap orphaned alcove stdio proxy processes"
+      }
     ]
   }
 }
