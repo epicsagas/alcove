@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod telemetry;
 #[cfg(feature = "alcove-full")]
 mod embedding;
 mod index;
@@ -154,6 +155,12 @@ enum Commands {
         #[command(subcommand)]
         subcmd: VaultCommands,
     },
+    /// Manage telemetry consent
+    Telemetry {
+        /// on, off, or status (default)
+        #[arg(default_value = "status")]
+        action: String,
+    },
     /// Print the bearer token from config (for team sharing)
     Token,
     /// Reap orphaned alcove stdio proxy processes
@@ -219,8 +226,18 @@ fn main() -> Result<()> {
     };
 
     match cli.command {
+        // setup and telemetry manage consent — skip auto-enable
+        Some(Commands::Setup) => return cli::cmd_setup(),
+        Some(Commands::Telemetry { action }) => return telemetry::run_cli(&action),
+        _ => {}
+    }
+
+    // All other commands: auto-enable telemetry on first run (opt-out model).
+    telemetry::ensure_consent_or_set_default();
+
+    match cli.command {
         None => serve(),
-        Some(Commands::Setup) => cli::cmd_setup(),
+        Some(Commands::Setup) | Some(Commands::Telemetry { .. }) => unreachable!(),
         Some(Commands::Uninstall) => cli::cmd_uninstall(),
         Some(Commands::Validate { format, exit_code }) => cli::cmd_validate(&format, exit_code),
         Some(Commands::Index) => cli::cmd_index(),

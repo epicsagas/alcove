@@ -325,7 +325,7 @@ fn write_codex_mcp(config_path: &Path, binary: &Path, docs_root: &Path, server_u
 // ---------------------------------------------------------------------------
 
 /// Total number of setup steps (for progress indicator)
-const SETUP_STEPS: usize = 7;
+const SETUP_STEPS: usize = 8;
 
 /// Setup wizard steps
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -336,7 +336,8 @@ enum Step {
     Embedding = 3,
     Server = 4,
     Agents = 5,
-    Summary = 6,
+    Telemetry = 6,
+    Summary = 7,
 }
 
 impl Step {
@@ -350,6 +351,7 @@ impl Step {
             Step::Embedding => Cow::Borrowed("Embedding Model (Hybrid Search)"),
             Step::Server => Cow::Borrowed("HTTP RAG Server"),
             Step::Agents => t!("setup.agents"),
+            Step::Telemetry => Cow::Borrowed("Telemetry"),
             Step::Summary => t!("setup.done"),
         };
         format!("[{}/{}] ── {} ──", step_num, SETUP_STEPS, title.as_ref())
@@ -362,7 +364,8 @@ impl Step {
             Step::Diagram => Some(Step::Embedding),
             Step::Embedding => Some(Step::Server),
             Step::Server => Some(Step::Agents),
-            Step::Agents => Some(Step::Summary),
+            Step::Agents => Some(Step::Telemetry),
+            Step::Telemetry => Some(Step::Summary),
             Step::Summary => None,
         }
     }
@@ -375,7 +378,8 @@ impl Step {
             Step::Embedding => Some(Step::Diagram),
             Step::Server => Some(Step::Embedding),
             Step::Agents => Some(Step::Server),
-            Step::Summary => Some(Step::Agents),
+            Step::Telemetry => Some(Step::Agents),
+            Step::Summary => Some(Step::Telemetry),
         }
     }
 }
@@ -988,7 +992,23 @@ fn step_agents(state: &mut SetupState) -> Result<StepResult> {
     }
 }
 
-/// Step 6: Summary and finalization
+/// Step 7: Telemetry consent
+fn step_telemetry() -> Result<StepResult> {
+    print_step_header(&Step::Telemetry);
+    let level = crate::telemetry::prompt_consent_interactive();
+    crate::telemetry::write_consent(level);
+    match level {
+        crate::telemetry::ConsentLevel::On => {
+            println!("  {} Telemetry enabled. To opt out later: alcove telemetry off", style("✓").green());
+        }
+        crate::telemetry::ConsentLevel::Off => {
+            println!("  {} Telemetry disabled. To enable later: alcove telemetry on", style("✓").green());
+        }
+    }
+    Ok(StepResult::Continue)
+}
+
+/// Step 8: Summary and finalization
 fn step_summary(state: &mut SetupState) -> Result<StepResult> {
     print_step_header(&Step::Summary);
 
@@ -1267,6 +1287,7 @@ pub fn cmd_setup() -> Result<()> {
             Step::Embedding => step_embedding(&mut state)?,
             Step::Server => step_server(&mut state)?,
             Step::Agents => step_agents(&mut state)?,
+            Step::Telemetry => step_telemetry()?,
             Step::Summary => {
                 step_summary(&mut state)?;
                 break; // Done!
