@@ -556,14 +556,13 @@ impl VectorStore {
                     .as_ref()
                     .map_or(HNSW_CACHE_MAX_ENTRIES, |m| m.max_hnsw_cache);
                 let mut cache = self.hnsw_cache.borrow_mut();
-                if cache.len() >= max_entries {
-                    if let Some(lru_key) = cache
+                if cache.len() >= max_entries
+                    && let Some(lru_key) = cache
                         .iter()
                         .min_by_key(|(_, e)| e.last_accessed)
                         .map(|(k, _)| k.clone())
-                    {
-                        cache.remove(&lru_key);
-                    }
+                {
+                    cache.remove(&lru_key);
                 }
                 cache.insert(
                     cache_key.clone(),

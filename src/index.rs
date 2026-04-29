@@ -76,13 +76,13 @@ fn get_cached_reader(index_dir: &Path, index: &Index, cat: CacheCategory) -> Res
     #[cfg(test)]
     {
         let _ = (index_dir, cat);
-        return Ok(Arc::new(
+        Ok(Arc::new(
             index
                 .reader_builder()
                 .reload_policy(ReloadPolicy::Manual)
                 .try_into()
                 .context("Failed to create index reader")?,
-        ));
+        ))
     }
 
     #[cfg(not(test))]
@@ -2154,12 +2154,12 @@ fn search_vault_bm25_inner(
         .get_field("line_start")
         .context("missing 'line_start' field")?;
 
-    let reader = get_cached_reader(&dir, &index, CacheCategory::Vault)?;
+    let reader = get_cached_reader(&dir, index, CacheCategory::Vault)?;
     let searcher = reader.searcher();
 
-    let query_parser = QueryParser::for_index(&index, vec![body_field]);
+    let query_parser = QueryParser::for_index(index, vec![body_field]);
     let parsed_query = query_parser
-        .parse_query(&sanitized)
+        .parse_query(sanitized)
         .context("Failed to parse vault search query")?;
 
     let top_docs: Vec<(Score, DocAddress)> = searcher

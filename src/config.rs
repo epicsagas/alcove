@@ -548,16 +548,14 @@ pub fn vault_embedding_config(vault_path: &Path) -> EmbeddingConfig {
     ];
 
     for vault_cfg_path in &candidates {
-        if vault_cfg_path.exists() {
-            if let Ok(contents) = std::fs::read_to_string(vault_cfg_path) {
-                if let Ok(vault_cfg) = toml::from_str::<DocConfig>(&contents) {
-                    if vault_cfg.embedding.is_some() {
-                        let global = load_config();
-                        let merged = vault_cfg.overlay(global);
-                        return merged.embedding_config_with_defaults();
-                    }
-                }
-            }
+        if vault_cfg_path.exists()
+            && let Ok(contents) = std::fs::read_to_string(vault_cfg_path)
+            && let Ok(vault_cfg) = toml::from_str::<DocConfig>(&contents)
+            && vault_cfg.embedding.is_some()
+        {
+            let global = load_config();
+            let merged = vault_cfg.overlay(global);
+            return merged.embedding_config_with_defaults();
         }
     }
 

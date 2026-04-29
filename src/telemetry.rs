@@ -402,7 +402,7 @@ fn parse_sentry_dsn(dsn: &str) -> Option<(String, String)> {
 
 fn sentry_send(message: &str, failure_class: &str, version: &str) {
     let Some(dsn) = sentry_dsn() else { return };
-    let (host, path) = parse_sentry_dsn(&dsn).unwrap_or_default();
+    let (host, path) = parse_sentry_dsn(dsn).unwrap_or_default();
     if host.is_empty() {
         return;
     }
