@@ -1299,6 +1299,10 @@ fn sanitize_query(query: &str) -> String {
 
 /// Build a multi-field BooleanQuery that searches `body`, `title`, and `filename`
 /// with different boost weights so that title/filename matches rank higher.
+///
+/// We need separate QueryParser instances per field because Tantivy's QueryParser
+/// distributes boost evenly across all its fields. To get per-field boost control,
+/// we use individual parsers and wrap results with BoostQuery.
 fn build_search_query(
     sanitized: &str,
     index: &Index,
@@ -1329,6 +1333,24 @@ fn build_search_query(
     }
 
     Box::new(BooleanQuery::new(clauses))
+}
+
+// ---------------------------------------------------------------------------
+// Project diversity filter
+// ---------------------------------------------------------------------------
+
+/// Remove results so that no project appears more than `max_per_project` times.
+pub(crate) fn apply_project_diversity(results: &mut Vec<serde_json::Value>, max_per_project: usize) {
+    let mut project_counts: HashMap<String, usize> = HashMap::new();
+    results.retain(|r| {
+        let project = r["project"].as_str().unwrap_or("");
+        let count = project_counts.entry(project.to_string()).or_insert(0);
+        if *count >= max_per_project {
+            return false;
+        }
+        *count += 1;
+        true
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1485,20 +1507,13 @@ fn search_with_index(
 
     // Project diversity: limit same-project results when no project_filter is set.
     if project_filter.is_none() {
-        const MAX_PER_PROJECT: usize = 2;
-        let mut project_counts: HashMap<String, usize> = HashMap::new();
-        results.retain(|r| {
-            let project = r["project"].as_str().unwrap_or("");
-            let count = project_counts.entry(project.to_string()).or_insert(0);
-            if *count >= MAX_PER_PROJECT {
-                return false;
-            }
-            *count += 1;
-            true
-        });
+        apply_project_diversity(&mut results, 2);
     }
     results.truncate(limit);
 
+    // Note: after project diversity filtering, results may be fewer than `limit`
+    // even though the original candidate set was larger. The `truncated` flag
+    // indicates whether the final (post-diversity) result set hit the limit.
     let truncated = results.len() >= limit;
     Ok(json!({
         "query": query,
@@ -3300,5 +3315,237 @@ mod tests {
         // Rebuild and verify count stays the same
         let result = rebuild_vault_index(&vault).unwrap();
         assert_eq!(result["files"].as_u64().unwrap(), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for extract_title
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_extract_title_h1() {
+        assert_eq!(extract_title("# My Title\nSome text", "doc.md", 0), "My Title");
+    }
+
+    #[test]
+    fn test_extract_title_h2() {
+        assert_eq!(extract_title("## Sub Title\nSome text", "doc.md", 0), "Sub Title");
+    }
+
+    #[test]
+    fn test_extract_title_h3() {
+        assert_eq!(extract_title("### Deep Title\nSome text", "doc.md", 0), "Deep Title");
+    }
+
+    #[test]
+    fn test_extract_title_no_heading_falls_back_to_filename() {
+        assert_eq!(extract_title("Just some text\nNo heading here", "README.md", 0), "README");
+    }
+
+    #[test]
+    fn test_extract_title_non_first_chunk_uses_filename() {
+        // chunk_idx=1 should always fall back to filename stem, ignoring headings
+        assert_eq!(
+            extract_title("# Heading Ignored\nSome text", "GUIDE.md", 1),
+            "GUIDE"
+        );
+    }
+
+    #[test]
+    fn test_extract_title_filename_with_multiple_dots() {
+        // Path::file_stem strips only the last extension
+        assert_eq!(extract_title("text", "ARCHITECTURE.md", 0), "ARCHITECTURE");
+    }
+
+    #[test]
+    fn test_extract_title_heading_after_blank_lines() {
+        let content = "\n\n## Late Heading\nBody text";
+        assert_eq!(extract_title(content, "doc.md", 0), "Late Heading");
+    }
+
+    #[test]
+    fn test_extract_title_heading_with_extra_whitespace() {
+        assert_eq!(extract_title("  #   Spaced Title  \nBody", "doc.md", 0), "Spaced Title");
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for build_search_query
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_build_search_query_returns_non_null() {
+        // Create a minimal in-memory index with the ngram tokenizer
+        let mut schema_builder = Schema::builder();
+        let body_field = schema_builder.add_text_field("body", TEXT);
+        let title_field = schema_builder.add_text_field("title", TEXT);
+        let filename_field = schema_builder.add_text_field("filename", TEXT);
+        let schema = schema_builder.build();
+
+        let index = Index::create_in_ram(schema);
+        register_ngram_tokenizer(&index).unwrap();
+
+        // Index a test document
+        let mut index_writer = index.writer(15_000_000).unwrap();
+        let mut doc = TantivyDocument::new();
+        doc.add_text(body_field, "authentication OAuth token");
+        doc.add_text(title_field, "Auth Guide");
+        doc.add_text(filename_field, "auth-guide.md");
+        index_writer.add_document(doc).unwrap();
+        index_writer.commit().unwrap();
+
+        // Build the query and verify it is not empty
+        let query = build_search_query("OAuth", &index, body_field, title_field, filename_field);
+
+        // Search with the query to verify it returns results
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let top_docs: Vec<(Score, DocAddress)> = searcher
+            .search(&query, &TopDocs::with_limit(10).order_by_score())
+            .unwrap();
+        assert!(!top_docs.is_empty(), "query should match the indexed document");
+    }
+
+    #[test]
+    fn test_build_search_query_empty_sanitized() {
+        let mut schema_builder = Schema::builder();
+        let body_field = schema_builder.add_text_field("body", TEXT);
+        let title_field = schema_builder.add_text_field("title", TEXT);
+        let filename_field = schema_builder.add_text_field("filename", TEXT);
+        let schema = schema_builder.build();
+
+        let index = Index::create_in_ram(schema);
+        register_ngram_tokenizer(&index).unwrap();
+
+        // An empty string should still produce a valid query object (BooleanQuery with no clauses)
+        let query = build_search_query("", &index, body_field, title_field, filename_field);
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let top_docs: Vec<(Score, DocAddress)> = searcher
+            .search(&query, &TopDocs::with_limit(10).order_by_score())
+            .unwrap();
+        assert!(top_docs.is_empty(), "empty query should match nothing");
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for apply_project_diversity
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_apply_project_diversity_limits_per_project() {
+        let results = vec![
+            json!({"project": "backend", "text": "a"}),
+            json!({"project": "backend", "text": "b"}),
+            json!({"project": "backend", "text": "c"}),
+            json!({"project": "frontend", "text": "d"}),
+            json!({"project": "frontend", "text": "e"}),
+        ];
+        let mut results = results;
+        apply_project_diversity(&mut results, 2);
+
+        let backend_count = results.iter().filter(|r| r["project"] == "backend").count();
+        let frontend_count = results.iter().filter(|r| r["project"] == "frontend").count();
+        assert_eq!(backend_count, 2, "backend should be capped at 2");
+        assert_eq!(frontend_count, 2, "frontend should be capped at 2");
+        assert_eq!(results.len(), 4);
+    }
+
+    #[test]
+    fn test_apply_project_diversity_no_filter_needed() {
+        let results = vec![
+            json!({"project": "backend", "text": "a"}),
+            json!({"project": "frontend", "text": "b"}),
+        ];
+        let mut results = results;
+        apply_project_diversity(&mut results, 2);
+        assert_eq!(results.len(), 2, "under-limit results should be unchanged");
+    }
+
+    #[test]
+    fn test_apply_project_diversity_empty_input() {
+        let mut results: Vec<serde_json::Value> = vec![];
+        apply_project_diversity(&mut results, 2);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_apply_project_diversity_single_project() {
+        let results = vec![
+            json!({"project": "mono", "text": "a"}),
+            json!({"project": "mono", "text": "b"}),
+            json!({"project": "mono", "text": "c"}),
+            json!({"project": "mono", "text": "d"}),
+        ];
+        let mut results = results;
+        apply_project_diversity(&mut results, 1);
+        assert_eq!(results.len(), 1, "max_per_project=1 should keep only 1");
+    }
+
+    #[test]
+    fn test_apply_project_diversity_preserves_order() {
+        let results = vec![
+            json!({"project": "a", "val": 1}),
+            json!({"project": "b", "val": 2}),
+            json!({"project": "a", "val": 3}),
+            json!({"project": "a", "val": 4}),
+            json!({"project": "b", "val": 5}),
+            json!({"project": "b", "val": 6}),
+        ];
+        let mut results = results;
+        apply_project_diversity(&mut results, 2);
+
+        let vals: Vec<i64> = results.iter().filter_map(|r| r["val"].as_i64()).collect();
+        // Should keep: a:1, b:2, a:3, b:5 (first 2 per project in order)
+        assert_eq!(vals, vec![1, 2, 3, 5]);
+    }
+
+    #[test]
+    fn test_apply_project_diversity_missing_project_field() {
+        // Results with missing/empty project field get counted under empty string
+        let results = vec![
+            json!({"project": "", "text": "a"}),
+            json!({"project": "", "text": "b"}),
+            json!({"project": "", "text": "c"}),
+        ];
+        let mut results = results;
+        apply_project_diversity(&mut results, 2);
+        assert_eq!(results.len(), 2, "empty-string project should also be capped");
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for schema version check
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_schema_version_stale_when_older() {
+        let old_meta = IndexMeta {
+            files: HashMap::new(),
+            schema_version: 1,
+        };
+        assert!(
+            old_meta.schema_version < SCHEMA_VERSION,
+            "version 1 should be considered stale compared to SCHEMA_VERSION={}",
+            SCHEMA_VERSION
+        );
+    }
+
+    #[test]
+    fn test_schema_version_current_is_not_stale() {
+        let current_meta = IndexMeta {
+            files: HashMap::new(),
+            schema_version: SCHEMA_VERSION,
+        };
+        assert!(
+            current_meta.schema_version >= SCHEMA_VERSION,
+            "current version should not be considered stale"
+        );
+    }
+
+    #[test]
+    fn test_schema_version_default_is_stale() {
+        let default_meta = IndexMeta::default();
+        // Default schema_version is 0 (from serde default), which is < SCHEMA_VERSION
+        assert!(
+            default_meta.schema_version < SCHEMA_VERSION,
+            "default IndexMeta (version 0) should be stale"
+        );
     }
 }

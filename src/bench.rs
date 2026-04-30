@@ -262,6 +262,30 @@ fn get_docs_root() -> Result<PathBuf> {
     })
 }
 
+/// Expand tilde in cache_dir and create an EmbeddingService from config.
+#[cfg(feature = "alcove-full")]
+fn create_embedding_service(emb_cfg: &crate::config::EmbeddingConfig) -> crate::embedding::EmbeddingService {
+    let model = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
+        .unwrap_or_default();
+    let cache_dir = if emb_cfg.cache_dir.starts_with('~') {
+        std::env::var("HOME")
+            .ok()
+            .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
+            .unwrap_or_else(|| emb_cfg.cache_dir.clone())
+    } else {
+        emb_cfg.cache_dir.clone()
+    };
+    crate::embedding::EmbeddingService::new(
+        crate::config::EmbeddingConfig {
+            model: model.as_str().to_string(),
+            auto_download: emb_cfg.auto_download,
+            cache_dir,
+            enabled: true,
+            query_cache_size: emb_cfg.query_cache_size,
+        },
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Benchmark runners
 // ---------------------------------------------------------------------------
@@ -321,25 +345,7 @@ fn run_precision_benchmark(
         let cfg = crate::config::load_config();
         let emb_cfg = cfg.embedding_config_with_defaults();
         if emb_cfg.enabled {
-            let model = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
-                .unwrap_or_default();
-            let cache_dir = if emb_cfg.cache_dir.starts_with('~') {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
-                    .unwrap_or_else(|| emb_cfg.cache_dir.clone())
-            } else {
-                emb_cfg.cache_dir.clone()
-            };
-            let service = crate::embedding::EmbeddingService::new(
-                crate::config::EmbeddingConfig {
-                    model: model.as_str().to_string(),
-                    auto_download: emb_cfg.auto_download,
-                    cache_dir,
-                    enabled: true,
-                    query_cache_size: emb_cfg.query_cache_size,
-                },
-            );
+            let service = create_embedding_service(&emb_cfg);
 
             for entry in queries {
                 match crate::index::search_hybrid(
@@ -469,25 +475,7 @@ fn run_latency_benchmark(
         let cfg = crate::config::load_config();
         let emb_cfg = cfg.embedding_config_with_defaults();
         if emb_cfg.enabled {
-            let model = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
-                .unwrap_or_default();
-            let cache_dir = if emb_cfg.cache_dir.starts_with('~') {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
-                    .unwrap_or_else(|| emb_cfg.cache_dir.clone())
-            } else {
-                emb_cfg.cache_dir.clone()
-            };
-            let service = crate::embedding::EmbeddingService::new(
-                crate::config::EmbeddingConfig {
-                    model: model.as_str().to_string(),
-                    auto_download: emb_cfg.auto_download,
-                    cache_dir,
-                    enabled: true,
-                    query_cache_size: emb_cfg.query_cache_size,
-                },
-            );
+            let service = create_embedding_service(&emb_cfg);
 
             for entry in queries {
                 // Warm-up
@@ -1008,7 +996,7 @@ pub fn cmd_bench(
     };
 
     let results = BenchResults {
-        timestamp: chrono_now_rfc3339(),
+        timestamp: now_rfc3339(),
         environment: EnvInfo {
             os: std::env::consts::OS.to_string(),
             rust_version: rustc_version(),
@@ -1028,8 +1016,8 @@ pub fn cmd_bench(
     };
 
     if let Some(path) = output_file {
-        // Auto-detect format from extension if --output not explicitly set
-        let effective_content = if output == "human" {
+        let file_content = if output == "human" {
+            // Auto-detect format from file extension
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             match ext {
                 "json" => serde_json::to_string_pretty(&results)?,
@@ -1037,12 +1025,13 @@ pub fn cmd_bench(
                 _ => output_content.clone(),
             }
         } else {
+            // Already formatted, write directly
             output_content.clone()
         };
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, &effective_content)?;
+        std::fs::write(path, &file_content)?;
         eprintln!(
             "  {} Results saved to {}",
             style("✓").green(),
@@ -1055,7 +1044,7 @@ pub fn cmd_bench(
     Ok(())
 }
 
-fn chrono_now_rfc3339() -> String {
+fn now_rfc3339() -> String {
     // Use std::time for a simple ISO-8601-ish timestamp without extra deps
     let now = std::time::SystemTime::now();
     let duration = now
