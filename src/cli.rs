@@ -26,7 +26,7 @@ pub(crate) enum EnvVarSyntax {
     BraceEnvColon,
     /// `"$VAR"` — Codex (TOML)
     DollarPlain,
-    /// No variable interpolation — Cline hardcodes values, skip env injection
+    /// No variable interpolation support — skip env injection entirely
     None,
 }
 
@@ -51,9 +51,11 @@ pub(crate) struct AgentDef {
 
 pub(crate) enum McpConfig {
     /// Standard JSON: { "<key>": { "alcove": { "command": "...", "env": {...} } } }
+    /// `omit_type`: set true for agents that do not support the "type" field (e.g. Cline).
     Json {
         path: &'static str,
         server_key: &'static str,
+        omit_type: bool,
     },
     /// OpenCode format: { "mcp": { "alcove": { "type": "local", ... } } }
     OpenCode { path: &'static str },
@@ -72,6 +74,7 @@ pub(crate) fn agents() -> Vec<AgentDef> {
             mcp_config: McpConfig::Json {
                 path: "~/.claude.json",
                 server_key: "mcpServers",
+                omit_type: false,
             },
             skill_dir: Some("~/.claude/skills/alcove"),
             env_syntax: EnvVarSyntax::DollarBrace,
@@ -81,6 +84,7 @@ pub(crate) fn agents() -> Vec<AgentDef> {
             mcp_config: McpConfig::Json {
                 path: "~/.cursor/mcp.json",
                 server_key: "mcpServers",
+                omit_type: false,
             },
             skill_dir: Some("~/.cursor/skills/alcove"),
             env_syntax: EnvVarSyntax::DollarEnvColon,
@@ -94,6 +98,7 @@ pub(crate) fn agents() -> Vec<AgentDef> {
                     "~/.config/claude/claude_desktop_config.json"
                 },
                 server_key: "mcpServers",
+                omit_type: false,
             },
             skill_dir: None,
             env_syntax: EnvVarSyntax::DollarBrace,
@@ -107,9 +112,10 @@ pub(crate) fn agents() -> Vec<AgentDef> {
                     "~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
                 },
                 server_key: "mcpServers",
+                omit_type: true, // Cline does not support the "type" field
             },
             skill_dir: Some("~/.cline/skills/alcove"),
-            env_syntax: EnvVarSyntax::None, // Cline hardcodes values, no interpolation
+            env_syntax: EnvVarSyntax::DollarEnvColon, // Cline uses ${env:VAR} interpolation
         },
         AgentDef {
             name: "OpenCode",
@@ -125,13 +131,14 @@ pub(crate) fn agents() -> Vec<AgentDef> {
                 path: "~/.codex/config.toml",
             },
             skill_dir: Some("~/.codex/skills/alcove"),
-            env_syntax: EnvVarSyntax::DollarPlain,
+            env_syntax: EnvVarSyntax::DollarBrace, // Codex env section uses ${VAR} interpolation
         },
         AgentDef {
             name: "Copilot CLI",
             mcp_config: McpConfig::Json {
                 path: "~/.copilot/mcp-config.json",
                 server_key: "mcpServers",
+                omit_type: false,
             },
             skill_dir: Some("~/.copilot/skills/alcove"),
             env_syntax: EnvVarSyntax::DollarBrace,
@@ -141,6 +148,7 @@ pub(crate) fn agents() -> Vec<AgentDef> {
             mcp_config: McpConfig::Json {
                 path: "~/.gemini/antigravity/mcp_config.json",
                 server_key: "mcpServers",
+                omit_type: false,
             },
             skill_dir: None,
             env_syntax: EnvVarSyntax::DollarBrace,
@@ -150,6 +158,7 @@ pub(crate) fn agents() -> Vec<AgentDef> {
             mcp_config: McpConfig::Json {
                 path: "~/.gemini/settings.json",
                 server_key: "mcpServers",
+                omit_type: false,
             },
             skill_dir: Some("~/.gemini/skills/alcove"),
             env_syntax: EnvVarSyntax::DollarBrace,
@@ -338,6 +347,7 @@ fn write_json_mcp(
     docs_root: &Path,
     server_url: Option<&str>,
     token_ref: Option<&str>,
+    omit_type: bool,
 ) -> Result<()> {
     let mut config: serde_json::Value = if config_path.exists() {
         let content = fs::read_to_string(config_path)?;
@@ -347,17 +357,30 @@ fn write_json_mcp(
     };
 
     let server_entry = if let Some(url) = server_url {
-        serde_json::json!({ "url": url })
+        let mut entry = serde_json::json!({ "url": url });
+        if !omit_type {
+            entry["type"] = serde_json::Value::String("http".to_string());
+        }
+        if let Some(ref_val) = token_ref {
+            entry["headers"] = serde_json::json!({
+                "Authorization": format!("Bearer {ref_val}")
+            });
+        }
+        entry
     } else {
         let mut env = serde_json::json!({ "DOCS_ROOT": docs_root.to_string_lossy() });
         if let Some(ref_val) = token_ref {
             env["ALCOVE_TOKEN"] = serde_json::Value::String(ref_val.to_string());
         }
-        serde_json::json!({
+        let mut entry = serde_json::json!({
             "command": binary.to_string_lossy(),
             "args": [],
             "env": env
-        })
+        });
+        if !omit_type {
+            entry["type"] = serde_json::Value::String("stdio".to_string());
+        }
+        entry
     };
 
     config[server_key]["alcove"] = server_entry;
@@ -378,10 +401,16 @@ fn write_opencode_mcp(config_path: &Path, binary: &Path, docs_root: &Path, serve
     };
 
     if let Some(url) = server_url {
-        config["mcp"]["alcove"] = serde_json::json!({
+        let mut entry = serde_json::json!({
             "type": "remote",
             "url": url
         });
+        if let Some(ref_val) = token_ref {
+            entry["headers"] = serde_json::json!({
+                "Authorization": format!("Bearer {ref_val}")
+            });
+        }
+        config["mcp"]["alcove"] = entry;
     } else {
         let mut env = serde_json::json!({ "DOCS_ROOT": docs_root.to_string_lossy() });
         if let Some(ref_val) = token_ref {
@@ -404,18 +433,23 @@ fn write_opencode_mcp(config_path: &Path, binary: &Path, docs_root: &Path, serve
 fn write_codex_mcp(config_path: &Path, binary: &Path, docs_root: &Path, server_url: Option<&str>, token_ref: Option<&str>) -> Result<()> {
     let entry = if let Some(url) = server_url {
         let url_toml = toml::Value::String(url.to_string()).to_string();
-        format!("\n[mcp_servers.alcove]\ntype = \"remote\"\nurl = {url_toml}\n")
+        // Codex HTTP: bearer_token_env_var points to the env var holding the actual token
+        if token_ref.is_some() {
+            format!("\n[mcpServers.alcove]\ntype = \"http\"\nurl = {url_toml}\nbearer_token_env_var = \"ALCOVE_TOKEN\"\n")
+        } else {
+            format!("\n[mcpServers.alcove]\ntype = \"http\"\nurl = {url_toml}\n")
+        }
     } else {
         let binary_toml = toml::Value::String(binary.display().to_string()).to_string();
         let docs_root_toml = toml::Value::String(docs_root.display().to_string()).to_string();
         if let Some(ref_val) = token_ref {
             let token_toml = toml::Value::String(ref_val.to_string()).to_string();
             format!(
-                "\n[mcp_servers.alcove]\ncommand = {binary_toml}\nargs = []\n\n[mcp_servers.alcove.env]\nDOCS_ROOT = {docs_root_toml}\nALCOVE_TOKEN = {token_toml}\n"
+                "\n[mcpServers.alcove]\ncommand = {binary_toml}\nargs = []\n\n[mcpServers.alcove.env]\nDOCS_ROOT = {docs_root_toml}\nALCOVE_TOKEN = {token_toml}\n"
             )
         } else {
             format!(
-                "\n[mcp_servers.alcove]\ncommand = {binary_toml}\nargs = []\n\n[mcp_servers.alcove.env]\nDOCS_ROOT = {docs_root_toml}\n"
+                "\n[mcpServers.alcove]\ncommand = {binary_toml}\nargs = []\n\n[mcpServers.alcove.env]\nDOCS_ROOT = {docs_root_toml}\n"
             )
         }
     };
@@ -426,13 +460,13 @@ fn write_codex_mcp(config_path: &Path, binary: &Path, docs_root: &Path, server_u
 
     if config_path.exists() {
         let content = fs::read_to_string(config_path)?;
-        if content.contains("[mcp_servers.alcove]") {
-            // Replace existing [mcp_servers.alcove] block (and its sub-tables)
+        if content.contains("[mcpServers.alcove]") {
+            // Replace existing [mcpServers.alcove] block (and its sub-tables)
             // by removing everything from the header to the next top-level section.
             let mut out = String::new();
             let mut in_alcove = false;
             for line in content.lines() {
-                if line.trim_start().starts_with("[mcp_servers.alcove") {
+                if line.trim_start().starts_with("[mcpServers.alcove") {
                     in_alcove = true;
                     continue;
                 }
@@ -1268,15 +1302,15 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
         println!();
         println!("  {}", style(agent.name).cyan());
 
-        // Compute per-agent token reference string (None for Cline or when no token)
+        // Compute per-agent token reference string (None when no token configured).
         let token_ref: Option<String> = stored_token.as_deref()
             .and_then(|_| agent.env_syntax.render("ALCOVE_TOKEN"));
 
         // MCP
         match &agent.mcp_config {
-            McpConfig::Json { path, server_key } => {
+            McpConfig::Json { path, server_key, omit_type } => {
                 let p = expand_path(path);
-                write_json_mcp(&p, server_key, &bin, &docs_root, server_url.as_deref(), token_ref.as_deref())?;
+                write_json_mcp(&p, server_key, &bin, &docs_root, server_url.as_deref(), token_ref.as_deref(), *omit_type)?;
                 println!(
                     "  {} {} ({})",
                     style("✓").green(),
@@ -2198,7 +2232,7 @@ fn check_agent_registration(agent: &AgentDef) -> (&'static str, String) {
                 false
             }
         }
-        McpConfig::Codex { .. } => content.contains("[mcp_servers.alcove]"),
+        McpConfig::Codex { .. } => content.contains("[mcpServers.alcove]"),
     };
 
     if has_alcove {
@@ -2904,7 +2938,7 @@ mod tests {
         let a = agents();
         for agent in &a {
             match &agent.mcp_config {
-                McpConfig::Json { path, server_key } => {
+                McpConfig::Json { path, server_key, .. } => {
                     assert!(!path.is_empty());
                     assert!(!server_key.is_empty());
                 }
@@ -3001,13 +3035,14 @@ mod tests {
         let bin = PathBuf::from("/usr/local/bin/alcove");
         let docs = PathBuf::from("/docs/root");
 
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None, None);
+        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None, None, false);
         assert!(result.is_ok());
         assert!(cfg.exists());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
         let parsed: serde_json::Value = serde_json::from_str(&content).expect("invalid json");
 
+        assert_eq!(parsed["mcpServers"]["alcove"]["type"], "stdio");
         assert_eq!(
             parsed["mcpServers"]["alcove"]["command"],
             "/usr/local/bin/alcove"
@@ -3033,7 +3068,7 @@ mod tests {
         let bin = PathBuf::from("/bin/alcove");
         let docs = PathBuf::from("/docs");
 
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None, None);
+        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None, None, false);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
@@ -3052,7 +3087,7 @@ mod tests {
         let bin = PathBuf::from("/bin/alcove");
         let docs = PathBuf::from("/docs");
 
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None, None);
+        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None, None, false);
         assert!(result.is_ok());
         assert!(cfg.exists());
     }
@@ -3066,12 +3101,13 @@ mod tests {
         let bin = PathBuf::from("/usr/local/bin/alcove");
         let docs = PathBuf::from("/docs/root");
 
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, Some("http://127.0.0.1:57384/mcp"), None);
+        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, Some("http://127.0.0.1:57384/mcp"), None, false);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
         let parsed: serde_json::Value = serde_json::from_str(&content).expect("invalid json");
 
+        assert_eq!(parsed["mcpServers"]["alcove"]["type"], "http");
         assert_eq!(parsed["mcpServers"]["alcove"]["url"], "http://127.0.0.1:57384/mcp");
         assert!(parsed["mcpServers"]["alcove"]["command"].is_null());
     }
@@ -3128,7 +3164,7 @@ mod tests {
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
-        assert!(content.contains("[mcp_servers.alcove]"));
+        assert!(content.contains("[mcpServers.alcove]"));
         assert!(content.contains(r#"command = "/bin/alcove""#));
         assert!(content.contains(r#"DOCS_ROOT = "/docs""#));
     }
@@ -3145,7 +3181,7 @@ mod tests {
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
         assert!(content.contains("[some_other_section]"));
-        assert!(content.contains("[mcp_servers.alcove]"));
+        assert!(content.contains("[mcpServers.alcove]"));
     }
 
     #[test]
@@ -3153,7 +3189,7 @@ mod tests {
         let tmp = TempDir::new().expect("failed to create temp dir");
         let cfg = tmp.path().join("config.toml");
 
-        let original = "[some_section]\nkey = \"value\"\n\n[mcp_servers.alcove]\ncommand = \"/old/bin\"\n\n[mcp_servers.alcove.env]\nDOCS_ROOT = \"/old/docs\"\n";
+        let original = "[some_section]\nkey = \"value\"\n\n[mcpServers.alcove]\ncommand = \"/old/bin\"\n\n[mcpServers.alcove.env]\nDOCS_ROOT = \"/old/docs\"\n";
         fs::write(&cfg, original).expect("failed to write");
 
         let result = write_codex_mcp(&cfg, &PathBuf::from("/new/bin"), &PathBuf::from("/new/docs"), None, None);
@@ -3167,6 +3203,22 @@ mod tests {
         assert!(content.contains("/new/bin"), "new binary must be written");
         assert!(content.contains("/new/docs"), "new docs_root must be written");
         assert!(!content.contains("/old/bin"), "old binary must be removed");
+    }
+
+    #[test]
+    fn write_codex_mcp_http_mode_with_bearer() {
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        let cfg = tmp.path().join("config.toml");
+        let bin = PathBuf::from("/bin/alcove");
+        let docs = PathBuf::from("/docs");
+
+        let result = write_codex_mcp(&cfg, &bin, &docs, Some("http://127.0.0.1:57384/mcp"), Some("$ALCOVE_TOKEN"));
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&cfg).expect("failed to read");
+        assert!(content.contains(r#"type = "http""#));
+        assert!(content.contains("http://127.0.0.1:57384/mcp"));
+        assert!(content.contains(r#"bearer_token_env_var = "ALCOVE_TOKEN""#));
     }
 
     // ── save_docs_root_to ──
@@ -3420,7 +3472,7 @@ mod tests {
 
         let written = fs::read_to_string(&cfg_path).expect("read back");
         let parsed: toml::Value = toml::from_str(&written).expect("must be valid TOML");
-        let got = parsed["mcp_servers"]["alcove"]["command"]
+        let got = parsed["mcpServers"]["alcove"]["command"]
             .as_str()
             .expect("command is a string");
         assert_eq!(got, binary.display().to_string());
@@ -3439,7 +3491,7 @@ mod tests {
 
         let written = fs::read_to_string(&cfg_path).expect("read back");
         let parsed: toml::Value = toml::from_str(&written).expect("must be valid TOML");
-        let got = parsed["mcp_servers"]["alcove"]["url"]
+        let got = parsed["mcpServers"]["alcove"]["url"]
             .as_str()
             .expect("url is a string");
         assert_eq!(got, url);
