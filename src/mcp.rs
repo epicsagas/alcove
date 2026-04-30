@@ -1,9 +1,11 @@
 use std::path::PathBuf;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::config::{is_blocked_system_path, load_config};
+use crate::telemetry::{FailureClass, ResultSizeBucket, Telemetry, Tool};
 use crate::tools;
 
 // ---------------------------------------------------------------------------
@@ -499,33 +501,79 @@ struct ToolCallParams {
     arguments: Value,
 }
 
+fn tool_enum(name: &str) -> Option<Tool> {
+    match name {
+        "audit_project"           => Some(Tool::AuditProject),
+        "check_doc_changes"       => Some(Tool::CheckDocChanges),
+        "configure_project"       => Some(Tool::ConfigureProject),
+        "get_doc_file"            => Some(Tool::GetDocFile),
+        "get_project_docs_overview" => Some(Tool::GetProjectDocsOverview),
+        "init_project"            => Some(Tool::InitProject),
+        "lint_project"            => Some(Tool::LintProject),
+        "list_projects"           => Some(Tool::ListProjects),
+        "list_vaults"             => Some(Tool::ListVaults),
+        "promote_document"        => Some(Tool::PromoteDocument),
+        "rebuild_index"           => Some(Tool::RebuildIndex),
+        "search_project_docs"     => Some(Tool::SearchProjectDocs),
+        "search_vault"            => Some(Tool::SearchVault),
+        "validate_docs"           => Some(Tool::ValidateDocs),
+        _                         => None,
+    }
+}
+
+fn result_size(v: &Value) -> ResultSizeBucket {
+    let n = v.get("matches")
+        .and_then(|m| m.as_array())
+        .map(|a| a.len())
+        .or_else(|| v.as_array().map(|a| a.len()))
+        .unwrap_or(1);
+    ResultSizeBucket::from_count(n)
+}
+
 fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     let call: ToolCallParams = match serde_json::from_value(params) {
         Ok(c) => c,
         Err(e) => return RpcResponse::err(id, -32602, format!("Invalid tool call params: {e}")),
     };
 
+    let tel = Telemetry::init();
+    let tool_variant = tool_enum(&call.name);
+    let t0 = Instant::now();
+    if let Some(t) = tool_variant {
+        tel.track_tool_called(t);
+    }
+
+    // Wrap result emission to fire completion/failure events before returning.
+    macro_rules! ok {
+        ($v:expr) => {{
+            let v: Value = $v;
+            if let Some(t) = tool_variant {
+                tel.track_tool_completed(t, t0.elapsed().as_millis() as u64, result_size(&v));
+            }
+            RpcResponse::ok(id.clone(), mcp_text_result(&v))
+        }};
+    }
+    macro_rules! err {
+        ($code:expr, $msg:expr) => {{
+            if let Some(t) = tool_variant {
+                tel.track_tool_failed(t, FailureClass::Unknown);
+            }
+            RpcResponse::err(id.clone(), $code, $msg)
+        }};
+    }
+
     let docs_root = match std::env::var("DOCS_ROOT") {
         Ok(v) => {
             let path = PathBuf::from(&v);
             if is_blocked_system_path(&path) {
-                return RpcResponse::err(
-                    id,
-                    -32000,
-                    "DOCS_ROOT points to a restricted system directory.".into(),
-                );
+                return err!(-32000, "DOCS_ROOT points to a restricted system directory.".into());
             }
             path
         }
         Err(_) => match load_config().docs_root() {
             Some(p) if p.is_dir() => p,
             _ => {
-                return RpcResponse::err(
-                    id,
-                    -32000,
-                    "DOCS_ROOT environment variable is not set and config.toml has no docs_root."
-                        .into(),
-                );
+                return err!(-32000, "DOCS_ROOT environment variable is not set and config.toml has no docs_root.".into());
             }
         },
     };
@@ -533,8 +581,8 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     // lint_project and promote_document operate on docs_root directly
     if call.name == "lint_project" {
         return match tools::tool_lint_project(&docs_root, call.arguments) {
-            Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
-            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+            Ok(v) => ok!(v),
+            Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
     if call.name == "promote_document" {
@@ -559,9 +607,9 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                         })
                     })
                     .collect();
-                RpcResponse::ok(id, mcp_text_result(&json!(arr)))
+                ok!(json!(arr))
             }
-            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+            Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
     if call.name == "search_vault" {
@@ -571,10 +619,10 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if query.is_empty() {
-            return RpcResponse::err(id, -32602, "Query must not be empty".to_string());
+            return err!(-32602, "Query must not be empty".to_string());
         }
         if query.len() > 8192 {
-            return RpcResponse::err(id, -32002, "Query too long (max 8192 bytes)".to_string());
+            return err!(-32002, "Query too long (max 8192 bytes)".to_string());
         }
         let vault_name = call
             .arguments
@@ -591,23 +639,14 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         let search_all = vault_name == "*" || vault_name.is_empty();
 
         if search_all {
-            // Search all vaults, merge results by score
             let vaults = match crate::vault::list_vaults() {
                 Ok(v) => v,
-                Err(e) => {
-                    return RpcResponse::err(
-                        id,
-                        -32002,
-                        format!("Tool `{}` failed: {e}", call.name),
-                    );
-                }
+                Err(e) => return err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
             };
             use rayon::prelude::*;
             let vault_results: Vec<_> = vaults
                 .par_iter()
-                .filter_map(|vault| {
-                    crate::index::search_vault(&vault.path, query, limit).ok()
-                })
+                .filter_map(|vault| crate::index::search_vault(&vault.path, query, limit).ok())
                 .collect();
             let mut all_matches: Vec<Value> = Vec::new();
             for result in vault_results {
@@ -615,46 +654,29 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     all_matches.extend(matches.iter().cloned());
                 }
             }
-            // Sort by score descending
             all_matches.sort_by(|a, b| {
                 let sa = a["score"].as_f64().unwrap_or(0.0);
                 let sb = b["score"].as_f64().unwrap_or(0.0);
-                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal) // descending by score
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
             });
             all_matches.truncate(limit);
-            let result = json!({
-                "query": query,
-                "scope": "all_vaults",
-                "matches": all_matches,
-            });
-            return RpcResponse::ok(id, mcp_text_result(&result));
+            return ok!(json!({ "query": query, "scope": "all_vaults", "matches": all_matches }));
         } else {
-            // Validate vault name: single normal path component (prevent traversal)
             {
                 use std::path::Component;
                 let p = std::path::Path::new(vault_name);
                 let components: Vec<_> = p.components().collect();
                 if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
-                    return RpcResponse::err(
-                        id,
-                        -32002,
-                        format!("Invalid vault name: '{vault_name}'"),
-                    );
+                    return err!(-32002, format!("Invalid vault name: '{vault_name}'"));
                 }
             }
             let vault_path = crate::vault::vaults_root().join(vault_name);
             if !vault_path.is_dir() {
-                return RpcResponse::err(
-                    id,
-                    -32002,
-                    format!("Vault '{}' does not exist", vault_name),
-                );
+                return err!(-32002, format!("Vault '{}' does not exist", vault_name));
             }
             return match crate::index::search_vault(&vault_path, query, limit) {
-                Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
-                Err(e) => {
-                    RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name))
-                }
+                Ok(v) => ok!(v),
+                Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
             };
         }
     }
@@ -662,36 +684,33 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     // list_projects and init_project don't need a resolved project
     if call.name == "list_projects" {
         return match tools::tool_list_projects(&docs_root) {
-            Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
-            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+            Ok(v) => ok!(v),
+            Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
     if call.name == "init_project" {
         return match tools::tool_init_project(&docs_root, call.arguments) {
             Ok(v) => {
-                // Auto-rebuild index after creating new project docs
                 let _ = crate::index::build_index(&docs_root);
-                RpcResponse::ok(id, mcp_text_result(&v))
+                ok!(v)
             }
-            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+            Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
     if call.name == "rebuild_index" {
-        // Fire-and-forget: spawn background thread so the agent isn't blocked.
-        // The lock mechanism prevents concurrent builds.
         let docs_root_clone = docs_root.clone();
         std::thread::spawn(move || {
             let _ = crate::index::build_index(&docs_root_clone);
         });
-        return RpcResponse::ok(id, mcp_text_result(&json!({
+        return ok!(json!({
             "status": "started",
             "message": "Index build started in background. Search will use the updated index once complete."
-        })));
+        }));
     }
     if call.name == "check_doc_changes" {
         return match tools::tool_check_doc_changes(&docs_root, call.arguments) {
-            Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
-            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+            Ok(v) => ok!(v),
+            Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
 
@@ -719,7 +738,6 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
 
         let force_grep = mode_override == Some("grep");
 
-        // Try ranked search (unless explicitly forced to grep)
         if !force_grep {
             let index_dir = docs_root.join(".alcove").join("index");
             if index_dir.exists() || crate::index::ensure_index_fresh(&docs_root) {
@@ -735,25 +753,20 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     project_filter.as_deref(),
                 ) {
                     Ok(v) => {
-                        // If ranked returned results, use them
                         let matches = v["matches"].as_array();
                         if matches.is_some_and(|m| !m.is_empty()) {
-                            return RpcResponse::ok(id, mcp_text_result(&v));
+                            return ok!(v);
                         }
-                        // Ranked returned 0 results → fall through to grep
                     }
-                    Err(_) => {
-                        // Index error → fall through to grep
-                    }
+                    Err(_) => {}
                 }
             }
         }
 
-        // Grep fallback (or forced grep mode)
         if is_global {
             return match tools::tool_search_global(&docs_root, call.arguments) {
-                Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
-                Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+                Ok(v) => ok!(v),
+                Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
             };
         }
     }
@@ -778,15 +791,14 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                         .collect()
                 })
                 .unwrap_or_default();
-            return RpcResponse::err(
-                id,
+            return err!(
                 -32001,
                 format!(
                     "Could not detect project. CWD does not match any project in DOCS_ROOT. \
                      Available projects: [{}]. \
                      Set MCP_PROJECT_NAME env var or run from within a project directory.",
                     available.join(", ")
-                ),
+                )
             );
         }
     };
@@ -820,8 +832,8 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     };
 
     match result {
-        Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
-        Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+        Ok(v) => ok!(v),
+        Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
     }
 }
 

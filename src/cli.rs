@@ -1203,6 +1203,8 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
     println!("  {}", style(t!("setup.hint_uninstall").to_string()).dim());
     println!();
 
+    crate::telemetry::Telemetry::init().track_setup_completed();
+
     Ok(StepResult::Continue)
 }
 

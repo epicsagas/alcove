@@ -477,6 +477,18 @@ fn serve() -> Result<()> {
                 .and_then(|s| s.token.clone())
         });
 
+    // Fire startup telemetry (vault + project counts)
+    {
+        let tel = telemetry::Telemetry::init();
+        let vault_count = vault::list_vaults().map(|v| v.len()).unwrap_or(0);
+        let project_count = config::load_config()
+            .docs_root()
+            .and_then(|r| tools::tool_list_projects(&r).ok())
+            .and_then(|v| v["projects"].as_array().map(|a| a.len()))
+            .unwrap_or(0);
+        tel.track_started(vault_count, project_count);
+    }
+
     // In direct mode, build BM25 index in background
     if proxy_base.is_none() {
         eprintln!("[alcove] direct mode (no background server detected)");
