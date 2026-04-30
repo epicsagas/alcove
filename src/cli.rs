@@ -18,16 +18,12 @@ use crate::config::{
 
 /// How an agent references environment variables in its MCP config.
 pub(crate) enum EnvVarSyntax {
-    /// `"${VAR}"` — Claude Code, Claude Desktop, Gemini CLI, Copilot, Antigravity
+    /// `"${VAR}"` — Claude Code, Claude Desktop, Gemini CLI, Copilot, Antigravity, Codex
     DollarBrace,
-    /// `"${env:VAR}"` — Cursor
+    /// `"${env:VAR}"` — Cursor, Cline
     DollarEnvColon,
     /// `"{env:VAR}"` — OpenCode
     BraceEnvColon,
-    /// `"$VAR"` — Codex (TOML)
-    DollarPlain,
-    /// No variable interpolation support — skip env injection entirely
-    None,
 }
 
 impl EnvVarSyntax {
@@ -36,8 +32,6 @@ impl EnvVarSyntax {
             EnvVarSyntax::DollarBrace     => Some(format!("${{{var}}}")),
             EnvVarSyntax::DollarEnvColon  => Some(format!("${{env:{var}}}")),
             EnvVarSyntax::BraceEnvColon   => Some(format!("{{env:{var}}}")),
-            EnvVarSyntax::DollarPlain     => Some(format!("${var}")),
-            EnvVarSyntax::None            => None,
         }
     }
 }
