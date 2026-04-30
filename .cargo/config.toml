@@ -1,9 +1,8 @@
 [build]
 # Use Apple's ld (default on macOS) but with faster job scheduling.
 # Tantivy + fastembed are memory-heavy to compile; 4 parallel jobs keeps
-# peak RSS under ~3 GB on a 16 GB machine. Bump to 8 for release builds
-# if memory is not a concern.
-jobs = 4  # M2 8-core — halved to cap compile-time RSS
+# peak RSS under ~1.5 GB on a 16 GB machine (8 jobs peaks near 3 GB).
+jobs = 4  # M2 8-core — capped at 4 to limit compile-time RSS
 
 [env]
 # Each test that builds a Tantivy index allocates 15 MB writer buffer + mmap
