@@ -1,12 +1,15 @@
 [build]
-# Use Apple's ld (default on macOS) but with faster job scheduling
-jobs = 8  # M2 8-core — match physical core count
+# Use Apple's ld (default on macOS) but with faster job scheduling.
+# Tantivy + fastembed are memory-heavy to compile; 4 parallel jobs keeps
+# peak RSS under ~3 GB on a 16 GB machine. Bump to 8 for release builds
+# if memory is not a concern.
+jobs = 4  # M2 8-core — halved to cap compile-time RSS
 
 [env]
 # Each test that builds a Tantivy index allocates 15 MB writer buffer + mmap
-# segments. Running all 147 tests in parallel on 16 GB RAM causes OOM (SIGKILL).
-# 4 concurrent test threads keeps peak usage well under budget.
-RUST_TEST_THREADS = { value = "4", force = false }
+# segments. Running all tests in parallel on 16 GB RAM causes OOM (SIGKILL).
+# 2 concurrent test threads keeps peak usage well under budget.
+RUST_TEST_THREADS = { value = "2", force = false }
 
 [target.aarch64-apple-darwin]
 # zld is faster than ld on macOS for large crates; falls back to ld if absent
