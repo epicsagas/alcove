@@ -17,6 +17,7 @@ use std::fs;
 use std::io::Read;
 use std::net::TcpStream;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 // ── Enum-gated event values (no free strings) ────────────────────────────────
@@ -262,19 +263,23 @@ pub struct Telemetry {
     os: &'static str,
 }
 
+static TELEMETRY: OnceLock<Telemetry> = OnceLock::new();
+
 impl Telemetry {
-    pub fn init() -> Self {
-        let consent = read_consent();
-        let distinct_id = match consent {
-            ConsentLevel::On => load_or_create_install_id(),
-            ConsentLevel::Off => String::new(),
-        };
-        Self {
-            consent,
-            distinct_id,
-            version: env!("CARGO_PKG_VERSION"),
-            os: std::env::consts::OS,
-        }
+    pub fn init() -> &'static Self {
+        TELEMETRY.get_or_init(|| {
+            let consent = read_consent();
+            let distinct_id = match consent {
+                ConsentLevel::On => load_or_create_install_id(),
+                ConsentLevel::Off => String::new(),
+            };
+            Self {
+                consent,
+                distinct_id,
+                version: env!("CARGO_PKG_VERSION"),
+                os: std::env::consts::OS,
+            }
+        })
     }
 
     pub fn is_enabled(&self) -> bool {

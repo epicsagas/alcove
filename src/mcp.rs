@@ -522,9 +522,9 @@ fn tool_enum(name: &str) -> Option<Tool> {
 }
 
 fn result_size(v: &Value) -> ResultSizeBucket {
-    let n = v.get("matches")
-        .and_then(|m| m.as_array())
-        .map(|a| a.len())
+    let n = ["matches", "projects", "issues", "suggested_actions"]
+        .iter()
+        .find_map(|key| v.get(key).and_then(|m| m.as_array()).map(|a| a.len()))
         .or_else(|| v.as_array().map(|a| a.len()))
         .unwrap_or(1);
     ResultSizeBucket::from_count(n)
@@ -587,8 +587,8 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     }
     if call.name == "promote_document" {
         return match tools::tool_promote_document(&docs_root, call.arguments) {
-            Ok(v) => RpcResponse::ok(id, mcp_text_result(&v)),
-            Err(e) => RpcResponse::err(id, -32002, format!("Tool `{}` failed: {e}", call.name)),
+            Ok(v) => ok!(v),
+            Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
 
