@@ -378,7 +378,7 @@ fn main() -> Result<()> {
             // Resolve host: CLI flag > config.toml > default (127.0.0.1)
             let srv_cfg = cfg.server_config();
             let bind_host = host.as_deref().unwrap_or(&srv_cfg.host);
-            // Resolve port: CLI flag > config.toml > default (8080)
+            // Resolve port: CLI flag > config.toml > default (57384)
             let bind_port = port.unwrap_or(srv_cfg.port);
             // Resolve token: CLI flag > config.toml > none
             let resolved_token = token.as_ref()
@@ -419,7 +419,7 @@ fn detect_proxy_target() -> Option<String> {
         .server
         .as_ref()
         .map(|s| (s.host.as_str(), s.port))
-        .unwrap_or(("127.0.0.1", 8080));
+        .unwrap_or(("127.0.0.1", 57384));
     let base = format!("http://{host}:{port}");
 
     match ureq::get(&format!("{base}/health"))

@@ -150,7 +150,7 @@ fn default_server_host() -> String {
 }
 
 fn default_server_port() -> u16 {
-    8080
+    57384
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -175,14 +175,14 @@ impl Default for IndexConfig {
 /// ```toml
 /// [server]
 /// host = "127.0.0.1"
-/// port = 8080
+/// port = 57384
 /// ```
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ServerConfig {
     /// Bind address. Default: `"127.0.0.1"` (localhost only).
     #[serde(default = "default_server_host")]
     pub host: String,
-    /// Listen port. Default: `8080`.
+    /// Listen port. Default: `57384` (IANA unregistered ephemeral range).
     #[serde(default = "default_server_port")]
     pub port: u16,
     /// Bearer token for authentication. Auto-generated on `alcove setup`.

@@ -951,7 +951,7 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
             cfg.as_ref()
                 .and_then(|c| c.server.as_ref())
                 .map(|s| (s.host.clone(), s.port.to_string()))
-                .unwrap_or_else(|| ("127.0.0.1".to_string(), "8080".to_string()))
+                .unwrap_or_else(|| ("127.0.0.1".to_string(), "57384".to_string()))
         });
 
     loop {
@@ -1253,7 +1253,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                 host.zip(port)
             })
             .map(|(h, p)| format!("http://{}:{}/mcp", h, p))
-            .or_else(|| Some("http://127.0.0.1:8080/mcp".to_string()))
+            .or_else(|| Some("http://127.0.0.1:57384/mcp".to_string()))
     } else {
         None
     };
@@ -1394,7 +1394,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                 println!(
                     "  Server: {}:{} ({})",
                     host.unwrap_or("127.0.0.1"),
-                    port.unwrap_or("8080"),
+                    port.unwrap_or("57384"),
                     service_status
                 );
             }
@@ -1403,12 +1403,12 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                 println!(
                     "  Server: {}:{}",
                     host.unwrap_or("127.0.0.1"),
-                    port.unwrap_or("8080")
+                    port.unwrap_or("57384")
                 );
             }
         }
         None => {
-            println!("  Server: default (127.0.0.1:8080)");
+            println!("  Server: default (127.0.0.1:57384)");
         }
     }
 
@@ -3066,13 +3066,13 @@ mod tests {
         let bin = PathBuf::from("/usr/local/bin/alcove");
         let docs = PathBuf::from("/docs/root");
 
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, Some("http://127.0.0.1:8080/mcp"), None);
+        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, Some("http://127.0.0.1:57384/mcp"), None);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
         let parsed: serde_json::Value = serde_json::from_str(&content).expect("invalid json");
 
-        assert_eq!(parsed["mcpServers"]["alcove"]["url"], "http://127.0.0.1:8080/mcp");
+        assert_eq!(parsed["mcpServers"]["alcove"]["url"], "http://127.0.0.1:57384/mcp");
         assert!(parsed["mcpServers"]["alcove"]["command"].is_null());
     }
 
@@ -3288,7 +3288,7 @@ mod tests {
         let core: Vec<String> = vec![];
         let team: Vec<String> = vec![];
         let public: Vec<String> = vec![];
-        let server = "\n[server]\nport = 8080\n";
+        let server = "\n[server]\nport = 57384\n";
 
         let result = save_full_config_to(FullConfigParams {
             cfg_path: &cfg,
@@ -3304,7 +3304,7 @@ mod tests {
 
         let content = fs::read_to_string(&cfg).expect("failed to read");
         assert!(content.contains("[server]"));
-        assert!(content.contains("port = 8080"));
+        assert!(content.contains("port = 57384"));
     }
 
     #[test]
@@ -3433,7 +3433,7 @@ mod tests {
         let binary = dir.path().join("alcove");
         let docs_root = dir.path().join("docs");
         // URL with a quote — injection attempt.
-        let url = r#"http://localhost:8080/mcp"extra"#;
+        let url = r#"http://localhost:57384/mcp"extra"#;
 
         write_codex_mcp(&cfg_path, &binary, &docs_root, Some(url), None).expect("write should succeed");
 

@@ -312,7 +312,7 @@ Alcove can run as a persistent HTTP RAG server, accessible via REST API. This is
 
 ```bash
 # Start the server in the foreground
-alcove serve                       # default: 127.0.0.1:8080
+alcove serve                       # default: 127.0.0.1:57384
 alcove serve --port 9090           # custom port
 alcove serve --host 0.0.0.0       # listen on all interfaces
 ```
@@ -568,7 +568,7 @@ format = "mermaid"
 
 [server]
 host = "127.0.0.1"          # bind address (0.0.0.0 for all interfaces)
-port = 8080                  # listen port
+port = 57384                  # listen port
 token = "alcove-a3f7b2..."   # auto-generated bearer token
 
 [memory]
