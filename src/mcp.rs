@@ -746,19 +746,16 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                 } else {
                     tools::resolve_project(&docs_root).map(|r| r.name)
                 };
-                match crate::index::search_indexed(
+                if let Ok(v) = crate::index::search_indexed(
                     &docs_root,
                     query,
                     limit,
                     project_filter.as_deref(),
                 ) {
-                    Ok(v) => {
-                        let matches = v["matches"].as_array();
-                        if matches.is_some_and(|m| !m.is_empty()) {
-                            return ok!(v);
-                        }
+                    let matches = v["matches"].as_array();
+                    if matches.is_some_and(|m| !m.is_empty()) {
+                        return ok!(v);
                     }
-                    Err(_) => {}
                 }
             }
         }
