@@ -8,7 +8,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
-use crate::config::alcove_home;
+use crate::config::{alcove_home, load_config};
 
 const LABEL: &str = "com.epicsagas.alcove";
 
@@ -34,6 +34,24 @@ fn log_dir() -> PathBuf {
 
 fn generate_plist(alcove_bin: &str) -> String {
     let logs = log_dir();
+    let cfg = load_config();
+    let srv = cfg.server_config();
+
+    let host_arg = format!("        <string>--host</string>\n        <string>{}</string>", srv.host);
+    let port_arg = format!("        <string>--port</string>\n        <string>{}</string>", srv.port);
+
+    let token_env = srv
+        .token
+        .as_deref()
+        .map(|t| format!(
+            r#"    <key>EnvironmentVariables</key>
+    <dict>
+        <key>ALCOVE_TOKEN</key>
+        <string>{t}</string>
+    </dict>"#
+        ))
+        .unwrap_or_default();
+
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -46,11 +64,14 @@ fn generate_plist(alcove_bin: &str) -> String {
     <array>
         <string>{alcove_bin}</string>
         <string>serve</string>
+{host_arg}
+{port_arg}
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <false/>
+{token_env}
     <key>StandardOutPath</key>
     <string>{out}</string>
     <key>StandardErrorPath</key>
