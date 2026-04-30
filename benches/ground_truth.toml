@@ -1,0 +1,55 @@
+# Alcove search benchmark ground truth
+#
+# Each [[query]] entry defines a search query and the set of files that should
+# be considered relevant results.  Paths use the format "project/filename".
+# The `project` field is informational; all searches run in global scope.
+
+[[query]]
+text = "architecture"
+relevant_files = ["alcove/ARCHITECTURE.md"]
+project = "global"
+
+[[query]]
+text = "MCP server"
+relevant_files = ["alcove/PRD.md", "alcove/ARCHITECTURE.md"]
+project = "global"
+
+[[query]]
+text = "search index"
+relevant_files = ["alcove/ARCHITECTURE.md"]
+project = "global"
+
+[[query]]
+text = "benchmark"
+relevant_files = ["alcove/ARCHITECTURE.md"]
+project = "global"
+
+[[query]]
+text = "embedding model"
+relevant_files = ["alcove/ARCHITECTURE.md"]
+project = "global"
+
+[[query]]
+text = "vault"
+relevant_files = ["alcove/ARCHITECTURE.md"]
+project = "global"
+
+[[query]]
+text = "setup"
+relevant_files = ["alcove/PRD.md"]
+project = "global"
+
+[[query]]
+text = "telemetry"
+relevant_files = ["alcove/ARCHITECTURE.md"]
+project = "global"
+
+[[query]]
+text = "CJK 테스트"
+relevant_files = []
+project = "global"
+
+[[query]]
+text = "config"
+relevant_files = ["alcove/ARCHITECTURE.md"]
+project = "global"
