@@ -675,8 +675,9 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 /// Reciprocal Rank Fusion (RRF) for combining BM25 and vector search results
 ///
-/// RRF score = sum(1 / (k + rank_i)) for each ranking list
-/// Default k = 60 (commonly used value)
+/// RRF score = bm25_weight / (k + rank_bm25) + vector_weight / (k + rank_vector)
+/// Default k = 60 (commonly used value). BM25 is weighted at 0.6 and vector at 0.4
+/// to give slight preference to the lexical signal.
 #[cfg(feature = "alcove-full")]
 pub fn reciprocal_rank_fusion(
     bm25_results: &[(String, String, u64, f32)], // (project, file, chunk_id, score)
@@ -685,19 +686,22 @@ pub fn reciprocal_rank_fusion(
 ) -> Vec<(String, String, u64, f32)> {
     use std::collections::HashMap;
 
+    let bm25_weight: f32 = 0.6;
+    let vector_weight: f32 = 0.4;
+
     let mut scores: HashMap<(String, String, u64), f32> = HashMap::new();
 
     // Add BM25 contributions
     for (rank, (project, file, chunk_id, _score)) in bm25_results.iter().enumerate() {
         let key = (project.clone(), file.clone(), *chunk_id);
-        let rrf = 1.0 / (k as f32 + (rank + 1) as f32);
+        let rrf = bm25_weight / (k as f32 + (rank + 1) as f32);
         *scores.entry(key).or_default() += rrf;
     }
 
     // Add vector contributions
     for (rank, result) in vector_results.iter().enumerate() {
         let key = (result.project.clone(), result.file.clone(), result.chunk_id);
-        let rrf = 1.0 / (k as f32 + (rank + 1) as f32);
+        let rrf = vector_weight / (k as f32 + (rank + 1) as f32);
         *scores.entry(key).or_default() += rrf;
     }
 

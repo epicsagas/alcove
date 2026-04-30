@@ -1,3 +1,4 @@
+mod bench;
 mod cli;
 mod config;
 mod telemetry;
@@ -166,6 +167,24 @@ enum Commands {
     /// Reap orphaned alcove stdio proxy processes
     #[cfg(unix)]
     Reap,
+    /// Run performance and search quality benchmarks
+    Bench {
+        /// Metrics to measure: all, precision, latency, throughput
+        #[arg(long, default_value = "all")]
+        metrics: String,
+        /// Search scope: project or global
+        #[arg(long, default_value = "global")]
+        scope: String,
+        /// Output format: human, json, markdown
+        #[arg(long, default_value = "human")]
+        output: String,
+        /// Path to ground truth TOML file (default: benches/ground_truth.toml)
+        #[arg(long)]
+        queries: Option<std::path::PathBuf>,
+        /// Save results to file (auto-detects format from extension: .md, .json)
+        #[arg(long)]
+        output_file: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -368,6 +387,13 @@ fn main() -> Result<()> {
         Some(Commands::Token) => cli::cmd_token(),
         #[cfg(unix)]
         Some(Commands::Reap) => cli::cmd_reap(),
+        Some(Commands::Bench {
+            metrics,
+            scope,
+            output,
+            queries,
+            output_file,
+        }) => bench::cmd_bench(&metrics, &scope, &output, queries.as_deref(), output_file.as_deref()),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Serve { host, port, token }) => {
             let cfg = config::load_config();

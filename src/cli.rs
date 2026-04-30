@@ -173,7 +173,7 @@ pub(crate) fn expand_path(p: &str) -> PathBuf {
 // ---------------------------------------------------------------------------
 
 /// Return saved docs root from env or config.toml, falling back to default.
-fn saved_docs_root() -> Option<PathBuf> {
+pub fn saved_docs_root() -> Option<PathBuf> {
     if let Ok(v) = std::env::var("DOCS_ROOT") {
         let p = PathBuf::from(&v);
         if p.is_dir() {
