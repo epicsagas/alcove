@@ -1,55 +1,92 @@
 # Alcove search benchmark ground truth
 #
-# Each [[query]] entry defines a search query and the set of files that should
-# be considered relevant results.  Paths use the format "project/filename".
-# The `project` field is informational; all searches run in global scope.
+# Queries and expected relevant files based on actual ~/.alcove/docs content.
+# 472 files across 40+ projects. Paths: "project/filename"
 
+# --- Architecture & system design ---
 [[query]]
 text = "architecture"
+relevant_files = [
+    "alcove/ARCHITECTURE.md",
+    "epic-harness/ARCHITECTURE.md",
+    "collet/ARCHITECTURE.md",
+    "epiccounty/epiccounty.md",
+]
+
+[[query]]
+text = "MCP server protocol"
+relevant_files = ["alcove/ARCHITECTURE.md", "alcove/PRD.md"]
+
+[[query]]
+text = "search index tantivy BM25"
+relevant_files = ["alcove/ARCHITECTURE.md", "alcove/strategy/SEARCH_BENCHMARK.md"]
+
+[[query]]
+text = "embedding model vector"
 relevant_files = ["alcove/ARCHITECTURE.md"]
-project = "global"
 
+# --- Product & features ---
 [[query]]
-text = "MCP server"
-relevant_files = ["alcove/PRD.md", "alcove/ARCHITECTURE.md"]
-project = "global"
-
-[[query]]
-text = "search index"
-relevant_files = ["alcove/ARCHITECTURE.md"]
-project = "global"
-
-[[query]]
-text = "benchmark"
-relevant_files = ["alcove/ARCHITECTURE.md"]
-project = "global"
-
-[[query]]
-text = "embedding model"
-relevant_files = ["alcove/ARCHITECTURE.md"]
-project = "global"
-
-[[query]]
-text = "vault"
-relevant_files = ["alcove/ARCHITECTURE.md"]
-project = "global"
-
-[[query]]
-text = "setup"
+text = "setup interactive command"
 relevant_files = ["alcove/PRD.md"]
-project = "global"
 
 [[query]]
-text = "telemetry"
-relevant_files = ["alcove/ARCHITECTURE.md"]
-project = "global"
+text = "benchmark quality performance"
+relevant_files = [
+    "alcove/strategy/SEARCH_BENCHMARK.md",
+    "alcove/strategy/QUALITY_BENCHMARK.md",
+]
 
 [[query]]
-text = "CJK 테스트"
+text = "vault knowledge base"
+relevant_files = ["alcove/ARCHITECTURE.md", "alcove/PRD.md"]
+
+[[query]]
+text = "telemetry PostHog Sentry"
+relevant_files = ["alcove/PROGRESS.md"]
+
+# --- Cross-project queries ---
+[[query]]
+text = "secrets map environment variables"
+relevant_files = [
+    "alcove/SECRETS_MAP.md",
+    "epic-harness/SECRETS_MAP.md",
+    "collet/SECRETS_MAP.md",
+]
+
+[[query]]
+text = "technical debt"
+relevant_files = [
+    "alcove/DEBT.md",
+    "epic-harness/DEBT.md",
+    "collet/DEBT.md",
+]
+
+[[query]]
+text = "design decisions"
+relevant_files = [
+    "alcove/DECISIONS.md",
+    "epic-harness/DECISIONS.md",
+    "collet/DECISIONS.md",
+]
+
+# --- CJK queries ---
+[[query]]
+text = "검색 인덱스"
+relevant_files = ["alcove/strategy/SEARCH_BENCHMARK.md", "alcove/ARCHITECTURE.md"]
+
+[[query]]
+text = "테스트"
+relevant_files = ["alcove/strategy/QUALITY_BENCHMARK.md"]
+
+# --- Low/zero relevance queries ---
+[[query]]
+text = "xyzzy-nonexistent-query-12345"
 relevant_files = []
-project = "global"
 
 [[query]]
-text = "config"
-relevant_files = ["alcove/ARCHITECTURE.md"]
-project = "global"
+text = "launch plan monetization"
+relevant_files = [
+    "alcove/strategy/LAUNCH_PLAN.md",
+    "alcove/strategy/MONETIZATION.md",
+]

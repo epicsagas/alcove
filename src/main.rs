@@ -181,6 +181,9 @@ enum Commands {
         /// Path to ground truth TOML file (default: benches/ground_truth.toml)
         #[arg(long)]
         queries: Option<std::path::PathBuf>,
+        /// Save results to file (auto-detects format from extension: .md, .json)
+        #[arg(long)]
+        output_file: Option<std::path::PathBuf>,
     },
 }
 
@@ -245,7 +248,6 @@ fn main() -> Result<()> {
         // setup and telemetry manage consent — skip auto-enable
         Some(Commands::Setup) => return cli::cmd_setup(),
         Some(Commands::Telemetry { action }) => return telemetry::run_cli(&action),
-        Some(Commands::Bench { .. }) => return bench::cmd_bench("all", "global", "human", None),
         _ => {}
     }
 
@@ -390,7 +392,8 @@ fn main() -> Result<()> {
             scope,
             output,
             queries,
-        }) => bench::cmd_bench(&metrics, &scope, &output, queries.as_deref()),
+            output_file,
+        }) => bench::cmd_bench(&metrics, &scope, &output, queries.as_deref(), output_file.as_deref()),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Serve { host, port, token }) => {
             let cfg = config::load_config();

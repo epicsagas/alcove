@@ -928,6 +928,7 @@ pub fn cmd_bench(
     scope: &str,
     output: &str,
     queries: Option<&Path>,
+    output_file: Option<&Path>,
 ) -> Result<()> {
     let docs_root = get_docs_root()?;
 
@@ -1020,18 +1021,36 @@ pub fn cmd_bench(
         disk_usage,
     };
 
-    match config.output.as_str() {
-        "json" => {
-            let json = serde_json::to_string_pretty(&results)?;
-            println!("{json}");
+    let output_content = match config.output.as_str() {
+        "json" => serde_json::to_string_pretty(&results)?,
+        "markdown" => format_markdown(&results),
+        _ => format_human(&results),
+    };
+
+    if let Some(path) = output_file {
+        // Auto-detect format from extension if --output not explicitly set
+        let effective_content = if output == "human" {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            match ext {
+                "json" => serde_json::to_string_pretty(&results)?,
+                "md" | "markdown" => format_markdown(&results),
+                _ => output_content.clone(),
+            }
+        } else {
+            output_content.clone()
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
         }
-        "markdown" => {
-            println!("{}", format_markdown(&results));
-        }
-        _ => {
-            println!("{}", format_human(&results));
-        }
+        std::fs::write(path, &effective_content)?;
+        eprintln!(
+            "  {} Results saved to {}",
+            style("✓").green(),
+            path.display()
+        );
     }
+
+    println!("{output_content}");
 
     Ok(())
 }
