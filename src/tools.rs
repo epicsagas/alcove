@@ -655,6 +655,7 @@ pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
     let mut projects = Vec::new();
 
     let entries = std::fs::read_dir(docs_root).context("Failed to read DOCS_ROOT directory")?;
+    let core_files = load_config().core_files();
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -678,7 +679,6 @@ pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
             .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
             .count();
 
-        let core_files = load_config().core_files();
         let internal_present: Vec<String> = core_files
             .iter()
             .filter(|f| path.join(f).exists())
