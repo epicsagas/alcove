@@ -356,7 +356,7 @@ Agents always connect to alcove via **stdio** (the MCP standard). When the backg
 
 ```
 With background server (proxy mode):
-  Agent ──stdio──→ alcove (thin proxy)
+  Agent ──stdio──→ alcove (thin proxy, <10 MB, instant)
                      │ stdin → HTTP POST /mcp
                      │ HTTP response → stdout
                      └──HTTP──→ alcove serve (always warm)
@@ -366,14 +366,37 @@ With background server (proxy mode):
                                  └─ hybrid search ready (~5ms)
 
 Without background server (direct mode):
-  Agent ──stdio──→ alcove (full engine)
+  Agent ──stdio──→ alcove (full engine, one process per session)
                      ├─ load ONNX embedding model (2-5s cold start)
                      ├─ open BM25 index
                      ├─ build HNSW vector index
                      └─ hybrid search ready (after warm-up)
 ```
 
-On startup, the stdio process checks `GET /health` on the configured host/port. If the server responds, it enters proxy mode automatically — no configuration change needed. The JSON-RPC payload is identical in both modes; only the transport changes internally.
+On startup, the stdio process checks `GET /health` on the configured host/port. If the server responds, it enters proxy mode automatically — **no MCP config change needed**. The JSON-RPC payload is identical in both modes; only the transport changes internally.
+
+> **Per-session process:** In direct mode, each agent session spawns a separate `alcove` process (~10 MB). With multiple agents open simultaneously, each runs its own index load. Enabling the background server consolidates this into a single warm process shared by all sessions.
+
+#### Switching from stdio to persistent HTTP
+
+If you set up alcove before the background server feature was introduced, or skipped it during setup, you can enable it at any time without changing your MCP config:
+
+```bash
+# 1. Enable the background server (registers as macOS login item, starts immediately)
+alcove enable
+
+# 2. Verify it's running
+alcove start   # no-op if already running; shows PID
+
+# 3. Set ALCOVE_TOKEN in your shell (setup adds this automatically, but check it exists)
+echo $ALCOVE_TOKEN          # should print your token
+# If empty, get it and add to your shell profile:
+alcove token                # prints the stored token
+echo 'export ALCOVE_TOKEN="'$(alcove token)'"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Your existing stdio MCP config (`command: alcove`) stays exactly as-is. Once the server is running, every new agent session auto-detects it and switches to proxy mode. No agent restart required beyond opening a new session.
 
 ## Search
 
