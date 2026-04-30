@@ -260,11 +260,26 @@ fn meta_path(docs_root: &Path) -> PathBuf {
 // Schema
 // ---------------------------------------------------------------------------
 
-fn build_schema() -> (Schema, Field, Field, Field, Field, Field) {
+/// Current schema version. Increment when fields change to force a full rebuild.
+const SCHEMA_VERSION: u32 = 2;
+
+fn build_schema() -> (Schema, Field, Field, Field, Field, Field, Field, Field) {
     let mut builder = Schema::builder();
     let project = builder.add_text_field("project", STRING | STORED);
-    let file = builder.add_text_field("file", STRING | STORED);
+    let file = builder.add_text_field("file", STRING | STORED); // exact match for deletes/filtering
+
+    let ngram_indexing = TextFieldIndexing::default()
+        .set_tokenizer(NGRAM_TOKENIZER)
+        .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+    let ngram_options = TextOptions::default()
+        .set_indexing_options(ngram_indexing)
+        .set_stored();
+
+    let filename = builder.add_text_field("filename", ngram_options.clone()); // tokenized for search
+    let title = builder.add_text_field("title", ngram_options); // tokenized for search
+
     let chunk_id = builder.add_u64_field("chunk_id", INDEXED | STORED);
+
     let body_indexing = TextFieldIndexing::default()
         .set_tokenizer(NGRAM_TOKENIZER)
         .set_index_option(IndexRecordOption::WithFreqsAndPositions);
@@ -273,7 +288,7 @@ fn build_schema() -> (Schema, Field, Field, Field, Field, Field) {
         .set_stored();
     let body = builder.add_text_field("body", body_options);
     let line_start = builder.add_u64_field("line_start", STORED);
-    (builder.build(), project, file, chunk_id, body, line_start)
+    (builder.build(), project, file, filename, title, chunk_id, body, line_start)
 }
 
 fn register_ngram_tokenizer(index: &Index) -> Result<()> {
@@ -397,12 +412,44 @@ fn chunk_content(content: &str, ext: &str) -> Vec<Chunk> {
 }
 
 // ---------------------------------------------------------------------------
+// Title extraction
+// ---------------------------------------------------------------------------
+
+/// Extract a title for a chunk.
+///
+/// For the first chunk of a file, the first markdown heading (`#`, `##`, `###`)
+/// is used.  If no heading is found, or for subsequent chunks, the filename
+/// without extension is used as a fallback.
+fn extract_title(chunk_text: &str, filename: &str, chunk_idx: usize) -> String {
+    if chunk_idx == 0 {
+        for line in chunk_text.lines() {
+            let trimmed = line.trim();
+            if let Some(heading) = trimmed.strip_prefix("# ") {
+                return heading.trim().to_string();
+            } else if let Some(heading) = trimmed.strip_prefix("## ") {
+                return heading.trim().to_string();
+            } else if let Some(heading) = trimmed.strip_prefix("### ") {
+                return heading.trim().to_string();
+            }
+        }
+    }
+    // Fallback: filename without extension
+    Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(filename)
+        .to_string()
+}
+
+// ---------------------------------------------------------------------------
 // Index metadata (for incremental updates)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct IndexMeta {
     files: std::collections::HashMap<String, [u64; 2]>, // path -> [mtime_secs, size]
+    #[serde(default)]
+    schema_version: u32,
 }
 
 impl IndexMeta {
@@ -875,10 +922,21 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
 
     // fun_messages removed — progress now shows project/file type label only
 
-    let (schema, project_field, file_field, chunk_id_field, body_field, line_start_field) =
+    let (schema, project_field, file_field, filename_field, title_field, chunk_id_field, body_field, line_start_field) =
         build_schema();
 
     let mut meta = IndexMeta::load(docs_root);
+
+    // Schema migration: if the stored schema version is older than the current
+    // one, force a full rebuild by wiping the index directory.
+    if meta.schema_version < SCHEMA_VERSION {
+        if dir.exists() {
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir)?;
+        }
+        meta.files.clear();
+    }
+
     let mut indexed_count = 0u64;
     let mut skipped_count = 0u64;
     let mut project_count = 0u64;
@@ -919,7 +977,7 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
         let fp = file_fingerprint(&full_path);
         current_files.insert(rel_to_root.clone(), fp);
 
-        if meta.files.get(&rel_to_root).copied() == Some(fp) {
+        if meta.files.get(&rel_to_root).copied() == Some(fp) && meta.schema_version >= SCHEMA_VERSION {
             skipped_count += 1;
         } else {
             files_to_index.push((proj, rel_to_proj, full_path));
@@ -959,8 +1017,31 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
         #[cfg(test)]
         let mut writer = index.writer_with_num_threads(1, 15_000_000)?;
 
-        for (proj, rel, full) in &files_to_index {
-            let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("md").to_lowercase();
+        // Parallel read + chunk using rayon, sequential write to tantivy.
+        use rayon::prelude::*;
+
+        /// Helper type for the parallel chunking output.
+        type FileChunks = (String, String, Vec<(usize, Chunk)>);
+
+        let all_chunks: Vec<FileChunks> = files_to_index
+            .par_iter()
+            .filter_map(|(proj, rel, full)| {
+                let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                if let Ok(content) = read_file_content(full) {
+                    let chunks: Vec<(usize, Chunk)> = chunk_content(&content, &ext)
+                        .into_iter()
+                        .enumerate()
+                        .collect();
+                    Some((proj.clone(), rel.clone(), chunks))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Sequential write to tantivy (writer is not thread-safe).
+        for (proj, rel, chunks) in &all_chunks {
+            let ext = Path::new(rel).extension().and_then(|e| e.to_str()).unwrap_or("md").to_lowercase();
             let label = match ext.as_str() {
                 "pdf"  => format!("{proj}  pdf"),
                 "docx" => format!("{proj}  docx"),
@@ -979,22 +1060,28 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
                 writer.delete_query(Box::new(delete_query))?;
             }
 
-            if let Ok(content) = read_file_content(full) {
-                let file_ext = full.extension().and_then(|e| e.to_str()).unwrap_or("");
-                for (chunk_idx, chunk) in chunk_content(&content, file_ext).iter().enumerate() {
-                    let mut doc = TantivyDocument::new();
-                    doc.add_text(project_field, proj);
-                    doc.add_text(file_field, rel);
-                    doc.add_u64(chunk_id_field, chunk_idx as u64);
-                    doc.add_text(body_field, &chunk.text);
-                    doc.add_u64(line_start_field, chunk.line_start as u64);
-                    writer.add_document(doc)?;
-                }
+            for (chunk_idx, chunk) in chunks {
+                let title_text = extract_title(&chunk.text, rel, *chunk_idx);
+                let filename_text = Path::new(rel)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(rel)
+                    .to_string();
+                let mut doc = TantivyDocument::new();
+                doc.add_text(project_field, proj);
+                doc.add_text(file_field, rel);
+                doc.add_text(filename_field, &filename_text);
+                doc.add_text(title_field, &title_text);
+                doc.add_u64(chunk_id_field, *chunk_idx as u64);
+                doc.add_text(body_field, &chunk.text);
+                doc.add_u64(line_start_field, chunk.line_start as u64);
+                writer.add_document(doc)?;
             }
+
             indexed_count += 1;
             pb.inc(1);
         }
-        
+
         pb.set_message("saving...");
         writer.commit()?;
         pb.finish_and_clear();
@@ -1166,6 +1253,7 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
 
     // Final metadata save after all indexing steps (Tantivy + Vector) are complete
     meta.files = current_files;
+    meta.schema_version = SCHEMA_VERSION;
     let _ = meta.save(docs_root);
 
     Ok(json!({
@@ -1207,6 +1295,40 @@ fn sanitize_query(query: &str) -> String {
         return String::new();
     }
     trimmed.to_string()
+}
+
+/// Build a multi-field BooleanQuery that searches `body`, `title`, and `filename`
+/// with different boost weights so that title/filename matches rank higher.
+fn build_search_query(
+    sanitized: &str,
+    index: &Index,
+    body_field: Field,
+    title_field: Field,
+    filename_field: Field,
+) -> Box<dyn tantivy::query::Query> {
+    use tantivy::query::{BoostQuery, BooleanQuery, Occur};
+
+    let mut clauses: Vec<(Occur, Box<dyn tantivy::query::Query>)> = Vec::new();
+
+    // Body field (weight 1.0)
+    let body_parser = QueryParser::for_index(index, vec![body_field]);
+    if let Ok(q) = body_parser.parse_query(sanitized) {
+        clauses.push((Occur::Should, q));
+    }
+
+    // Title field (weight 3.0)
+    let title_parser = QueryParser::for_index(index, vec![title_field]);
+    if let Ok(q) = title_parser.parse_query(sanitized) {
+        clauses.push((Occur::Should, Box::new(BoostQuery::new(q, 3.0))));
+    }
+
+    // Filename field (weight 2.0)
+    let filename_parser = QueryParser::for_index(index, vec![filename_field]);
+    if let Ok(q) = filename_parser.parse_query(sanitized) {
+        clauses.push((Occur::Should, Box::new(BoostQuery::new(q, 2.0))));
+    }
+
+    Box::new(BooleanQuery::new(clauses))
 }
 
 // ---------------------------------------------------------------------------
@@ -1270,25 +1392,34 @@ fn search_with_index(
     let body_field = schema.get_field("body").context("missing 'body' field")?;
     let line_start_field = schema.get_field("line_start").context("missing 'line_start' field")?;
 
+    // Resolve optional fields — older indexes may lack them.
+    let title_field = schema.get_field("title").ok();
+    let filename_field = schema.get_field("filename").ok();
+
     // Use the process-level cached reader (creates one on first call per path).
     let reader = get_cached_reader(&dir, index, CacheCategory::Project)?;
     let searcher = reader.searcher();
 
-    let query_parser = QueryParser::for_index(index, vec![body_field]);
-    let parsed_query = query_parser
-        .parse_query(sanitized)
-        .context("Failed to parse search query")?;
+    // Build the search query: multi-field if title/filename fields exist,
+    // fall back to body-only for older indexes.
+    let parsed_query: Box<dyn tantivy::query::Query> =
+        if let (Some(tf), Some(ff)) = (title_field, filename_field) {
+            build_search_query(sanitized, index, body_field, tf, ff)
+        } else {
+            let body_parser = QueryParser::for_index(index, vec![body_field]);
+            body_parser
+                .parse_query(sanitized)
+                .context("Failed to parse search query")?
+        };
 
-    // Fetch 3× candidates for per-file deduplication.
-    // Using 3× instead of 5× reduces wasted doc fetches while still giving
+    // Fetch 3x candidates for per-file deduplication.
+    // Using 3x instead of 5x reduces wasted doc fetches while still giving
     // enough headroom to deduplicate down to `limit` unique files.
     let top_docs: Vec<(Score, DocAddress)> = searcher
         .search(&parsed_query, &TopDocs::with_limit(limit * 3).order_by_score())
         .context("Search failed")?;
 
     // Deduplicate: keep only the best-scoring chunk per (project, file) pair.
-    // We use a HashSet<(&str, &str)> built from owned strings held in `results`
-    // to avoid double-allocating keys for the "already seen" fast path.
     let mut seen: HashMap<(String, String), usize> = HashMap::new();
     let mut results = Vec::new();
 
@@ -1315,7 +1446,6 @@ fn search_with_index(
             .to_string();
 
         // Skip if we already have a better chunk from this file.
-        // `entry` avoids a redundant key clone on the insert path.
         use std::collections::hash_map::Entry;
         if let Entry::Vacant(e) = seen.entry((project.clone(), file.clone())) {
             e.insert(results.len());
@@ -1348,10 +1478,26 @@ fn search_with_index(
             "score": (score * 1000.0).round() / 1000.0,
         }));
 
-        if results.len() >= limit {
+        if results.len() >= limit * 2 {
             break;
         }
     }
+
+    // Project diversity: limit same-project results when no project_filter is set.
+    if project_filter.is_none() {
+        const MAX_PER_PROJECT: usize = 2;
+        let mut project_counts: HashMap<String, usize> = HashMap::new();
+        results.retain(|r| {
+            let project = r["project"].as_str().unwrap_or("");
+            let count = project_counts.entry(project.to_string()).or_insert(0);
+            if *count >= MAX_PER_PROJECT {
+                return false;
+            }
+            *count += 1;
+            true
+        });
+    }
+    results.truncate(limit);
 
     let truncated = results.len() >= limit;
     Ok(json!({
@@ -1479,6 +1625,15 @@ pub fn search_hybrid(
     let fused = reciprocal_rank_fusion(&bm25_results, &vector_results, rrf_k);
     let truncated = fused.len() > limit;
 
+    // Hybrid fallback: if one side is empty, report the appropriate mode.
+    let mode = if bm25_results.is_empty() && !vector_results.is_empty() {
+        "vector-only"
+    } else if !bm25_results.is_empty() && vector_results.is_empty() {
+        "bm25-only"
+    } else {
+        "hybrid-bm25-vector"
+    };
+
     // 9. Build final results with snippets.
     //
     // BM25 results already carry `snippet` and `line_start`.  We cache them in
@@ -1590,7 +1745,7 @@ pub fn search_hybrid(
     Ok(json!({
         "query": query,
         "scope": if project_filter.is_some() { "project" } else { "global" },
-        "mode": "hybrid-bm25-vector",
+        "mode": mode,
         "embedding_status": match &vector_error {
             Some(e) => e.as_str(),
             None => "ready",
@@ -1620,7 +1775,7 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
     let dir = index_dir(vault_path);
     std::fs::create_dir_all(&dir)?;
 
-    let (schema, project_field, file_field, chunk_id_field, body_field, line_start_field) =
+    let (schema, project_field, file_field, filename_field, title_field, chunk_id_field, body_field, line_start_field) =
         build_schema();
 
     // Walk all .md files in vault_path, excluding `_` prefix and `.alcove/`
@@ -1696,9 +1851,17 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                 .and_then(|e| e.to_str())
                 .unwrap_or("");
             for (chunk_idx, chunk) in chunk_content(&content, file_ext).iter().enumerate() {
+                let title_text = extract_title(&chunk.text, &rel, chunk_idx);
+                let filename_text = Path::new(&rel)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&rel)
+                    .to_string();
                 let mut doc = TantivyDocument::new();
                 doc.add_text(project_field, &vault_name);
                 doc.add_text(file_field, &rel);
+                doc.add_text(filename_field, &filename_text);
+                doc.add_text(title_field, &title_text);
                 doc.add_u64(chunk_id_field, chunk_idx as u64);
                 doc.add_text(body_field, &chunk.text);
                 doc.add_u64(line_start_field, chunk.line_start as u64);
@@ -2157,10 +2320,19 @@ fn search_vault_bm25_inner(
     let reader = get_cached_reader(&dir, index, CacheCategory::Vault)?;
     let searcher = reader.searcher();
 
-    let query_parser = QueryParser::for_index(index, vec![body_field]);
-    let parsed_query = query_parser
-        .parse_query(sanitized)
-        .context("Failed to parse vault search query")?;
+    // Resolve optional fields — older indexes may lack them.
+    let title_field = schema.get_field("title").ok();
+    let filename_field = schema.get_field("filename").ok();
+
+    let parsed_query: Box<dyn tantivy::query::Query> =
+        if let (Some(tf), Some(ff)) = (title_field, filename_field) {
+            build_search_query(sanitized, index, body_field, tf, ff)
+        } else {
+            let body_parser = QueryParser::for_index(index, vec![body_field]);
+            body_parser
+                .parse_query(sanitized)
+                .context("Failed to parse vault search query")?
+        };
 
     let top_docs: Vec<(Score, DocAddress)> = searcher
         .search(
