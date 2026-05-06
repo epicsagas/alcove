@@ -17,7 +17,7 @@ use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
 use tantivy::{Index, IndexReader, ReloadPolicy, TantivyDocument};
 use walkdir::WalkDir;
 
-use crate::config::effective_config;
+use crate::config::{effective_config, is_reserved_dir_name};
 #[cfg(not(test))]
 use crate::config::load_config;
 
@@ -517,7 +517,7 @@ pub fn check_doc_changes(docs_root: &Path) -> JsonValue {
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
+        if is_reserved_dir_name(&name) {
             continue;
         }
         let proj_cfg = effective_config(&path);
@@ -594,7 +594,7 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
+        if is_reserved_dir_name(&name) {
             continue;
         }
         let proj_cfg = effective_config(&path);
@@ -920,29 +920,72 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
     let dir = index_dir(docs_root);
     std::fs::create_dir_all(&dir)?;
 
-    // fun_messages removed — progress now shows project/file type label only
-
     let (schema, project_field, file_field, filename_field, title_field, chunk_id_field, body_field, line_start_field) =
         build_schema();
 
     let mut meta = IndexMeta::load(docs_root);
+    apply_schema_migration(&dir, &mut meta)?;
 
-    // Schema migration: if the stored schema version is older than the current
-    // one, force a full rebuild by wiping the index directory.
+    let (all_files, project_count) = scan_all_files(docs_root)?;
+
+    let (files_to_index, current_files, skipped_count) =
+        filter_changed_files(all_files, docs_root, &meta);
+
+    let needs_full_rebuild = !dir.join("meta.json").exists() || meta.files.is_empty();
+
+    let indexed_count = write_tantivy_index(
+        &dir,
+        schema,
+        project_field,
+        file_field,
+        filename_field,
+        title_field,
+        chunk_id_field,
+        body_field,
+        line_start_field,
+        &files_to_index,
+        needs_full_rebuild,
+    )?;
+
+    let (vector_status, vectors_indexed, vector_errors, embedding_model) =
+        run_vector_indexing(docs_root, skip_embedding, files_to_index)?;
+
+    // Final metadata save after all indexing steps (Tantivy + Vector) are complete
+    meta.files = current_files;
+    meta.schema_version = SCHEMA_VERSION;
+    let _ = meta.save(docs_root);
+
+    Ok(json!({
+        "status": "ok",
+        "projects": project_count,
+        "indexed": indexed_count,
+        "skipped": skipped_count,
+        "index_path": dir.to_string_lossy(),
+        "vector_status": vector_status,
+        "vectors_indexed": vectors_indexed,
+        "vector_errors": vector_errors,
+        "embedding_model": embedding_model,
+    }))
+}
+
+/// Step 1: Apply schema migration — wipe index dir if schema version is outdated.
+fn apply_schema_migration(dir: &Path, meta: &mut IndexMeta) -> Result<()> {
     if meta.schema_version < SCHEMA_VERSION {
         if dir.exists() {
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir)?;
+            let _ = std::fs::remove_dir_all(dir);
+            std::fs::create_dir_all(dir)?;
         }
         meta.files.clear();
     }
+    Ok(())
+}
 
-    let mut indexed_count = 0u64;
-    let mut skipped_count = 0u64;
+/// Step 2: Walk docs_root and collect all indexable files across all projects.
+/// Returns (all_files, project_count).
+fn scan_all_files(docs_root: &Path) -> Result<(Vec<(String, String, PathBuf)>, u64)> {
+    let mut all_files: Vec<(String, String, PathBuf)> = Vec::new();
     let mut project_count = 0u64;
 
-    // 1. Scan for all potential files
-    let mut all_files: Vec<(String, String, PathBuf)> = Vec::new();
     for entry in std::fs::read_dir(docs_root)
         .context("Failed to read DOCS_ROOT")?
         .flatten()
@@ -950,13 +993,16 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
         let path = entry.path();
         if !path.is_dir() { continue; }
         let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-        if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" { continue; }
+        if is_reserved_dir_name(&name) { continue; }
         project_count += 1;
 
         let proj_cfg = effective_config(&path);
         let docs_root_canonical = docs_root.canonicalize().unwrap_or_else(|_| docs_root.to_path_buf());
-        for walk_entry in WalkDir::new(&path).into_iter().flatten().filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())
-            && !e.path().file_name().unwrap_or_default().to_string_lossy().starts_with('_')) {
+        for walk_entry in WalkDir::new(&path).into_iter().flatten().filter(|e| {
+            e.file_type().is_file()
+                && proj_cfg.is_indexable(e.path())
+                && !e.path().file_name().unwrap_or_default().to_string_lossy().starts_with('_')
+        }) {
             let file_path = walk_entry.path().to_path_buf();
             if let Ok(canonical) = file_path.canonicalize()
                 && !canonical.starts_with(&docs_root_canonical)
@@ -968,9 +1014,19 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
         }
     }
 
-    // 2. Filter changed files
+    Ok((all_files, project_count))
+}
+
+/// Step 3: Separate files into those that need re-indexing vs. unchanged.
+/// Returns (files_to_index, current_files_fingerprints, skipped_count).
+fn filter_changed_files(
+    all_files: Vec<(String, String, PathBuf)>,
+    docs_root: &Path,
+    meta: &IndexMeta,
+) -> (Vec<(String, String, PathBuf)>, std::collections::HashMap<String, [u64; 2]>, u64) {
     let mut current_files: std::collections::HashMap<String, [u64; 2]> = std::collections::HashMap::new();
     let mut files_to_index: Vec<(String, String, PathBuf)> = Vec::new();
+    let mut skipped_count = 0u64;
 
     for (proj, rel_to_proj, full_path) in all_files {
         let rel_to_root = full_path.strip_prefix(docs_root).unwrap_or(&full_path).to_string_lossy().to_string();
@@ -984,113 +1040,140 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
         }
     }
 
-    let needs_full_rebuild = !dir.join("meta.json").exists() || meta.files.is_empty();
+    (files_to_index, current_files, skipped_count)
+}
 
-    if !files_to_index.is_empty() {
-        let pb = ProgressBar::new(files_to_index.len() as u64);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("  {spinner:.cyan}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
-                .progress_chars("━━╌"),
-        );
-        pb.enable_steady_tick(Duration::from_millis(80));
-
-        let index = if needs_full_rebuild {
-            pb.set_message("initializing...");
-            Index::create_in_dir(&dir, schema.clone())
-                .or_else(|_| {
-                    std::fs::remove_dir_all(&dir)?;
-                    std::fs::create_dir_all(&dir)?;
-                    Index::create_in_dir(&dir, schema.clone())
-                })?
-        } else {
-            Index::open_in_dir(&dir)?
-        };
-        register_ngram_tokenizer(&index)?;
-        // In test builds use a single writer thread with the minimum heap
-        // (15 MB) so that many parallel test indices don't exhaust RAM.
-        // Tantivy spawns one thread per logical CPU by default; with 147 tests
-        // running concurrently that multiplies to gigabytes of writer buffers.
-        // Production uses all CPUs with the configured buffer size.
-        #[cfg(not(test))]
-        let mut writer = index.writer(load_config().index_buffer_bytes())?;
-        #[cfg(test)]
-        let mut writer = index.writer_with_num_threads(1, 15_000_000)?;
-
-        // Parallel read + chunk using rayon, sequential write to tantivy.
-        use rayon::prelude::*;
-
-        /// Helper type for the parallel chunking output.
-        type FileChunks = (String, String, Vec<(usize, Chunk)>);
-
-        let all_chunks: Vec<FileChunks> = files_to_index
-            .par_iter()
-            .filter_map(|(proj, rel, full)| {
-                let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                if let Ok(content) = read_file_content(full) {
-                    let chunks: Vec<(usize, Chunk)> = chunk_content(&content, &ext)
-                        .into_iter()
-                        .enumerate()
-                        .collect();
-                    Some((proj.clone(), rel.clone(), chunks))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Sequential write to tantivy (writer is not thread-safe).
-        for (proj, rel, chunks) in &all_chunks {
-            let ext = Path::new(rel).extension().and_then(|e| e.to_str()).unwrap_or("md").to_lowercase();
-            let label = match ext.as_str() {
-                "pdf"  => format!("{proj}  pdf"),
-                "docx" => format!("{proj}  docx"),
-                "xlsx" => format!("{proj}  xlsx"),
-                _      => proj.clone(),
-            };
-            pb.set_message(label);
-
-            if !needs_full_rebuild {
-                let proj_term = tantivy::Term::from_field_text(project_field, proj);
-                let file_term = tantivy::Term::from_field_text(file_field, rel);
-                let delete_query = BooleanQuery::new(vec![
-                    (Occur::Must, Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
-                    (Occur::Must, Box::new(TermQuery::new(file_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
-                ]);
-                writer.delete_query(Box::new(delete_query))?;
-            }
-
-            for (chunk_idx, chunk) in chunks {
-                let title_text = extract_title(&chunk.text, rel, *chunk_idx);
-                let filename_text = Path::new(rel)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(rel)
-                    .to_string();
-                let mut doc = TantivyDocument::new();
-                doc.add_text(project_field, proj);
-                doc.add_text(file_field, rel);
-                doc.add_text(filename_field, &filename_text);
-                doc.add_text(title_field, &title_text);
-                doc.add_u64(chunk_id_field, *chunk_idx as u64);
-                doc.add_text(body_field, &chunk.text);
-                doc.add_u64(line_start_field, chunk.line_start as u64);
-                writer.add_document(doc)?;
-            }
-
-            indexed_count += 1;
-            pb.inc(1);
-        }
-
-        pb.set_message("saving...");
-        writer.commit()?;
-        pb.finish_and_clear();
+/// Step 4: Write changed files into the Tantivy (BM25) index.
+/// Returns the number of files indexed.
+#[allow(clippy::too_many_arguments)]
+fn write_tantivy_index(
+    dir: &Path,
+    schema: tantivy::schema::Schema,
+    project_field: Field,
+    file_field: Field,
+    filename_field: Field,
+    title_field: Field,
+    chunk_id_field: Field,
+    body_field: Field,
+    line_start_field: Field,
+    files_to_index: &[(String, String, PathBuf)],
+    needs_full_rebuild: bool,
+) -> Result<u64> {
+    if files_to_index.is_empty() {
+        return Ok(0);
     }
 
-    // ---------------------------------------------------------------------------
-    // Vector indexing (alcove-full feature) — skipped when skip_embedding=true
-    // ---------------------------------------------------------------------------
+    let mut indexed_count = 0u64;
 
+    let pb = ProgressBar::new(files_to_index.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("  {spinner:.cyan}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
+            .progress_chars("━━╌"),
+    );
+    pb.enable_steady_tick(Duration::from_millis(80));
+
+    let index = if needs_full_rebuild {
+        pb.set_message("initializing...");
+        Index::create_in_dir(dir, schema.clone())
+            .or_else(|_| {
+                std::fs::remove_dir_all(dir)?;
+                std::fs::create_dir_all(dir)?;
+                Index::create_in_dir(dir, schema.clone())
+            })?
+    } else {
+        Index::open_in_dir(dir)?
+    };
+    register_ngram_tokenizer(&index)?;
+    // In test builds use a single writer thread with the minimum heap
+    // (15 MB) so that many parallel test indices don't exhaust RAM.
+    // Tantivy spawns one thread per logical CPU by default; with 147 tests
+    // running concurrently that multiplies to gigabytes of writer buffers.
+    // Production uses all CPUs with the configured buffer size.
+    #[cfg(not(test))]
+    let mut writer = index.writer(load_config().index_buffer_bytes())?;
+    #[cfg(test)]
+    let mut writer = index.writer_with_num_threads(1, 15_000_000)?;
+
+    // Parallel read + chunk using rayon, sequential write to tantivy.
+    use rayon::prelude::*;
+
+    /// Helper type for the parallel chunking output.
+    type FileChunks = (String, String, Vec<(usize, Chunk)>);
+
+    let all_chunks: Vec<FileChunks> = files_to_index
+        .par_iter()
+        .filter_map(|(proj, rel, full)| {
+            let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            if let Ok(content) = read_file_content(full) {
+                let chunks: Vec<(usize, Chunk)> = chunk_content(&content, &ext)
+                    .into_iter()
+                    .enumerate()
+                    .collect();
+                Some((proj.clone(), rel.clone(), chunks))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Sequential write to tantivy (writer is not thread-safe).
+    for (proj, rel, chunks) in &all_chunks {
+        let ext = Path::new(rel).extension().and_then(|e| e.to_str()).unwrap_or("md").to_lowercase();
+        let label = match ext.as_str() {
+            "pdf"  => format!("{proj}  pdf"),
+            "docx" => format!("{proj}  docx"),
+            "xlsx" => format!("{proj}  xlsx"),
+            _      => proj.clone(),
+        };
+        pb.set_message(label);
+
+        if !needs_full_rebuild {
+            let proj_term = tantivy::Term::from_field_text(project_field, proj);
+            let file_term = tantivy::Term::from_field_text(file_field, rel);
+            let delete_query = BooleanQuery::new(vec![
+                (Occur::Must, Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+                (Occur::Must, Box::new(TermQuery::new(file_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+            ]);
+            writer.delete_query(Box::new(delete_query))?;
+        }
+
+        for (chunk_idx, chunk) in chunks {
+            let title_text = extract_title(&chunk.text, rel, *chunk_idx);
+            let filename_text = Path::new(rel)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(rel)
+                .to_string();
+            let mut doc = TantivyDocument::new();
+            doc.add_text(project_field, proj);
+            doc.add_text(file_field, rel);
+            doc.add_text(filename_field, &filename_text);
+            doc.add_text(title_field, &title_text);
+            doc.add_u64(chunk_id_field, *chunk_idx as u64);
+            doc.add_text(body_field, &chunk.text);
+            doc.add_u64(line_start_field, chunk.line_start as u64);
+            writer.add_document(doc)?;
+        }
+
+        indexed_count += 1;
+        pb.inc(1);
+    }
+
+    pb.set_message("saving...");
+    writer.commit()?;
+    pb.finish_and_clear();
+
+    Ok(indexed_count)
+}
+
+/// Step 5: Run vector (embedding) indexing when the `alcove-full` feature is enabled.
+/// Returns (vector_status, vectors_indexed, vector_errors, embedding_model).
+fn run_vector_indexing(
+    docs_root: &Path,
+    skip_embedding: bool,
+    files_to_index: Vec<(String, String, PathBuf)>,
+) -> Result<(String, u64, u64, String)> {
     #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
     let mut vector_status = if skip_embedding { "skipped".to_string() } else { "disabled".to_string() };
     #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
@@ -1112,7 +1195,7 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
         if emb_cfg.enabled {
             let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
             embedding_model = model.as_str().to_string();
-            
+
             let service = EmbeddingService::new(crate::config::EmbeddingConfig {
                 model: model.as_str().to_string(),
                 auto_download: emb_cfg.auto_download,
@@ -1251,22 +1334,7 @@ fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Result<JsonValue
         }
     }
 
-    // Final metadata save after all indexing steps (Tantivy + Vector) are complete
-    meta.files = current_files;
-    meta.schema_version = SCHEMA_VERSION;
-    let _ = meta.save(docs_root);
-
-    Ok(json!({
-        "status": "ok",
-        "projects": project_count,
-        "indexed": indexed_count,
-        "skipped": skipped_count,
-        "index_path": dir.to_string_lossy(),
-        "vector_status": vector_status,
-        "vectors_indexed": vectors_indexed,
-        "vector_errors": vector_errors,
-        "embedding_model": embedding_model,
-    }))
+    Ok((vector_status, vectors_indexed, vector_errors, embedding_model))
 }
 
 // ---------------------------------------------------------------------------

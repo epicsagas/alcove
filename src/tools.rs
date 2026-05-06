@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 use walkdir::WalkDir;
 
 use crate::config::{
-    TierClassifier, effective_config, is_doc_file, load_config, suggest_categorization,
+    TierClassifier, effective_config, is_doc_file, is_reserved_dir_name, load_config,
+    suggest_categorization,
 };
 
 // ---------------------------------------------------------------------------
@@ -49,12 +50,7 @@ pub fn resolve_project(docs_root: &Path) -> Option<ResolvedProject> {
             .filter(|e| e.path().is_dir())
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().to_string();
-                if name.starts_with('.')
-                    || name.starts_with('_')
-                    || name == "mcp"
-                    || name == "skills"
-                    || name == "scripts"
-                {
+                if is_reserved_dir_name(&name) {
                     None
                 } else {
                     Some(name)
@@ -301,6 +297,39 @@ fn search_dir_for_query(
     }
 }
 
+/// query가 비어있거나 limit이 0이면 조기 반환 JSON을 Some으로 반환한다.
+fn validate_search_args(query: &str, limit: usize) -> Option<Value> {
+    if query.trim().is_empty() {
+        return Some(json!({ "query": query, "matches": [], "truncated": false, "error": "empty query" }));
+    }
+    if limit == 0 {
+        return Some(json!({ "query": query, "matches": [], "truncated": false }));
+    }
+    None
+}
+
+/// BM25 결과 항목을 MCP 응답 형식으로 변환한다.
+/// include_project가 true이면 "project" 필드를 포함한다.
+fn map_bm25_match(m: &Value, include_project: bool) -> Value {
+    let base = json!({
+        "file": m["file"].as_str().unwrap_or("?"),
+        "line": m["line_start"].as_u64().unwrap_or(0),
+        "snippet": m["snippet"].as_str().unwrap_or(""),
+        "source": "ranked",
+        "score": m["score"].as_f64().unwrap_or(0.0),
+    });
+    if include_project {
+        let mut obj = base.as_object().unwrap().clone();
+        obj.insert(
+            "project".to_string(),
+            Value::String(m["project"].as_str().unwrap_or("?").to_string()),
+        );
+        Value::Object(obj)
+    } else {
+        base
+    }
+}
+
 pub fn tool_search(
     project_root: &Path,
     args_value: Value,
@@ -310,11 +339,8 @@ pub fn tool_search(
         .context("search_project_docs requires { query, limit? }")?;
 
     let query_trimmed = args.query.trim();
-    if query_trimmed.is_empty() {
-        return Ok(json!({ "query": args.query, "matches": [], "truncated": false, "error": "empty query" }));
-    }
-    if args.limit == 0 {
-        return Ok(json!({ "query": args.query, "matches": [], "truncated": false }));
+    if let Some(early) = validate_search_args(&args.query, args.limit) {
+        return Ok(early);
     }
 
     // Extract project name and docs_root
@@ -396,19 +422,7 @@ pub fn tool_search(
         if let Ok(json) = result {
             let matches: Vec<Value> = json["matches"]
                 .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .map(|m| {
-                            json!({
-                                "file": m["file"].as_str().unwrap_or("?"),
-                                "line": m["line_start"].as_u64().unwrap_or(0),
-                                "snippet": m["snippet"].as_str().unwrap_or(""),
-                                "source": "ranked",
-                                "score": m["score"].as_f64().unwrap_or(0.0),
-                            })
-                        })
-                        .collect()
-                })
+                .map(|arr| arr.iter().map(|m| map_bm25_match(m, false)).collect())
                 .unwrap_or_default();
 
             return Ok(json!({
@@ -486,11 +500,8 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
         .context("search_project_docs requires { query, scope?, limit? }")?;
 
     let query_trimmed = args.query.trim();
-    if query_trimmed.is_empty() {
-        return Ok(json!({ "query": args.query, "matches": [], "truncated": false, "error": "empty query" }));
-    }
-    if args.limit == 0 {
-        return Ok(json!({ "query": args.query, "matches": [], "truncated": false }));
+    if let Some(early) = validate_search_args(&args.query, args.limit) {
+        return Ok(early);
     }
 
     // Try indexed search first (faster and ranked), unless grep is forced.
@@ -500,20 +511,7 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
         if let Ok(json) = result {
             let matches: Vec<Value> = json["matches"]
                 .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .map(|m| {
-                            json!({
-                                "project": m["project"].as_str().unwrap_or("?"),
-                                "file": m["file"].as_str().unwrap_or("?"),
-                                "line": m["line_start"].as_u64().unwrap_or(0),
-                                "snippet": m["snippet"].as_str().unwrap_or(""),
-                                "source": "ranked",
-                                "score": m["score"].as_f64().unwrap_or(0.0),
-                            })
-                        })
-                        .collect()
-                })
+                .map(|arr| arr.iter().map(|m| map_bm25_match(m, true)).collect())
                 .unwrap_or_default();
 
             return Ok(json!({
@@ -544,7 +542,7 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
+        if is_reserved_dir_name(&name) {
             continue;
         }
 
@@ -669,7 +667,7 @@ pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
             .to_string_lossy()
             .to_string();
 
-        if name.starts_with('.') || name.starts_with('_') || name == "mcp" || name == "skills" {
+        if is_reserved_dir_name(&name) {
             continue;
         }
 

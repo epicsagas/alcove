@@ -9,7 +9,7 @@ use rust_i18n::t;
 
 use crate::config::{
     CategoryConfig, DiagramConfig, DOC_REPO_REQUIRED, DOC_REPO_SUPPLEMENTARY, DocConfig,
-    PROJECT_REPO_FILES, config_path, default_docs_root, load_config,
+    PROJECT_REPO_FILES, config_path, default_docs_root, is_reserved_dir_name, load_config,
 };
 
 // ---------------------------------------------------------------------------
@@ -2091,7 +2091,7 @@ pub fn cmd_doctor(format: &str) -> Result<()> {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                if !name.starts_with('.') && !name.starts_with('_') && name != "mcp" && name != "skills" {
+                if !is_reserved_dir_name(&name) {
                     project_names.push(name);
                 }
             }

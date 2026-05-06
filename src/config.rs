@@ -562,6 +562,16 @@ pub fn vault_embedding_config(vault_path: &Path) -> EmbeddingConfig {
     load_config().embedding_config_with_defaults()
 }
 
+// ---------------------------------------------------------------------------
+// Reserved directory name predicate
+// ---------------------------------------------------------------------------
+
+/// alcove docs_root 직하위 탐색/색인 대상에서 제외할 예약 디렉터리 이름을 판별한다.
+pub fn is_reserved_dir_name(name: &str) -> bool {
+    name.starts_with('.') || name.starts_with('_')
+        || name == "mcp" || name == "skills" || name == "scripts"
+}
+
 /// Classify a doc file path using a provided config (enables project-level overrides).
 #[cfg(test)]
 pub fn classify_tier_with(relative_path: &str, cfg: &DocConfig) -> &'static str {
@@ -1333,5 +1343,31 @@ reader_ttl_secs = 120
         };
         let merged = project.overlay(&base);
         assert_eq!(merged.memory_config_with_defaults().reader_ttl_secs, 60);
+    }
+
+    #[test]
+    fn is_reserved_dir_name_dot_prefix() {
+        assert!(is_reserved_dir_name(".hidden"));
+        assert!(is_reserved_dir_name(".git"));
+    }
+
+    #[test]
+    fn is_reserved_dir_name_underscore_prefix() {
+        assert!(is_reserved_dir_name("_internal"));
+        assert!(is_reserved_dir_name("_drafts"));
+    }
+
+    #[test]
+    fn is_reserved_dir_name_known_names() {
+        assert!(is_reserved_dir_name("mcp"));
+        assert!(is_reserved_dir_name("skills"));
+        assert!(is_reserved_dir_name("scripts"));
+    }
+
+    #[test]
+    fn is_reserved_dir_name_normal_names() {
+        assert!(!is_reserved_dir_name("my-project"));
+        assert!(!is_reserved_dir_name("docs"));
+        assert!(!is_reserved_dir_name("src"));
     }
 }
