@@ -917,8 +917,7 @@ pub fn tool_init_project(docs_root: &Path, args_value: Value) -> Result<Value> {
         || name.contains("..")
         || name.contains('/')
         || name.contains('\\')
-        || name.starts_with('.')
-        || name.starts_with('_')
+        || is_reserved_dir_name(name)
     {
         anyhow::bail!(
             "Invalid project name: `{name}`. Must not contain path separators, start with . or _, or be empty."

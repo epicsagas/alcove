@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use crate::config::is_reserved_dir_name;
+
 use anyhow::{Context, Result};
 use console::style;
 use serde::{Deserialize, Serialize};
@@ -138,11 +140,7 @@ pub(crate) fn collect_data_stats(docs_root: &Path) -> DataStats {
             .to_string_lossy();
         let starts_hidden = Path::new(rel.as_ref())
             .components()
-            .any(|c| {
-                c.as_os_str()
-                    .to_string_lossy()
-                    .starts_with('.')
-            });
+            .any(|c| is_reserved_dir_name(&c.as_os_str().to_string_lossy()));
         if starts_hidden {
             continue;
         }

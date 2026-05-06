@@ -32,7 +32,7 @@ fn validate_vault_name(name: &str) -> Result<()> {
     if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
         anyhow::bail!("Invalid vault name: must be a simple name without path separators");
     }
-    if name.starts_with('_') || name.starts_with('.') {
+    if is_reserved_dir_name(name) {
         anyhow::bail!("Invalid vault name: must not start with '_' or '.'");
     }
     Ok(())

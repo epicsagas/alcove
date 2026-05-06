@@ -430,6 +430,91 @@ fn filter_changed_files(
 /// Step 4: Write changed files into the Tantivy (BM25) index.
 /// Returns the number of files indexed.
 #[allow(clippy::too_many_arguments)]
+fn open_or_create_index(
+    dir: &Path,
+    schema: tantivy::schema::Schema,
+    needs_full_rebuild: bool,
+    pb: &ProgressBar,
+) -> Result<Index> {
+    if needs_full_rebuild {
+        pb.set_message("initializing...");
+        Ok(Index::create_in_dir(dir, schema.clone()).or_else(|_| {
+            std::fs::remove_dir_all(dir)?;
+            std::fs::create_dir_all(dir)?;
+            Index::create_in_dir(dir, schema.clone())
+        })?)
+    } else {
+        Ok(Index::open_in_dir(dir)?)
+    }
+}
+
+fn chunk_files_parallel(
+    files_to_index: &[(String, String, PathBuf)],
+) -> Vec<(String, String, Vec<(usize, super::chunker::Chunk)>)> {
+    use rayon::prelude::*;
+    files_to_index
+        .par_iter()
+        .filter_map(|(proj, rel, full)| {
+            let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            read_file_content(full).ok().map(|content| {
+                let chunks = chunk_content(&content, &ext).into_iter().enumerate().collect();
+                (proj.clone(), rel.clone(), chunks)
+            })
+        })
+        .collect()
+}
+
+fn write_chunks_to_index(
+    writer: &mut tantivy::IndexWriter,
+    all_chunks: &[(String, String, Vec<(usize, super::chunker::Chunk)>)],
+    project_field: Field,
+    file_field: Field,
+    filename_field: Field,
+    title_field: Field,
+    chunk_id_field: Field,
+    body_field: Field,
+    line_start_field: Field,
+    needs_full_rebuild: bool,
+    pb: &ProgressBar,
+) -> Result<u64> {
+    let mut indexed_count = 0u64;
+    for (proj, rel, chunks) in all_chunks {
+        let ext = Path::new(rel).extension().and_then(|e| e.to_str()).unwrap_or("md").to_lowercase();
+        let label = match ext.as_str() {
+            "pdf"  => format!("{proj}  pdf"),
+            "docx" => format!("{proj}  docx"),
+            "xlsx" => format!("{proj}  xlsx"),
+            _      => proj.clone(),
+        };
+        pb.set_message(label);
+        if !needs_full_rebuild {
+            let proj_term = tantivy::Term::from_field_text(project_field, proj);
+            let file_term = tantivy::Term::from_field_text(file_field, rel);
+            let delete_query = BooleanQuery::new(vec![
+                (Occur::Must, Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+                (Occur::Must, Box::new(TermQuery::new(file_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+            ]);
+            writer.delete_query(Box::new(delete_query))?;
+        }
+        for (chunk_idx, chunk) in chunks {
+            let title_text = extract_title(&chunk.text, rel, *chunk_idx);
+            let filename_text = Path::new(rel).file_stem().and_then(|s| s.to_str()).unwrap_or(rel).to_string();
+            let mut doc = TantivyDocument::new();
+            doc.add_text(project_field, proj);
+            doc.add_text(file_field, rel);
+            doc.add_text(filename_field, &filename_text);
+            doc.add_text(title_field, &title_text);
+            doc.add_u64(chunk_id_field, *chunk_idx as u64);
+            doc.add_text(body_field, &chunk.text);
+            doc.add_u64(line_start_field, chunk.line_start as u64);
+            writer.add_document(doc)?;
+        }
+        indexed_count += 1;
+        pb.inc(1);
+    }
+    Ok(indexed_count)
+}
+
 fn write_tantivy_index(
     dir: &Path,
     schema: tantivy::schema::Schema,
@@ -446,9 +531,6 @@ fn write_tantivy_index(
     if files_to_index.is_empty() {
         return Ok(0);
     }
-
-    let mut indexed_count = 0u64;
-
     let pb = ProgressBar::new(files_to_index.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -456,270 +538,173 @@ fn write_tantivy_index(
             .progress_chars("━━╌"),
     );
     pb.enable_steady_tick(Duration::from_millis(80));
-
-    let index = if needs_full_rebuild {
-        pb.set_message("initializing...");
-        Index::create_in_dir(dir, schema.clone())
-            .or_else(|_| {
-                std::fs::remove_dir_all(dir)?;
-                std::fs::create_dir_all(dir)?;
-                Index::create_in_dir(dir, schema.clone())
-            })?
-    } else {
-        Index::open_in_dir(dir)?
-    };
+    let index = open_or_create_index(dir, schema, needs_full_rebuild, &pb)?;
     register_ngram_tokenizer(&index)?;
-    // In test builds use a single writer thread with the minimum heap
-    // (15 MB) so that many parallel test indices don't exhaust RAM.
-    // Tantivy spawns one thread per logical CPU by default; with 147 tests
-    // running concurrently that multiplies to gigabytes of writer buffers.
-    // Production uses all CPUs with the configured buffer size.
+    // Tests: 1 thread / 15 MB to avoid RAM exhaustion from many parallel test indices.
     #[cfg(not(test))]
     let mut writer = index.writer(load_config().index_buffer_bytes())?;
     #[cfg(test)]
     let mut writer = index.writer_with_num_threads(1, 15_000_000)?;
-
-    // Parallel read + chunk using rayon, sequential write to tantivy.
-    use rayon::prelude::*;
-    use super::chunker::Chunk;
-
-    /// Helper type for the parallel chunking output.
-    type FileChunks = (String, String, Vec<(usize, Chunk)>);
-
-    let all_chunks: Vec<FileChunks> = files_to_index
-        .par_iter()
-        .filter_map(|(proj, rel, full)| {
-            let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-            if let Ok(content) = read_file_content(full) {
-                let chunks: Vec<(usize, Chunk)> = chunk_content(&content, &ext)
-                    .into_iter()
-                    .enumerate()
-                    .collect();
-                Some((proj.clone(), rel.clone(), chunks))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Sequential write to tantivy (writer is not thread-safe).
-    for (proj, rel, chunks) in &all_chunks {
-        let ext = Path::new(rel).extension().and_then(|e| e.to_str()).unwrap_or("md").to_lowercase();
-        let label = match ext.as_str() {
-            "pdf"  => format!("{proj}  pdf"),
-            "docx" => format!("{proj}  docx"),
-            "xlsx" => format!("{proj}  xlsx"),
-            _      => proj.clone(),
-        };
-        pb.set_message(label);
-
-        if !needs_full_rebuild {
-            let proj_term = tantivy::Term::from_field_text(project_field, proj);
-            let file_term = tantivy::Term::from_field_text(file_field, rel);
-            let delete_query = BooleanQuery::new(vec![
-                (Occur::Must, Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
-                (Occur::Must, Box::new(TermQuery::new(file_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
-            ]);
-            writer.delete_query(Box::new(delete_query))?;
-        }
-
-        for (chunk_idx, chunk) in chunks {
-            let title_text = extract_title(&chunk.text, rel, *chunk_idx);
-            let filename_text = Path::new(rel)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(rel)
-                .to_string();
-            let mut doc = TantivyDocument::new();
-            doc.add_text(project_field, proj);
-            doc.add_text(file_field, rel);
-            doc.add_text(filename_field, &filename_text);
-            doc.add_text(title_field, &title_text);
-            doc.add_u64(chunk_id_field, *chunk_idx as u64);
-            doc.add_text(body_field, &chunk.text);
-            doc.add_u64(line_start_field, chunk.line_start as u64);
-            writer.add_document(doc)?;
-        }
-
-        indexed_count += 1;
-        pb.inc(1);
-    }
-
+    let all_chunks = chunk_files_parallel(files_to_index);
+    let indexed_count = write_chunks_to_index(
+        &mut writer, &all_chunks,
+        project_field, file_field, filename_field, title_field,
+        chunk_id_field, body_field, line_start_field,
+        needs_full_rebuild, &pb,
+    )?;
     pb.set_message("saving...");
     writer.commit()?;
     pb.finish_and_clear();
-
     Ok(indexed_count)
 }
 
-/// Step 5: Run vector (embedding) indexing when the `alcove-full` feature is enabled.
-/// Returns (vector_status, vectors_indexed, vector_errors, embedding_model).
+/// Embeds `pending` chunks and upserts them into the vector store.
+/// Drains `pending` on success; clears it on embed error.
+/// Updates `vectors_indexed` and `vector_errors` in place.
+#[cfg(feature = "alcove-full")]
+fn flush_embed_batch(
+    pending: &mut Vec<(String, String, u64, String)>,
+    service: &crate::embedding::EmbeddingService,
+    store: &mut crate::vector::VectorStore,
+    model: &crate::embedding::EmbeddingModelChoice,
+    vectors_indexed: &mut u64,
+    vector_errors: &mut u64,
+) {
+    if pending.is_empty() {
+        return;
+    }
+    let count = pending.len() as u64;
+    let doc_pfx = model.doc_prefix();
+    let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
+        match doc_pfx {
+            Some(pfx) => format!("{}{}", pfx, t),
+            None => t.clone(),
+        }
+    }).collect();
+    let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+    match service.embed(&text_refs) {
+        Ok(embeddings) => {
+            let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
+            if let Err(e) = store.batch_upsert(it) {
+                eprintln!("[alcove] batch upsert failed: {}", e);
+                *vector_errors += count;
+            } else {
+                *vectors_indexed += count;
+            }
+        }
+        Err(e) => {
+            eprintln!("[alcove] embed failed: {}", e);
+            *vector_errors += pending.len() as u64;
+            pending.clear();
+        }
+    }
+}
+
+/// Reads, chunks, and embeds `to_embed` files in batches of `embed_batch`.
+#[cfg(feature = "alcove-full")]
+fn embed_files_in_batches(
+    to_embed: &[(String, String, PathBuf)],
+    service: &crate::embedding::EmbeddingService,
+    store: &mut crate::vector::VectorStore,
+    model: &crate::embedding::EmbeddingModelChoice,
+    embed_batch: usize,
+    vpb: &ProgressBar,
+    vectors_indexed: &mut u64,
+    vector_errors: &mut u64,
+) {
+    // Sequential read + chunk per file, embed in batches.
+    // Parallel file reads caused RSS spikes (large PDFs × N threads).
+    // Bottleneck is ONNX inference, not I/O — sequential reads keep
+    // memory bounded to one file's chunks at a time.
+    let mut pending: Vec<(String, String, u64, String)> = Vec::new();
+    for (proj, rel, full) in to_embed {
+        vpb.set_message(proj.clone());
+        if let Ok(content) = read_file_content(full) {
+            let file_ext = full.extension().and_then(|e| e.to_str()).unwrap_or("");
+            for (i, chunk) in chunk_content(&content, file_ext).into_iter().enumerate() {
+                pending.push((proj.clone(), rel.clone(), i as u64, chunk.text));
+                if pending.len() >= embed_batch {
+                    flush_embed_batch(&mut pending, service, store, model, vectors_indexed, vector_errors);
+                }
+            }
+        }
+        vpb.inc(1);
+    }
+    flush_embed_batch(&mut pending, service, store, model, vectors_indexed, vector_errors);
+}
+
+/// Runs the full embedding pipeline when the `alcove-full` feature is enabled.
+/// Returns updated (vector_status, vectors_indexed, vector_errors, embedding_model).
+#[cfg(feature = "alcove-full")]
+fn run_full_vector_indexing(
+    docs_root: &Path,
+    files_to_index: Vec<(String, String, PathBuf)>,
+) -> Result<(String, u64, u64, String)> {
+    use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+    use crate::vector::VectorStore;
+    use crate::config::load_config;
+
+    let cfg = load_config();
+    let emb_cfg = cfg.embedding_config_with_defaults();
+    if !emb_cfg.enabled {
+        return Ok(("disabled".to_string(), 0, 0, String::new()));
+    }
+
+    let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+    let service = EmbeddingService::new(crate::config::EmbeddingConfig {
+        model: model.as_str().to_string(),
+        auto_download: emb_cfg.auto_download,
+        cache_dir: emb_cfg.cache_dir.clone(),
+        enabled: true,
+        query_cache_size: emb_cfg.query_cache_size,
+    });
+    let _ = service.ensure_model();
+    if service.state() != crate::embedding::ModelState::Ready {
+        return Ok(("model_not_ready".to_string(), 0, 0, model.as_str().to_string()));
+    }
+
+    let vector_path = docs_root.join(".alcove").join("vectors.db");
+    let mut store = VectorStore::open(&vector_path, service.model_name(), service.dimension())
+        .map_err(|e| { eprintln!("[alcove] Failed to open vector store: {}", e); e })?;
+    let mut vectors_indexed = 0u64;
+    let mut vector_errors = 0u64;
+
+    if !files_to_index.is_empty() {
+        let to_embed: Vec<(String, String, PathBuf)> = files_to_index
+            .into_iter()
+            .filter(|(proj, rel, _)| !matches!(store.has_file(proj, rel), Ok(true)))
+            .collect();
+        let vpb = ProgressBar::new(to_embed.len() as u64);
+        vpb.set_style(
+            ProgressStyle::default_bar()
+                .template("  {spinner:.magenta}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
+                .progress_chars("━━╌"),
+        );
+        vpb.enable_steady_tick(Duration::from_millis(80));
+        vpb.set_message("embedding");
+        // Batch size tuned to model size: small < 100 MB → 128, medium ≤ 800 MB → 64, large → 32
+        let embed_batch: usize = match model.size_mb() { s if s < 100 => 128, s if s <= 800 => 64, _ => 32 };
+        embed_files_in_batches(&to_embed, &service, &mut store, &model, embed_batch, &vpb, &mut vectors_indexed, &mut vector_errors);
+        vpb.finish_and_clear();
+    }
+    if let Ok(meta) = store.meta() {
+        vectors_indexed = meta.count as u64;
+    }
+    Ok(("ok".to_string(), vectors_indexed, vector_errors, model.as_str().to_string()))
+}
+
 fn run_vector_indexing(
     docs_root: &Path,
     skip_embedding: bool,
     files_to_index: Vec<(String, String, PathBuf)>,
 ) -> Result<(String, u64, u64, String)> {
-    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
-    let mut vector_status = if skip_embedding { "skipped".to_string() } else { "disabled".to_string() };
-    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
-    let mut vectors_indexed = 0u64;
-    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
-    let mut vector_errors = 0u64;
-    #[cfg_attr(not(feature = "alcove-full"), allow(unused_mut))]
-    let mut embedding_model = String::new();
-
-    #[cfg(feature = "alcove-full")]
-    if !skip_embedding {
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
-        use crate::vector::VectorStore;
-        use crate::config::load_config;
-
-        let cfg = load_config();
-        let emb_cfg = cfg.embedding_config_with_defaults();
-
-        if emb_cfg.enabled {
-            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
-            embedding_model = model.as_str().to_string();
-
-            let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-                model: model.as_str().to_string(),
-                auto_download: emb_cfg.auto_download,
-                cache_dir: emb_cfg.cache_dir.clone(),
-                enabled: true,
-                query_cache_size: emb_cfg.query_cache_size,
-            });
-
-            // Ensure model is loaded (and downloaded if auto_download is enabled)
-            let _ = service.ensure_model();
-
-            if service.state() == crate::embedding::ModelState::Ready {
-                let vector_path = docs_root.join(".alcove").join("vectors.db");
-                match VectorStore::open(&vector_path, service.model_name(), service.dimension()) {
-                    Ok(mut store) => {
-                        vector_status = "ok".to_string();
-                        if !files_to_index.is_empty() {
-                            // Filter out already-indexed files (sequential DB read)
-                            let to_embed: Vec<(String, String, PathBuf)> = files_to_index
-                                .into_iter()
-                                .filter(|(proj, rel, _)| {
-                                    !matches!(store.has_file(proj, rel), Ok(true))
-                                })
-                                .collect();
-
-                            let total_files = to_embed.len() as u64;
-
-                            let vpb = ProgressBar::new(total_files);
-                            vpb.set_style(
-                                ProgressStyle::default_bar()
-                                    .template("  {spinner:.magenta}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
-                                    .progress_chars("━━╌"),
-                            );
-                            vpb.enable_steady_tick(Duration::from_millis(80));
-                            vpb.set_message("embedding");
-
-                            // Sequential read + chunk per file, embed in batches.
-                            // Parallel file reads caused RSS spikes (large PDFs × N threads).
-                            // Bottleneck is ONNX inference, not I/O — sequential reads keep
-                            // memory bounded to one file's chunks at a time.
-                            //
-                            // Batch size is tuned to model size:
-                            //   small models (< 100 MB)  → 128  (VRAM/RAM headroom)
-                            //   medium models (≤ 800 MB) → 64   (default)
-                            //   large models  (> 800 MB) → 32   (OOM guard)
-                            let embed_batch: usize = match model.size_mb() {
-                                s if s < 100 => 128,
-                                s if s <= 800 => 64,
-                                _ => 32,
-                            };
-                            let mut pending: Vec<(String, String, u64, String)> = Vec::new();
-
-                            for (proj, rel, full) in &to_embed {
-                                vpb.set_message(proj.clone());
-
-                                if let Ok(content) = read_file_content(full) {
-                                    let file_ext = full.extension().and_then(|e| e.to_str()).unwrap_or("");
-                                    for (i, chunk) in chunk_content(&content, file_ext).into_iter().enumerate() {
-                                        pending.push((proj.clone(), rel.clone(), i as u64, chunk.text));
-
-                                        if pending.len() >= embed_batch {
-                                            let actual = pending.len();
-                                            let doc_pfx = model.doc_prefix();
-                                            let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
-                                                match doc_pfx {
-                                                    Some(pfx) => format!("{}{}", pfx, t),
-                                                    None => t.clone(),
-                                                }
-                                            }).collect();
-                                            let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
-                                            match service.embed(&text_refs) {
-                                                Ok(embeddings) => {
-                                                    let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
-                                                    if let Err(e) = store.batch_upsert(it) {
-                                                        eprintln!("[alcove] batch upsert failed: {}", e);
-                                                        vector_errors += actual as u64;
-                                                    } else {
-                                                        vectors_indexed += actual as u64;
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    eprintln!("[alcove] embed failed: {}", e);
-                                                    vector_errors += pending.len() as u64;
-                                                    pending.clear();
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                vpb.inc(1);
-                            }
-
-                            // Flush remaining
-                            if !pending.is_empty() {
-                                let doc_pfx = model.doc_prefix();
-                                let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
-                                    match doc_pfx {
-                                        Some(pfx) => format!("{}{}", pfx, t),
-                                        None => t.clone(),
-                                    }
-                                }).collect();
-                                let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
-                                match service.embed(&text_refs) {
-                                    Ok(embeddings) => {
-                                        let count = pending.len() as u64;
-                                        let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
-                                        if let Err(e) = store.batch_upsert(it) {
-                                            eprintln!("[alcove] batch upsert failed: {}", e);
-                                            vector_errors += count;
-                                        } else {
-                                            vectors_indexed += count;
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("[alcove] embed failed: {}", e);
-                                        vector_errors += pending.len() as u64;
-                                    }
-                                }
-                            }
-
-                            vpb.finish_and_clear();
-                        }
-                        // Always report total vectors in store (not just this run's delta)
-                        if let Ok(meta) = store.meta() {
-                            vectors_indexed = meta.count as u64;
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[alcove] Failed to open vector store: {}", e);
-                        vector_status = format!("error: {}", e);
-                    }
-                }
-            } else {
-                vector_status = "model_not_ready".to_string();
-            }
-        }
+    if skip_embedding {
+        return Ok(("skipped".to_string(), 0, 0, String::new()));
     }
-
-    Ok((vector_status, vectors_indexed, vector_errors, embedding_model))
+    #[cfg(feature = "alcove-full")]
+    return run_full_vector_indexing(docs_root, files_to_index);
+    #[cfg(not(feature = "alcove-full"))]
+    Ok(("disabled".to_string(), 0, 0, String::new()))
 }
 
 // ---------------------------------------------------------------------------
@@ -767,9 +752,7 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                 .and_then(|rel| rel.components().next())
                 .map(|c| {
                     let s = c.as_os_str().to_string_lossy();
-                    // vault 내부 경로 컴포넌트 필터: dot/underscore 접두어만 제외.
-                    // mcp/skills/scripts는 vault 내에서 허용되므로 is_reserved_dir_name 미사용.
-                    s.starts_with('.') || s.starts_with('_')
+                    is_reserved_dir_name(&s)
                 })
                 .unwrap_or(false)
             {
