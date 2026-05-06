@@ -214,3 +214,4 @@ $RECYCLE.BIN/
 .aider*
 # collet
 .collet/*.secrets.tmp
+.fastembed_cache/

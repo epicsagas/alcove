@@ -257,7 +257,7 @@ pub(crate) fn default_ground_truth_path() -> PathBuf {
 }
 
 fn get_docs_root() -> Result<PathBuf> {
-    crate::cli::saved_docs_root().ok_or_else(|| {
+    crate::setup::saved_docs_root().ok_or_else(|| {
         anyhow::anyhow!("No docs repository found. Run `alcove setup` first.")
     })
 }

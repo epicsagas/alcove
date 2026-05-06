@@ -1,6 +1,9 @@
+mod agents;
 mod bench;
 mod cli;
+mod commands;
 mod config;
+mod setup;
 mod telemetry;
 #[cfg(feature = "alcove-full")]
 mod embedding;

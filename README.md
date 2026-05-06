@@ -4,6 +4,8 @@
 
 <p align="center"><strong>Your AI agent doesn't know your project. Alcove fixes that.</strong></p>
 
+<p align="center"><a href="#quick-start">→ Quick start</a></p>
+
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="docs/README.ko.md">한국어</a> ·
@@ -78,27 +80,20 @@ Alcove doesn't inject your docs. **Agents search for what they need, when they n
 
 **Switch agents anytime. Switch projects anytime. The document layer stays standardized.**
 
-## The right split
-
-**`CLAUDE.md` / `AGENTS.md`** is for agent behavior: repeated mistakes to avoid, coding conventions, and session-specific instructions. Keep it under 200 lines.
-
-**Alcove** is for project knowledge: architecture, decisions, runbooks, API docs, and anything else your agent needs to understand — but not necessarily on every run.
-
-The pattern:
-```
-CLAUDE.md | AGENTS.md                             ← agent rules, coding conventions, recurring corrections
-~/.config/alcove/docs/my-app/
-  ARCHITECTURE.md                      ← tech stack, data model, system design
-  DECISIONS.md                         ← why X was chosen over Y
-  DEBT.md                              ← known issues, workarounds
-  ...                                  ← agent searches here when it needs context
-```
-
-Agents call `search_project_docs("auth flow")` and get the 2 most relevant docs — not all 12. Nothing hits the context window unless it's actually needed.
-
 ## Why Alcove
 
-> **Why not just use `CLAUDE.md`?** Short conventions and agent behaviors belong there. Project documentation — architecture, decisions, runbooks, PRDs — doesn't scale in a context file. Alcove is not a replacement; it's the layer `CLAUDE.md` was never meant to be.
+**`CLAUDE.md` / `AGENTS.md`** is for agent behavior — recurring corrections, coding conventions, session instructions. Keep it under 200 lines.
+
+**Alcove** is for project knowledge — architecture, decisions, runbooks, PRDs. Agents search for what they need; nothing is pre-loaded into context.
+
+```
+CLAUDE.md | AGENTS.md            ← agent rules, coding conventions, recurring corrections
+~/.alcove/docs/my-app/
+  ARCHITECTURE.md                ← tech stack, data model, system design
+  DECISIONS.md                   ← why X was chosen over Y
+  DEBT.md                        ← known issues, workarounds
+  ...                            ← agent searches here when it needs context
+```
 
 | Without Alcove | With Alcove |
 |----------------|-------------|
@@ -118,10 +113,10 @@ Agents call `search_project_docs("auth flow")` and get the 2 most relevant docs 
 
 ```bash
 # macOS
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/epicsaga)
 brew install epicsagas/tap/alcove
 
 # Linux / Windows — pre-built binary (fast, no compilation)
+# Requires Rust: https://rustup.rs
 cargo install cargo-binstall
 cargo binstall alcove
 
@@ -132,8 +127,15 @@ cargo install alcove
 git clone https://github.com/epicsagas/alcove.git
 cd alcove
 make install
+```
 
+Then run setup:
+
+```bash
 alcove setup
+
+# Verify everything is working
+alcove doctor
 ```
 
 ### Claude Code Plugin
@@ -169,6 +171,20 @@ Without `pdftotext`, Alcove falls back to a built-in PDF parser which may fail o
 
 Re-run `alcove setup` anytime to change settings. It remembers your previous choices.
 
+### Troubleshooting
+
+**Agent can't find Alcove tools**
+Run `alcove setup` again — it re-registers the MCP server for all configured agents. Then start a new agent session (registration takes effect on next session start).
+
+**Search returns no results**
+The index may not be built yet. Run `alcove index` to build it, then try again.
+
+**403 Unauthorized from background server**
+`ALCOVE_TOKEN` is not set in your shell. Run `alcove token` to print it, then add `export ALCOVE_TOKEN="..."` to your shell profile and reload.
+
+**`alcove doctor` reports issues**
+Follow the suggestions printed by `doctor` — it checks binary location, MCP registration, index state, and optional dependencies like `pdftotext`.
+
 ---
 
 ## How it works
@@ -201,25 +217,6 @@ flowchart LR
 ```
 
 Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent over stdio. When the background HTTP server is running (via `alcove enable`), the stdio process acts as a thin proxy — forwarding requests to the warm server for instant response with zero cold-start. Without the background server, it loads the full engine on each session.
-
-## What it does
-
-- **On-demand doc retrieval** — agents search and retrieve; nothing is pre-loaded into context
-- **BM25 ranked search** — fast full-text search powered by [tantivy](https://github.com/quickwit-oss/tantivy); most relevant docs first, auto-indexed, falls back to grep
-- **One doc-repo, multiple projects** — private docs organized by project, managed in a single place
-- **One setup, any agent** — configure once, every MCP-compatible agent gets the same access
-- **Auto-detects your project** from CWD — no per-project config needed
-- **Scoped access** — each project only sees its own docs
-- **Cross-project search** — search across all projects at once with `scope: "global"`
-- **Private docs stay private** — docs never touch your public repo, runs entirely on your machine
-- **Persistent HTTP server** — optional background server eliminates cold-start latency; agents connect via HTTP for instant response
-- **Standardized doc structure** — `policy.toml` enforces consistent docs across all projects and teams
-- **Cross-repo audit** — finds internal docs misplaced in your project repo, suggests fixes
-- **Document validation** — checks for missing files, unfilled templates, required sections
-- **Semantic lint** — detects broken wikilinks, orphan files, stale WIP/DRAFT markers, and date claims that are 2+ years old
-- **External vault promotion** — bring a note from Obsidian (or any vault) into your alcove doc-repo with one command; auto-routes to the right project
-- **Knowledge base vaults** — create, link, and search independent knowledge bases (separate from project docs); link Obsidian vaults directly
-- **Works with 9+ agents** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Gemini CLI
 
 ## MCP Tools
 
@@ -308,95 +305,57 @@ Files with no matching project land in `inbox/` for manual review.
 
 ### Background Server
 
-Alcove can run as a persistent HTTP RAG server, accessible via REST API. This is useful for external integrations, dashboards, or non-MCP clients. **When enabled, the MCP stdio process automatically proxies to the warm server** — eliminating cold-start latency (ONNX model load, index open) on every new session.
+Running a persistent background server eliminates cold-start latency (2–5s ONNX model load) on every new agent session. **`alcove setup` enables this by default** (macOS login item).
 
 ```bash
-# Start the server in the foreground
-alcove serve                       # default: 127.0.0.1:57384
-alcove serve --port 9090           # custom port
-alcove serve --host 0.0.0.0       # listen on all interfaces
-```
-
-The server uses a **bearer token** for authentication. During `alcove setup`, a token is auto-generated and stored in `config.toml`. You can also pass one explicitly with `--token` or the `ALCOVE_TOKEN` environment variable.
-
-#### Token management
-
-```bash
-# Print the stored token (for sharing with teammates)
-alcove token
-
-# Teammates set it in their shell profile:
-export ALCOVE_TOKEN="alcove-a3f7b2e14d5c..."
-```
-
-Tokens are resolved with priority: **`--token` flag > `ALCOVE_TOKEN` env var > `config.toml`**.
-
-#### macOS Login Item (launchd)
-
-Register Alcove as a macOS login item so the HTTP server starts automatically on login and stays running in the background. **This is the default during `alcove setup`** — the setup wizard asks whether to enable it (default: Yes).
-
-```bash
-# Register and start (persists across reboots)
+# Enable and start (persists across reboots — macOS)
 alcove enable
 
-# Lifecycle management
-alcove stop         # stop the server
-alcove start        # start it again
-alcove restart      # stop + start
+# Lifecycle
+alcove stop / start / restart
 
-# Unregister (stops server and removes login item)
+# Disable and remove login item
 alcove disable
 ```
 
-This installs a LaunchAgent at `~/Library/LaunchAgents/com.epicsagas.alcove.plist`. Logs are written to `~/.alcove/logs/`.
+The server uses a bearer token for authentication — auto-generated during `alcove setup` and stored in `config.toml`. Your existing MCP config (`command: alcove`) stays unchanged; the stdio process auto-detects the running server and proxies to it.
 
-#### Hybrid Proxy Mode
+```bash
+# Check or share the token
+alcove token
 
-Agents always connect to alcove via **stdio** (the MCP standard). When the background HTTP server is running, the stdio process acts as a **thin proxy** — it forwards JSON-RPC messages to the warm server over HTTP instead of loading the search engine itself. This eliminates cold-start latency (ONNX model load, index open) on every new agent session.
+# Set in shell profile (setup does this automatically)
+export ALCOVE_TOKEN="alcove-..."
+```
+
+Token priority: `--token` flag > `ALCOVE_TOKEN` env var > `config.toml`.
+
+Logs are written to `~/.alcove/logs/`. On startup, run `alcove doctor` to verify the server is reachable.
+
+<details>
+<summary>How proxy mode works internally</summary>
+
+Agents always connect via **stdio** (MCP standard). When the background server is running, the stdio process is a thin proxy — it forwards requests over HTTP instead of loading the search engine itself.
 
 ```
-With background server (proxy mode):
+Proxy mode (background server running):
   Agent ──stdio──→ alcove (thin proxy, <10 MB, instant)
-                     │ stdin → HTTP POST /mcp
-                     │ HTTP response → stdout
                      └──HTTP──→ alcove serve (always warm)
                                  ├─ BM25 index (loaded)
                                  ├─ ONNX embedding model (loaded)
                                  ├─ HNSW vector index (loaded)
                                  └─ hybrid search ready (~5ms)
 
-Without background server (direct mode):
+Direct mode (no background server):
   Agent ──stdio──→ alcove (full engine, one process per session)
                      ├─ load ONNX embedding model (2-5s cold start)
                      ├─ open BM25 index
-                     ├─ build HNSW vector index
                      └─ hybrid search ready (after warm-up)
 ```
 
-On startup, the stdio process checks `GET /health` on the configured host/port. If the server responds, it enters proxy mode automatically — **no MCP config change needed**. The JSON-RPC payload is identical in both modes; only the transport changes internally.
+On startup, the stdio process checks `GET /health`. If the server responds, it enters proxy mode automatically — no MCP config change needed.
 
-> **Per-session process:** In direct mode, each agent session spawns a separate `alcove` process (~10 MB). With multiple agents open simultaneously, each runs its own index load. Enabling the background server consolidates this into a single warm process shared by all sessions.
-
-#### Switching from stdio to persistent HTTP
-
-If you set up alcove before the background server feature was introduced, or skipped it during setup, you can enable it at any time without changing your MCP config:
-
-```bash
-# 1. Enable the background server (registers as macOS login item, starts immediately)
-alcove enable
-
-# 2. Verify it's running
-alcove start   # no-op if already running; shows PID
-
-# 3. Set ALCOVE_TOKEN in your shell (setup adds this automatically, but check it exists)
-echo $ALCOVE_TOKEN          # should print your token
-# If empty, get it and add to your shell profile:
-alcove token                # prints the stored token
-echo 'export ALCOVE_TOKEN="'$(alcove token)'"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-Your existing stdio MCP config (`command: alcove`) stays exactly as-is. Once the server is running, every new agent session auto-detects it and switches to proxy mode. No agent restart required beyond opening a new session.
+</details>
 
 ## Search
 
