@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
+#[cfg(not(test))]
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tantivy::{Index, IndexReader, ReloadPolicy};

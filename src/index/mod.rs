@@ -42,21 +42,23 @@ pub use cache::CacheCategory;
 #[cfg(test)]
 pub(crate) use builder::build_index_inner;
 #[cfg(test)]
+#[allow(unused_imports)]
 pub(crate) use builder::build_index_unlocked;
 #[cfg(test)]
-pub(crate) use builder::{IndexMeta, file_fingerprint};
+pub(crate) use builder::IndexMeta;
 #[cfg(test)]
 pub(crate) use lock::{index_dir, lock_file, try_acquire_lock, is_locked, release_lock};
 #[cfg(test)]
-pub(crate) use schema::{SCHEMA_VERSION, register_ngram_tokenizer, NGRAM_TOKENIZER};
+pub(crate) use schema::{SCHEMA_VERSION, register_ngram_tokenizer};
 #[cfg(test)]
-pub(crate) use chunker::{chunk_content, extract_title, Chunk, is_code_ext};
+#[allow(unused_imports)]
+pub(crate) use chunker::{chunk_content, extract_title, Chunk};
 #[cfg(test)]
 pub(crate) use reader::read_file_content;
 #[cfg(test)]
 pub(crate) use cache::{reader_cache_for, get_cached_reader};
 #[cfg(test)]
-pub(crate) use searcher::{sanitize_query, build_search_query, search_with_index, search_vault_bm25_inner, apply_project_diversity};
+pub(crate) use searcher::{sanitize_query, build_search_query, apply_project_diversity};
 
 // ---------------------------------------------------------------------------
 // Tests (verbatim from original index.rs)
@@ -995,7 +997,7 @@ mod tests {
     #[test]
     fn test_build_search_query_empty_sanitized() {
         use tantivy::schema::{Schema, TEXT};
-        use tantivy::{Index, TantivyDocument};
+        use tantivy::Index;
         use tantivy::collector::TopDocs;
         use tantivy::{DocAddress, Score};
 
