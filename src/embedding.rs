@@ -656,7 +656,7 @@ impl EmbeddingService {
                 cache.insert(miss_text.clone(), vec.clone());
             }
         }
-        for (slot, vec) in miss_indices.iter().zip(inferred.into_iter()) {
+        for (slot, vec) in miss_indices.iter().zip(inferred) {
             results[*slot] = Some(vec);
         }
 

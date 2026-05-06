@@ -3,6 +3,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
+
+type ProjectFile = (String, String, PathBuf);
+type ChunkedFile = (String, String, Vec<(usize, super::chunker::Chunk)>);
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
@@ -10,6 +13,22 @@ use tantivy::query::{BooleanQuery, Occur, TermQuery};
 use tantivy::schema::{Field, IndexRecordOption};
 use tantivy::{Index, TantivyDocument};
 use walkdir::WalkDir;
+
+struct IndexFields {
+    project: Field,
+    file: Field,
+    filename: Field,
+    title: Field,
+    chunk_id: Field,
+    body: Field,
+    line_start: Field,
+}
+
+#[cfg(feature = "alcove-full")]
+struct VectorCounters {
+    vectors_indexed: u64,
+    vector_errors: u64,
+}
 
 use crate::config::{effective_config, is_reserved_dir_name};
 #[cfg(not(test))]
@@ -320,13 +339,7 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
     let indexed_count = write_tantivy_index(
         &dir,
         schema,
-        project_field,
-        file_field,
-        filename_field,
-        title_field,
-        chunk_id_field,
-        body_field,
-        line_start_field,
+        &IndexFields { project: project_field, file: file_field, filename: filename_field, title: title_field, chunk_id: chunk_id_field, body: body_field, line_start: line_start_field },
         &files_to_index,
         needs_full_rebuild,
     )?;
@@ -366,8 +379,8 @@ fn apply_schema_migration(dir: &Path, meta: &mut IndexMeta) -> Result<()> {
 
 /// Step 2: Walk docs_root and collect all indexable files across all projects.
 /// Returns (all_files, project_count).
-fn scan_all_files(docs_root: &Path) -> Result<(Vec<(String, String, PathBuf)>, u64)> {
-    let mut all_files: Vec<(String, String, PathBuf)> = Vec::new();
+fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
+    let mut all_files: Vec<ProjectFile> = Vec::new();
     let mut project_count = 0u64;
 
     for entry in std::fs::read_dir(docs_root)
@@ -404,12 +417,12 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<(String, String, PathBuf)>, u
 /// Step 3: Separate files into those that need re-indexing vs. unchanged.
 /// Returns (files_to_index, current_files_fingerprints, skipped_count).
 fn filter_changed_files(
-    all_files: Vec<(String, String, PathBuf)>,
+    all_files: Vec<ProjectFile>,
     docs_root: &Path,
     meta: &IndexMeta,
-) -> (Vec<(String, String, PathBuf)>, HashMap<String, [u64; 2]>, u64) {
+) -> (Vec<ProjectFile>, HashMap<String, [u64; 2]>, u64) {
     let mut current_files: HashMap<String, [u64; 2]> = HashMap::new();
-    let mut files_to_index: Vec<(String, String, PathBuf)> = Vec::new();
+    let mut files_to_index: Vec<ProjectFile> = Vec::new();
     let mut skipped_count = 0u64;
 
     for (proj, rel_to_proj, full_path) in all_files {
@@ -449,8 +462,8 @@ fn open_or_create_index(
 }
 
 fn chunk_files_parallel(
-    files_to_index: &[(String, String, PathBuf)],
-) -> Vec<(String, String, Vec<(usize, super::chunker::Chunk)>)> {
+    files_to_index: &[ProjectFile],
+) -> Vec<ChunkedFile> {
     use rayon::prelude::*;
     files_to_index
         .par_iter()
@@ -466,14 +479,8 @@ fn chunk_files_parallel(
 
 fn write_chunks_to_index(
     writer: &mut tantivy::IndexWriter,
-    all_chunks: &[(String, String, Vec<(usize, super::chunker::Chunk)>)],
-    project_field: Field,
-    file_field: Field,
-    filename_field: Field,
-    title_field: Field,
-    chunk_id_field: Field,
-    body_field: Field,
-    line_start_field: Field,
+    all_chunks: &[ChunkedFile],
+    fields: &IndexFields,
     needs_full_rebuild: bool,
     pb: &ProgressBar,
 ) -> Result<u64> {
@@ -488,8 +495,8 @@ fn write_chunks_to_index(
         };
         pb.set_message(label);
         if !needs_full_rebuild {
-            let proj_term = tantivy::Term::from_field_text(project_field, proj);
-            let file_term = tantivy::Term::from_field_text(file_field, rel);
+            let proj_term = tantivy::Term::from_field_text(fields.project, proj);
+            let file_term = tantivy::Term::from_field_text(fields.file, rel);
             let delete_query = BooleanQuery::new(vec![
                 (Occur::Must, Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
                 (Occur::Must, Box::new(TermQuery::new(file_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
@@ -500,13 +507,13 @@ fn write_chunks_to_index(
             let title_text = extract_title(&chunk.text, rel, *chunk_idx);
             let filename_text = Path::new(rel).file_stem().and_then(|s| s.to_str()).unwrap_or(rel).to_string();
             let mut doc = TantivyDocument::new();
-            doc.add_text(project_field, proj);
-            doc.add_text(file_field, rel);
-            doc.add_text(filename_field, &filename_text);
-            doc.add_text(title_field, &title_text);
-            doc.add_u64(chunk_id_field, *chunk_idx as u64);
-            doc.add_text(body_field, &chunk.text);
-            doc.add_u64(line_start_field, chunk.line_start as u64);
+            doc.add_text(fields.project, proj);
+            doc.add_text(fields.file, rel);
+            doc.add_text(fields.filename, &filename_text);
+            doc.add_text(fields.title, &title_text);
+            doc.add_u64(fields.chunk_id, *chunk_idx as u64);
+            doc.add_text(fields.body, &chunk.text);
+            doc.add_u64(fields.line_start, chunk.line_start as u64);
             writer.add_document(doc)?;
         }
         indexed_count += 1;
@@ -518,14 +525,8 @@ fn write_chunks_to_index(
 fn write_tantivy_index(
     dir: &Path,
     schema: tantivy::schema::Schema,
-    project_field: Field,
-    file_field: Field,
-    filename_field: Field,
-    title_field: Field,
-    chunk_id_field: Field,
-    body_field: Field,
-    line_start_field: Field,
-    files_to_index: &[(String, String, PathBuf)],
+    fields: &IndexFields,
+    files_to_index: &[ProjectFile],
     needs_full_rebuild: bool,
 ) -> Result<u64> {
     if files_to_index.is_empty() {
@@ -547,9 +548,7 @@ fn write_tantivy_index(
     let mut writer = index.writer_with_num_threads(1, 15_000_000)?;
     let all_chunks = chunk_files_parallel(files_to_index);
     let indexed_count = write_chunks_to_index(
-        &mut writer, &all_chunks,
-        project_field, file_field, filename_field, title_field,
-        chunk_id_field, body_field, line_start_field,
+        &mut writer, &all_chunks, fields,
         needs_full_rebuild, &pb,
     )?;
     pb.set_message("saving...");
@@ -567,8 +566,7 @@ fn flush_embed_batch(
     service: &crate::embedding::EmbeddingService,
     store: &mut crate::vector::VectorStore,
     model: &crate::embedding::EmbeddingModelChoice,
-    vectors_indexed: &mut u64,
-    vector_errors: &mut u64,
+    counters: &mut VectorCounters,
 ) {
     if pending.is_empty() {
         return;
@@ -587,14 +585,14 @@ fn flush_embed_batch(
             let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
             if let Err(e) = store.batch_upsert(it) {
                 eprintln!("[alcove] batch upsert failed: {}", e);
-                *vector_errors += count;
+                counters.vector_errors += count;
             } else {
-                *vectors_indexed += count;
+                counters.vectors_indexed += count;
             }
         }
         Err(e) => {
             eprintln!("[alcove] embed failed: {}", e);
-            *vector_errors += pending.len() as u64;
+            counters.vector_errors += pending.len() as u64;
             pending.clear();
         }
     }
@@ -603,14 +601,13 @@ fn flush_embed_batch(
 /// Reads, chunks, and embeds `to_embed` files in batches of `embed_batch`.
 #[cfg(feature = "alcove-full")]
 fn embed_files_in_batches(
-    to_embed: &[(String, String, PathBuf)],
+    to_embed: &[ProjectFile],
     service: &crate::embedding::EmbeddingService,
     store: &mut crate::vector::VectorStore,
     model: &crate::embedding::EmbeddingModelChoice,
     embed_batch: usize,
     vpb: &ProgressBar,
-    vectors_indexed: &mut u64,
-    vector_errors: &mut u64,
+    counters: &mut VectorCounters,
 ) {
     // Sequential read + chunk per file, embed in batches.
     // Parallel file reads caused RSS spikes (large PDFs × N threads).
@@ -624,13 +621,13 @@ fn embed_files_in_batches(
             for (i, chunk) in chunk_content(&content, file_ext).into_iter().enumerate() {
                 pending.push((proj.clone(), rel.clone(), i as u64, chunk.text));
                 if pending.len() >= embed_batch {
-                    flush_embed_batch(&mut pending, service, store, model, vectors_indexed, vector_errors);
+                    flush_embed_batch(&mut pending, service, store, model, counters);
                 }
             }
         }
         vpb.inc(1);
     }
-    flush_embed_batch(&mut pending, service, store, model, vectors_indexed, vector_errors);
+    flush_embed_batch(&mut pending, service, store, model, counters);
 }
 
 /// Runs the full embedding pipeline when the `alcove-full` feature is enabled.
@@ -638,7 +635,7 @@ fn embed_files_in_batches(
 #[cfg(feature = "alcove-full")]
 fn run_full_vector_indexing(
     docs_root: &Path,
-    files_to_index: Vec<(String, String, PathBuf)>,
+    files_to_index: Vec<ProjectFile>,
 ) -> Result<(String, u64, u64, String)> {
     use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
     use crate::vector::VectorStore;
@@ -666,11 +663,10 @@ fn run_full_vector_indexing(
     let vector_path = docs_root.join(".alcove").join("vectors.db");
     let mut store = VectorStore::open(&vector_path, service.model_name(), service.dimension())
         .map_err(|e| { eprintln!("[alcove] Failed to open vector store: {}", e); e })?;
-    let mut vectors_indexed = 0u64;
-    let mut vector_errors = 0u64;
+    let mut counters = VectorCounters { vectors_indexed: 0, vector_errors: 0 };
 
     if !files_to_index.is_empty() {
-        let to_embed: Vec<(String, String, PathBuf)> = files_to_index
+        let to_embed: Vec<ProjectFile> = files_to_index
             .into_iter()
             .filter(|(proj, rel, _)| !matches!(store.has_file(proj, rel), Ok(true)))
             .collect();
@@ -684,19 +680,19 @@ fn run_full_vector_indexing(
         vpb.set_message("embedding");
         // Batch size tuned to model size: small < 100 MB → 128, medium ≤ 800 MB → 64, large → 32
         let embed_batch: usize = match model.size_mb() { s if s < 100 => 128, s if s <= 800 => 64, _ => 32 };
-        embed_files_in_batches(&to_embed, &service, &mut store, &model, embed_batch, &vpb, &mut vectors_indexed, &mut vector_errors);
+        embed_files_in_batches(&to_embed, &service, &mut store, &model, embed_batch, &vpb, &mut counters);
         vpb.finish_and_clear();
     }
     if let Ok(meta) = store.meta() {
-        vectors_indexed = meta.count as u64;
+        counters.vectors_indexed = meta.count as u64;
     }
-    Ok(("ok".to_string(), vectors_indexed, vector_errors, model.as_str().to_string()))
+    Ok(("ok".to_string(), counters.vectors_indexed, counters.vector_errors, model.as_str().to_string()))
 }
 
 fn run_vector_indexing(
     docs_root: &Path,
     skip_embedding: bool,
-    files_to_index: Vec<(String, String, PathBuf)>,
+    files_to_index: Vec<ProjectFile>,
 ) -> Result<(String, u64, u64, String)> {
     if skip_embedding {
         return Ok(("skipped".to_string(), 0, 0, String::new()));
