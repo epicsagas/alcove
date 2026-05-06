@@ -4,6 +4,8 @@ use anyhow::Result;
 use console::style;
 use rust_i18n::t;
 
+use crate::config::is_reserved_dir_name;
+
 use crate::agents::{agents, check_agent_registration, expand_path};
 use crate::config::{config_path, load_config};
 use crate::setup::saved_docs_root;
@@ -439,7 +441,7 @@ pub fn cmd_doctor(format: &str) -> Result<()> {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                if !name.starts_with('.') && !name.starts_with('_') && name != "mcp" && name != "skills" {
+                if !is_reserved_dir_name(&name) {
                     project_names.push(name);
                 }
             }

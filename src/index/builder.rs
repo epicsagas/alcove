@@ -767,6 +767,8 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                 .and_then(|rel| rel.components().next())
                 .map(|c| {
                     let s = c.as_os_str().to_string_lossy();
+                    // vault 내부 경로 컴포넌트 필터: dot/underscore 접두어만 제외.
+                    // mcp/skills/scripts는 vault 내에서 허용되므로 is_reserved_dir_name 미사용.
                     s.starts_with('.') || s.starts_with('_')
                 })
                 .unwrap_or(false)

@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::config::is_reserved_dir_name;
+
 use crate::config::alcove_home;
 
 // ---------------------------------------------------------------------------
@@ -35,7 +37,7 @@ fn list_projects(docs_root: &Path) -> Vec<String> {
                 .filter(|e| e.path().is_dir())
                 .filter_map(|e| {
                     let name = e.file_name().to_string_lossy().to_string();
-                    if name.starts_with('.') || name.starts_with('_') {
+                    if is_reserved_dir_name(&name) {
                         None
                     } else {
                         Some(name)

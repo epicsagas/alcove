@@ -4,7 +4,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::config::{is_blocked_system_path, load_config};
+use crate::config::{is_blocked_system_path, is_reserved_dir_name, load_config};
 use crate::telemetry::{FailureClass, ResultSizeBucket, Telemetry, Tool};
 use crate::tools;
 
@@ -779,7 +779,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                         .filter(|e| e.path().is_dir())
                         .filter_map(|e| {
                             let name = e.file_name().to_string_lossy().to_string();
-                            if name.starts_with('.') || name.starts_with('_') {
+                            if is_reserved_dir_name(&name) {
                                 None
                             } else {
                                 Some(name)

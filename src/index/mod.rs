@@ -32,8 +32,10 @@ pub use searcher::{
 #[cfg(feature = "alcove-full")]
 pub use searcher::search_hybrid;
 
+#[allow(unused_imports)]
 pub use schema::IndexSchema;
 
+#[allow(unused_imports)]
 pub use cache::CacheCategory;
 
 // Internal symbols used only by the tests module below.

@@ -3,6 +3,8 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Serialize;
+
+use crate::config::is_reserved_dir_name;
 use walkdir::WalkDir;
 
 use crate::config::{alcove_home, is_blocked_system_path};
@@ -115,7 +117,7 @@ pub fn list_vaults() -> Result<Vec<VaultInfo>> {
     for entry in fs::read_dir(&root).with_context(|| "Failed to read vaults directory")? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') || name.starts_with('_') {
+        if is_reserved_dir_name(&name) {
             continue;
         }
         let path = entry.path();
@@ -341,7 +343,7 @@ mod tests {
         for entry in fs::read_dir(vaults_dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') || name.starts_with('_') {
+            if is_reserved_dir_name(&name) {
                 continue;
             }
             let path = entry.path();

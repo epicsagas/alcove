@@ -297,13 +297,13 @@ fn search_dir_for_query(
     }
 }
 
-/// query가 비어있거나 limit이 0이면 조기 반환 JSON을 Some으로 반환한다.
-fn validate_search_args(query: &str, limit: usize) -> Option<Value> {
-    if query.trim().is_empty() {
-        return Some(json!({ "query": query, "matches": [], "truncated": false, "error": "empty query" }));
+/// query(이미 trim된 값)가 비어있거나 limit이 0이면 조기 반환 JSON을 Some으로 반환한다.
+fn validate_search_args(query_trimmed: &str, limit: usize) -> Option<Value> {
+    if query_trimmed.is_empty() {
+        return Some(json!({ "query": query_trimmed, "matches": [], "truncated": false, "error": "empty query" }));
     }
     if limit == 0 {
-        return Some(json!({ "query": query, "matches": [], "truncated": false }));
+        return Some(json!({ "query": query_trimmed, "matches": [], "truncated": false }));
     }
     None
 }
@@ -339,7 +339,7 @@ pub fn tool_search(
         .context("search_project_docs requires { query, limit? }")?;
 
     let query_trimmed = args.query.trim();
-    if let Some(early) = validate_search_args(&args.query, args.limit) {
+    if let Some(early) = validate_search_args(query_trimmed, args.limit) {
         return Ok(early);
     }
 
@@ -500,7 +500,7 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
         .context("search_project_docs requires { query, scope?, limit? }")?;
 
     let query_trimmed = args.query.trim();
-    if let Some(early) = validate_search_args(&args.query, args.limit) {
+    if let Some(early) = validate_search_args(query_trimmed, args.limit) {
         return Ok(early);
     }
 
