@@ -58,6 +58,7 @@ pub const PROJECT_REPO_FILES: &[&str] = &[
     "SECURITY.md",
     "CODE_OF_CONDUCT.md",
     "LICENSE.md",
+    "LICENSE",
     "SUPPORT.md",
     "AUTHORS.md",
     "CONTRIBUTORS.md",

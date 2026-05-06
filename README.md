@@ -227,7 +227,7 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 | `get_doc_file` | Read a specific doc by path (supports `offset`/`limit` for large files) |
 | `list_projects` | Show all projects in your docs repo |
 | `audit_project` | Cross-repo audit — scans doc-repo and local project repo, suggests actions |
-| `init_project` | Scaffold docs for a new project (internal + external docs, selective file creation) |
+| `init_project` | Scaffold docs for a new project (internal + external docs, GitHub community standards, selective file creation) |
 | `validate_docs` | Validate docs against team policy (`policy.toml`) |
 | `rebuild_index` | Rebuild the full-text search index (usually automatic) |
 | `check_doc_changes` | Detect added, modified, or deleted docs since last index build |
@@ -502,7 +502,7 @@ Alcove classifies docs into tiers:
 | **doc-repo-required** | Alcove (private) | PRD, Architecture, Decisions, Conventions |
 | **doc-repo-supplementary** | Alcove (private) | Deployment, Onboarding, Testing, Runbook |
 | **reference** | Alcove `reports/` folder | Audit reports, benchmarks, analysis |
-| **project-repo** | Your GitHub repo (public) | README, CHANGELOG, CONTRIBUTING |
+| **project-repo** | Your GitHub repo (public) | README, CHANGELOG, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, LICENSE, QUICKSTART |
 
 The `audit` tool scans both your doc-repo and local project directory, then suggests actions — like generating a public README from your private PRD, or pulling misplaced reports back into Alcove.
 
