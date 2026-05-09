@@ -59,6 +59,10 @@ doctor.index_no_root = "Cannot check index without docs_root."
 # about
 about = "Project documentation management & MCP server"
 
+doctor.mcp_service = "MCP service"
+doctor.api_service = "API service"
+doctor.service_not_running = "Registered but not running"
+doctor.service_not_registered = "Not registered"
 doctor.pdftotext = "PDF support"
 doctor.pdftotext_available = "pdftotext found — full PDF text extraction enabled."
 doctor.pdftotext_missing = "pdftotext not found. Install poppler for PDF text extraction (macOS: brew install poppler, Linux: apt/dnf install poppler-utils)"

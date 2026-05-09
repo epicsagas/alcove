@@ -533,6 +533,32 @@ pub fn cmd_doctor(format: &str) -> Result<()> {
         "message": bin_path,
     }));
 
+    // 8. Background Services
+    #[cfg(all(feature = "alcove-server", target_os = "macos"))]
+    {
+        use crate::ServiceKind;
+        for kind in [ServiceKind::Mcp, ServiceKind::Api] {
+            let label = match kind {
+                ServiceKind::Mcp => "mcp",
+                ServiceKind::Api => "api",
+            };
+            let (status, msg) = if crate::launchd::is_loaded(kind) {
+                if let Some(pid) = crate::launchd::running_pid(kind) {
+                    ("ok", format!("Running (PID {})", pid))
+                } else {
+                    ("warn", t!("doctor.service_not_running").to_string())
+                }
+            } else {
+                ("warn", t!("doctor.service_not_registered").to_string())
+            };
+            checks.push(serde_json::json!({
+                "check": format!("{}_service", label),
+                "status": status,
+                "message": msg,
+            }));
+        }
+    }
+
     // Output
     if format == "json" {
         println!("{}", serde_json::to_string_pretty(&checks)?);

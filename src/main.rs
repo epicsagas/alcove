@@ -270,7 +270,7 @@ enum ServerCommands {
 
 #[derive(Debug, Clone, Copy)]
 #[cfg(feature = "alcove-server")]
-enum ServiceKind {
+pub(crate) enum ServiceKind {
     Mcp,
     Api,
 }
