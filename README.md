@@ -235,6 +235,7 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 | `promote_document` | Copy or move a file from an external vault into the alcove doc-repo |
 | `search_vault` | Search knowledge base vaults — separate from project docs, for research and reference |
 | `list_vaults` | List all knowledge base vaults with document counts |
+| `configure_project` | Create or update per-project settings (core docs, team docs, public docs, diagram format) |
 
 ## CLI
 
@@ -660,8 +661,8 @@ Vaults are **completely isolated** from project docs — separate indexes, separ
 Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and automation daemon. Use obsidian-forge to build and strengthen your knowledge graph in Obsidian, then promote notes into alcove with `alcove promote` — your AI agents get ranked, scoped search over your project knowledge base without any context bloat.
 
 ```
-obsidian-forge (personal knowledge)   →   alcove promote   →   alcove (project docs)
-  vault / inbox / graph                    one command           BM25 + vector search
+obsidian-forge (write / daemon)   →   alcove promote   →   alcove (read / MCP)
+  graph, MOC, vault automation        one command         BM25 + vector search
 ```
 
 ## Contributing
