@@ -200,7 +200,19 @@ alcove promote      外部ボルトのノートをdoc-repoに取り込む
 alcove index        検索インデックスの増分更新（変更されたファイルのみ）
 alcove rebuild      検索インデックスをゼロから再構築（スキーマ変更後に使用）
 alcove search       ターミナルからドキュメントを検索
+alcove token        チーム共有用のベアラートークンを表示
 alcove uninstall    スキル、設定、レガシーファイルを削除
+
+alcove mcp <CMD>      バックグラウンドMCPサーバーのライフサイクルを管理 (start, stop, status, enable, disable)
+alcove api <CMD>      バックグラウンドREST APIサーバーのライフサイクルを管理 (start, stop, status, enable, disable)
+
+alcove vault create   新しいナレッジベースボルトを作成
+alcove vault link     外部ディレクトリをボルトとしてリンク (例: Obsidian)
+alcove vault list     すべてのボルトをドキュメント数とともに一覧表示
+alcove vault remove   ボルトを削除 (シンボリックリンクの場合：リンクのみ削除)
+alcove vault add      ドキュメントをボルトに追加
+alcove vault index    ボルトの検索インデックスを構築
+alcove vault rebuild  ボルトの検索インデックスをゼロから再構築
 ```
 
 ### Lint
@@ -239,6 +251,42 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 一致するプロジェクトがないファイルは手動確認のため`inbox/`に保存されます。
+
+### バックグラウンドサーバー
+
+バックグラウンドサーバーを常駐させることで、新しいエージェントセッションごとのコールドスタート遅延（ONNXモデルのロードに2〜5秒）を解消できます。**`alcove setup` を実行すると、デフォルトでこれが有効になります**（macOSのログイン項目）。
+
+```bash
+# 有効化して起動（再起動後も保持 — macOS）
+alcove mcp enable --now
+
+# ライフサイクル
+alcove mcp stop / start / restart / status
+
+# 無効化してログイン項目を削除
+alcove mcp disable
+```
+
+別のREST APIサーバーをバックグラウンドで実行することもできます：
+
+```bash
+# APIサーバーをバックグラウンドで起動
+alcove api start
+```
+
+サーバーは認証にベアラートークンを使用します。これは `alcove setup` 中に自動生成され、`config.toml` に保存されます。既存のMCP設定（`command: alcove`）は変更不要です。stdioプロセスが実行中のサーバーを自動検出し、プロキシとして動作します。
+
+```bash
+# トークンの確認または共有
+alcove token
+
+# シェルプロファイルに設定（setupで自動的に行われます）
+export ALCOVE_TOKEN="alcove-..."
+```
+
+トークンの優先順位： `--token` フラグ > `ALCOVE_TOKEN` 環境変数 > `config.toml`。
+
+ログは `~/.alcove/logs/` に書き込まれます。起動後、`alcove doctor` を実行してサーバーにアクセス可能か確認してください。
 
 ## 検索
 
@@ -380,10 +428,15 @@ cargo uninstall alcove    # バイナリを削除
 
 Alcoveは**obsidian-forge**と自然に連携できます。obsidian-forgeはObsidianボルトのジェネレーターかつ自動化デーモンです。obsidian-forgeで知識グラフを構築・強化した後、`alcove promote`でノートをdoc-repoに取り込みましょう — AIエージェントはコンテキストを無駄にせずにランク検索でプロジェクトナレッジベースを活用できます。
 
+**連動方法：**
+obsidian-forgeのプロジェクトアーカイブをボルトとしてリンクし、エージェントから検索可能にします：
+
+```bash
+# obsidian-forgeプロジェクトアーカイブをボルトとしてリンク
+alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
 ```
-obsidian-forge（個人知識）   →   alcove promote   →   alcove（プロジェクトドキュメント）
-  ボルト / 受信トレイ / グラフ      ワンコマンド            BM25 + ベクトル検索
-```
+
+これで、エージェントは `search_vault` ツールや `alcove search --vault forge` を使用して、プロジェクトアーカイブ全体を検索できるようになります。
 
 ## コントリビュート
 

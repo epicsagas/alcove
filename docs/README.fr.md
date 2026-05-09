@@ -200,7 +200,15 @@ alcove promote      Importer des notes d'un vault externe dans le doc-repo
 alcove index        Mettre à jour l'index de recherche (incrémentiel — fichiers modifiés seulement)
 alcove rebuild      Reconstruire l'index de recherche de zéro (après des changements de schéma)
 alcove search       Rechercher des documents depuis le terminal
+alcove token        Afficher le jeton d'accès pour le partage en équipe
 alcove uninstall    Supprimer compétences, configuration et fichiers hérités
+
+alcove mcp <CMD>      Gérer le cycle de vie du serveur MCP en arrière-plan (start, stop, status, enable, disable)
+alcove api <CMD>      Gérer le cycle de vie du serveur REST API en arrière-plan (start, stop, status, enable, disable)
+
+alcove vault link     Lier un répertoire externe en tant que vault (ex. : Obsidian)
+alcove vault list     Lister tous les vaults avec le nombre de documents
+alcove vault index    Construire l'index de recherche pour les vaults
 ```
 
 ### Lint
@@ -239,6 +247,42 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 Les fichiers sans projet correspondant sont sauvegardés dans `inbox/` pour examen manuel.
+
+## Serveur en arrière-plan
+
+L'exécution d'un serveur persistant en arrière-plan élimine la latence du démarrage à froid (chargement du modèle ONNX de 2 à 5 secondes) à chaque nouvelle session de l'agent. **`alcove setup` active cela par défaut** (élément de connexion macOS).
+
+```bash
+# Activer et démarrer (persiste après redémarrage — macOS)
+alcove mcp enable --now
+
+# Cycle de vie
+alcove mcp stop / start / restart / status
+
+# Désactiver et supprimer l'élément de connexion
+alcove mcp disable
+```
+
+Vous pouvez également exécuter un serveur API REST séparé :
+
+```bash
+# Démarrer le serveur API en arrière-plan
+alcove api start
+```
+
+Le serveur utilise un jeton bearer pour l'authentification — généré automatiquement lors de `alcove setup` et stocké dans `config.toml`. Votre configuration MCP existante (`command: alcove`) reste inchangée ; le processus stdio détecte automatiquement le serveur en cours d'exécution et sert de proxy vers celui-ci.
+
+```bash
+# Vérifier ou partager le jeton
+alcove token
+
+# Définir dans le profil du shell (le setup le fait automatiquement)
+export ALCOVE_TOKEN="alcove-..."
+```
+
+Priorité du jeton : indicateur `--token` > variable d'environnement `ALCOVE_TOKEN` > `config.toml`.
+
+Les logs sont écrits dans `~/.alcove/logs/`. Au démarrage, lancez `alcove doctor` pour vérifier que le serveur est accessible.
 
 ## Recherche
 
@@ -378,12 +422,17 @@ cargo uninstall alcove    # supprimer le binaire
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove s'intègre naturellement avec **obsidian-forge**, un générateur de coffres Obsidian et démon d'automatisation. Construisez et renforcez votre graphe de connaissances avec obsidian-forge, puis utilisez `alcove promote` pour importer les notes pertinentes dans le doc-repo — vos agents IA bénéficient d'une recherche classée sur toute votre base de connaissances personnelle sans surcharger le contexte.
+Alcove s'intègre naturellement avec l'écosystème **obsidian-forge**, un générateur de coffres Obsidian et un démon d'automatisation. Utilisez obsidian-forge pour construire et renforcer votre graphe de connaissances dans Obsidian, puis utilisez `alcove promote` pour importer les notes pertinentes dans le doc-repo — vos agents IA bénéficient ainsi d'une recherche classée sur toute votre base de connaissances personnelle sans encombrer le contexte.
 
+**Intégration :**
+Liez vos archives de projet obsidian-forge en tant que vault pour les rendre consultables par vos agents :
+
+```bash
+# Lier les archives de projet obsidian-forge en tant que vault
+alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
 ```
-obsidian-forge (connaissances perso)   →   alcove promote   →   alcove (docs projet)
-  vault / inbox / graphe                    une commande          BM25 + recherche vectorielle
-```
+
+Désormais, vos agents peuvent effectuer des recherches dans l'ensemble de vos archives de projet à l'aide de l'outil `search_vault` ou de `alcove search --vault forge`.
 
 ## Contribuer
 

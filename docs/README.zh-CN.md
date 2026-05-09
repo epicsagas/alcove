@@ -200,7 +200,19 @@ alcove promote      将外部仓库笔记引入 doc-repo
 alcove index        增量更新搜索索引（仅处理变更文件）
 alcove rebuild      从头重建搜索索引（适用于模式变更后）
 alcove search       从终端搜索文档
+alcove token        打印用于团队共享的持有者令牌
 alcove uninstall    移除技能、配置和遗留文件
+
+alcove mcp <CMD>      管理后台 MCP 服务器生命周期 (start, stop, status, enable, disable)
+alcove api <CMD>      管理后台 REST API 服务器生命周期 (start, stop, status, enable, disable)
+
+alcove vault create   创建新的知识库 vault
+alcove vault link     将外部目录链接为 vault (例如 Obsidian)
+alcove vault list     列出所有 vault 及其文档数量
+alcove vault remove   移除 vault (对于符号链接：仅移除链接)
+alcove vault add      向 vault 添加文档
+alcove vault index    构建 vault 搜索索引
+alcove vault rebuild  从头重建 vault 搜索索引
 ```
 
 ### 检查（Lint）
@@ -239,6 +251,42 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 没有匹配项目的文件将保存在 `inbox/` 中等待人工审查。
+
+### 后台服务器
+
+运行持久化后台服务器可以消除每次新代理会话的冷启动延迟（ONNX 模型加载需要 2-5 秒）。**`alcove setup` 默认启用此功能**（macOS 登录项）。
+
+```bash
+# 启用并启动（在重启后保持——macOS）
+alcove mcp enable --now
+
+# 生命周期
+alcove mcp stop / start / restart / status
+
+# 禁用并移除登录项
+alcove mcp disable
+```
+
+您还可以运行一个独立的 REST API 服务器：
+
+```bash
+# 在后台启动 API 服务器
+alcove api start
+```
+
+服务器使用持有者令牌进行身份验证——在 `alcove setup` 期间自动生成并存储在 `config.toml` 中。您现有的 MCP 配置（`command: alcove`）保持不变；stdio 进程会自动检测正在运行的服务器并进行代理。
+
+```bash
+# 检查或共享令牌
+alcove token
+
+# 在 shell 配置文件中设置（setup 会自动完成此操作）
+export ALCOVE_TOKEN="alcove-..."
+```
+
+令牌优先级： `--token` 标志 > `ALCOVE_TOKEN` 环境变量 > `config.toml`。
+
+日志写入 `~/.alcove/logs/`。启动后，运行 `alcove doctor` 验证服务器是否可达。
 
 ## 搜索
 
@@ -380,10 +428,15 @@ cargo uninstall alcove    # 移除二进制文件
 
 Alcove 与 **obsidian-forge** 天然配合。obsidian-forge 是 Obsidian 知识库生成器和自动化守护进程。用 obsidian-forge 构建知识图谱，再通过 `alcove promote` 将笔记引入 doc-repo — AI 智能体即可通过排序搜索高效利用项目知识库，无需任何上下文冗余。
 
+**集成方式：**
+将您的 obsidian-forge 项目归档链接为 vault，以便您的代理可以搜索它们：
+
+```bash
+# 将 obsidian-forge 项目归档链接为 vault
+alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
 ```
-obsidian-forge（个人知识）   →   alcove promote   →   alcove（项目文档）
-  知识库 / 收件箱 / 图谱          一条命令               BM25 + 向量搜索
-```
+
+现在，您的代理可以使用 `search_vault` 工具或 `alcove search --vault forge` 搜索整个项目归档。
 
 ## 贡献
 

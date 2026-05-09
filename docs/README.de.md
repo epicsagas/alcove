@@ -200,7 +200,15 @@ alcove promote      Notizen aus einem externen Vault ins doc-repo importieren
 alcove index        Suchindex inkrementell aktualisieren (nur geänderte Dateien)
 alcove rebuild      Suchindex von Grund auf neu aufbauen (nach Schema-Änderungen)
 alcove search       Dokumente vom Terminal aus suchen
+alcove token        Bearer-Token für Team-Sharing ausgeben
 alcove uninstall    Skills, Konfiguration und Legacy-Dateien entfernen
+
+alcove mcp <CMD>      Lebenszyklus des MCP-Servers im Hintergrund verwalten (start, stop, status, enable, disable)
+alcove api <CMD>      Lebenszyklus des REST-API-Servers im Hintergrund verwalten (start, stop, status, enable, disable)
+
+alcove vault link     Externes Verzeichnis als Vault verknüpfen (z. B. Obsidian)
+alcove vault list     Alle Vaults mit Dokumentanzahl auflisten
+alcove vault index    Suchindex für Vaults aufbauen
 ```
 
 ### Lint
@@ -239,6 +247,42 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 Dateien ohne passendes Projekt werden in `inbox/` zur manuellen Überprüfung gespeichert.
+
+## Hintergrund-Server
+
+Das Ausführen eines dauerhaften Hintergrund-Servers eliminiert die Kaltstart-Latenz (2–5 Sekunden ONNX-Modell-Ladevorgang) bei jeder neuen Agenten-Sitzung. **`alcove setup` aktiviert dies standardmäßig** (macOS-Login-Objekt).
+
+```bash
+# Aktivieren und starten (bleibt nach Neustarts bestehen — macOS)
+alcove mcp enable --now
+
+# Lebenszyklus
+alcove mcp stop / start / restart / status
+
+# Deaktivieren und Login-Objekt entfernen
+alcove mcp disable
+```
+
+Sie können auch einen separaten REST-API-Server ausführen:
+
+```bash
+# API-Server im Hintergrund starten
+alcove api start
+```
+
+Der Server verwendet einen Bearer-Token zur Authentifizierung – dieser wird während des `alcove setup` automatisch generiert und in `config.toml` gespeichert. Ihre bestehende MCP-Konfiguration (`command: alcove`) bleibt unverändert; der stdio-Prozess erkennt automatisch den laufenden Server und leitet Anfragen an diesen weiter.
+
+```bash
+# Token prüfen oder teilen
+alcove token
+
+# Im Shell-Profil festlegen (Setup erledigt dies automatisch)
+export ALCOVE_TOKEN="alcove-..."
+```
+
+Token-Priorität: `--token`-Flag > `ALCOVE_TOKEN`-Umgebungsvariable > `config.toml`.
+
+Protokolle werden in `~/.alcove/logs/` geschrieben. Führen Sie beim Start `alcove doctor` aus, um zu prüfen, ob der Server erreichbar ist.
 
 ## Suche
 
@@ -380,10 +424,15 @@ cargo uninstall alcove    # Binary entfernen
 
 Alcove lässt sich nahtlos mit **obsidian-forge** kombinieren — einem Obsidian-Vault-Generator und Automatisierungs-Daemon. Baue und stärke deinen Wissensgraphen in Obsidian mit obsidian-forge, nutze dann `alcove promote` um relevante Notizen ins doc-repo zu übertragen — und deine KI-Agenten erhalten kontextschonenden Ranked-Search-Zugriff auf deine gesamte persönliche Wissensbasis.
 
+**Integration:**
+Verknüpfen Sie Ihre obsidian-forge Projektarchive als Vault, um sie für Ihre Agents durchsuchbar zu machen:
+
+```bash
+# obsidian-forge Projektarchive als Vault verknüpfen
+alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
 ```
-obsidian-forge (persönliches Wissen)   →   alcove promote   →   alcove (Projektdocs)
-  Vault / Inbox / Graph                     ein Befehl            BM25 + Vektorsuche
-```
+
+Jetzt können Ihre Agents mithilfe des `search_vault`-Tools oder `alcove search --vault forge` Ihr gesamtes Projektarchiv durchsuchen.
 
 ## Mitwirken
 
