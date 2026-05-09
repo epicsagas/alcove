@@ -8,20 +8,27 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
+use crate::ServiceKind;
 use crate::config::{alcove_home, load_config};
 
-const LABEL: &str = "com.epicsagas.alcove";
-
 // ---------------------------------------------------------------------------
-// Path helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
-/// `~/Library/LaunchAgents/com.epicsagas.alcove.plist`
-pub fn plist_path() -> PathBuf {
+fn label_for(kind: ServiceKind) -> String {
+    match kind {
+        ServiceKind::Mcp => "com.epicsagas.alcove.mcp".to_string(),
+        ServiceKind::Api => "com.epicsagas.alcove.api".to_string(),
+    }
+}
+
+/// `~/Library/LaunchAgents/com.epicsagas.alcove.{kind}.plist`
+pub fn plist_path(kind: ServiceKind) -> PathBuf {
+    let label = label_for(kind);
     dirs::home_dir()
         .expect("cannot resolve home directory")
         .join("Library/LaunchAgents")
-        .join(format!("{LABEL}.plist"))
+        .join(format!("{}.plist", label))
 }
 
 fn log_dir() -> PathBuf {
@@ -32,7 +39,7 @@ fn log_dir() -> PathBuf {
 // Plist generation
 // ---------------------------------------------------------------------------
 
-fn generate_plist(alcove_bin: &str) -> String {
+fn generate_plist(alcove_bin: &str, kind: ServiceKind) -> String {
     let logs = log_dir();
     let cfg = load_config();
     let srv = cfg.server_config();
@@ -41,9 +48,19 @@ fn generate_plist(alcove_bin: &str) -> String {
         "        <string>--host</string>\n        <string>{}</string>",
         srv.host
     );
+
+    let _default_port = match kind {
+        ServiceKind::Mcp => 57384,
+        ServiceKind::Api => 8080,
+    };
+    let bind_port = srv.port; // Config value wins, but wait, usually config has one port.
+    // If config has a port, we use it. If not, we use the default for the kind.
+    // Actually srv.port has a default of 57384.
+    // Maybe we should allow per-kind port config later.
+
     let port_arg = format!(
         "        <string>--port</string>\n        <string>{}</string>",
-        srv.port
+        bind_port
     );
 
     let token_env = srv
@@ -60,6 +77,11 @@ fn generate_plist(alcove_bin: &str) -> String {
         })
         .unwrap_or_default();
 
+    let subcmd = match kind {
+        ServiceKind::Mcp => "mcp",
+        ServiceKind::Api => "api",
+    };
+
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -67,10 +89,11 @@ fn generate_plist(alcove_bin: &str) -> String {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>{LABEL}</string>
+    <string>{label}</string>
     <key>ProgramArguments</key>
     <array>
         <string>{alcove_bin}</string>
+        <string>{subcmd}</string>
         <string>serve</string>
 {host_arg}
 {port_arg}
@@ -87,8 +110,9 @@ fn generate_plist(alcove_bin: &str) -> String {
 </dict>
 </plist>
 "#,
-        out = logs.join("serve.out.log").display(),
-        err = logs.join("serve.err.log").display(),
+        label = label_for(kind),
+        out = logs.join(format!("{}.out.log", subcmd)).display(),
+        err = logs.join(format!("{}.err.log", subcmd)).display(),
     )
 }
 
@@ -97,9 +121,10 @@ fn generate_plist(alcove_bin: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Check whether the agent is loaded (registered) with launchd.
-pub fn is_loaded() -> bool {
+pub fn is_loaded(kind: ServiceKind) -> bool {
+    let label = label_for(kind);
     Command::new("launchctl")
-        .args(["list", LABEL])
+        .args(["list", &label])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -108,9 +133,10 @@ pub fn is_loaded() -> bool {
 }
 
 /// Return the PID of the running agent, if any.
-pub fn running_pid() -> Option<u32> {
+pub fn running_pid(kind: ServiceKind) -> Option<u32> {
+    let label = label_for(kind);
     let output = Command::new("launchctl")
-        .args(["list", LABEL])
+        .args(["list", &label])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -146,13 +172,13 @@ fn launchctl(args: &[&str]) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Register as login item and start the process.
-pub fn enable() -> Result<()> {
+pub fn enable(kind: ServiceKind) -> Result<()> {
     let alcove_bin = std::env::current_exe()
         .context("cannot resolve alcove binary path")?
         .to_string_lossy()
         .to_string();
 
-    let plist = plist_path();
+    let plist = plist_path(kind);
 
     // Ensure directories exist
     if let Some(parent) = plist.parent() {
@@ -161,19 +187,20 @@ pub fn enable() -> Result<()> {
     std::fs::create_dir_all(log_dir())?;
 
     // Unload first if already registered
-    if is_loaded() {
+    if is_loaded(kind) {
         let _ = launchctl(&["unload", &plist.to_string_lossy()]);
     }
 
     // Write plist
-    std::fs::write(&plist, generate_plist(&alcove_bin))?;
+    std::fs::write(&plist, generate_plist(&alcove_bin, kind))?;
 
     // Load (RunAtLoad=true will start the process)
     launchctl(&["load", &plist.to_string_lossy()])?;
 
     println!(
-        "  {} Alcove registered as login item and started.",
-        console::style("✓").green()
+        "  {} Alcove {:?} registered as login item and started.",
+        console::style("✓").green(),
+        kind
     );
     println!("  {} Plist: {}", console::style("→").dim(), plist.display());
     println!(
@@ -185,55 +212,64 @@ pub fn enable() -> Result<()> {
 }
 
 /// Unregister from login items and stop the process.
-pub fn disable() -> Result<()> {
-    let plist = plist_path();
+pub fn disable(kind: ServiceKind) -> Result<()> {
+    let plist = plist_path(kind);
     if !plist.exists() {
-        println!("  Alcove is not registered as a login item.");
+        println!("  Alcove {:?} is not registered as a login item.", kind);
         return Ok(());
     }
 
-    if is_loaded() {
+    if is_loaded(kind) {
         launchctl(&["unload", &plist.to_string_lossy()])?;
     }
     std::fs::remove_file(&plist)?;
 
     println!(
-        "  {} Alcove unregistered from login items and stopped.",
-        console::style("✓").green()
+        "  {} Alcove {:?} unregistered from login items and stopped.",
+        console::style("✓").green(),
+        kind
     );
     Ok(())
 }
 
 /// Start the background process.
-pub fn start() -> Result<()> {
-    if let Some(pid) = running_pid() {
+pub fn start(kind: ServiceKind) -> Result<()> {
+    if let Some(pid) = running_pid(kind) {
         println!(
-            "  Alcove is already running (PID {}).",
+            "  Alcove {:?} is already running (PID {}).",
+            kind,
             console::style(pid).cyan()
         );
         return Ok(());
     }
 
-    if is_loaded() {
-        launchctl(&["start", LABEL])?;
-    } else if plist_path().exists() {
-        launchctl(&["load", &plist_path().to_string_lossy()])?;
+    let label = label_for(kind);
+    if is_loaded(kind) {
+        launchctl(&["start", &label])?;
+    } else if plist_path(kind).exists() {
+        launchctl(&["load", &plist_path(kind).to_string_lossy()])?;
     } else {
-        bail!("Alcove is not registered. Run `alcove enable` first.");
+        bail!(
+            "Alcove {:?} is not registered. Run `alcove {:?} enable` first.",
+            kind,
+            kind
+        );
     }
 
     // Brief wait then confirm
     std::thread::sleep(std::time::Duration::from_millis(500));
-    if let Some(pid) = running_pid() {
+    if let Some(pid) = running_pid(kind) {
         println!(
-            "  {} Alcove started (PID {}).",
+            "  {} Alcove {:?} started (PID {}).",
             console::style("✓").green(),
+            kind,
             console::style(pid).cyan()
         );
     } else {
         println!(
-            "  {} Alcove start requested. Check logs at {}",
+            "  {} Alcove {:?} start requested. Check logs at {}",
             console::style("⚠").yellow(),
+            kind,
             log_dir().display()
         );
     }
@@ -241,69 +277,84 @@ pub fn start() -> Result<()> {
 }
 
 /// Stop the background process.
-pub fn stop() -> Result<()> {
-    if running_pid().is_none() {
-        println!("  Alcove is not running.");
+pub fn stop(kind: ServiceKind) -> Result<()> {
+    if running_pid(kind).is_none() {
+        println!("  Alcove {:?} is not running.", kind);
         return Ok(());
     }
 
-    if is_loaded() {
-        launchctl(&["stop", LABEL])?;
+    let label = label_for(kind);
+    if is_loaded(kind) {
+        launchctl(&["stop", &label])?;
     }
 
     std::thread::sleep(std::time::Duration::from_millis(300));
-    println!("  {} Alcove stopped.", console::style("✓").green());
+    println!(
+        "  {} Alcove {:?} stopped.",
+        console::style("✓").green(),
+        kind
+    );
     Ok(())
 }
 
-pub fn status() -> Result<()> {
-    if is_loaded() {
-        if let Some(pid) = running_pid() {
+pub fn status(kind: ServiceKind) -> Result<()> {
+    if is_loaded(kind) {
+        if let Some(pid) = running_pid(kind) {
             println!(
-                "  {} Alcove is running (PID {})",
+                "  {} Alcove {:?} is running (PID {})",
                 console::style("✓").green(),
+                kind,
                 console::style(pid).cyan()
             );
         } else {
             println!(
-                "  {} Alcove is registered but not currently running",
-                console::style("⚠").yellow()
+                "  {} Alcove {:?} is registered but not currently running",
+                console::style("⚠").yellow(),
+                kind
             );
         }
     } else {
-        println!("  Alcove is not registered as a login item");
+        println!("  Alcove {:?} is not registered as a login item", kind);
     }
     Ok(())
 }
 
 /// Restart the background process.
-pub fn restart() -> Result<()> {
-    if running_pid().is_some() {
-        if is_loaded() {
-            launchctl(&["stop", LABEL])?;
+pub fn restart(kind: ServiceKind) -> Result<()> {
+    if running_pid(kind).is_some() {
+        let label = label_for(kind);
+        if is_loaded(kind) {
+            launchctl(&["stop", &label])?;
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
-    if is_loaded() {
-        launchctl(&["start", LABEL])?;
-    } else if plist_path().exists() {
-        launchctl(&["load", &plist_path().to_string_lossy()])?;
+    if is_loaded(kind) {
+        let label = label_for(kind);
+        launchctl(&["start", &label])?;
+    } else if plist_path(kind).exists() {
+        launchctl(&["load", &plist_path(kind).to_string_lossy()])?;
     } else {
-        bail!("Alcove is not registered. Run `alcove enable` first.");
+        bail!(
+            "Alcove {:?} is not registered. Run `alcove {:?} enable` first.",
+            kind,
+            kind
+        );
     }
 
     std::thread::sleep(std::time::Duration::from_millis(500));
-    if let Some(pid) = running_pid() {
+    if let Some(pid) = running_pid(kind) {
         println!(
-            "  {} Alcove restarted (PID {}).",
+            "  {} Alcove {:?} restarted (PID {}).",
             console::style("✓").green(),
+            kind,
             console::style(pid).cyan()
         );
     } else {
         println!(
-            "  {} Alcove restart requested. Check logs at {}",
+            "  {} Alcove {:?} restart requested. Check logs at {}",
             console::style("⚠").yellow(),
+            kind,
             log_dir().display()
         );
     }

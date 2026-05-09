@@ -464,22 +464,22 @@ fn main() -> Result<()> {
 #[cfg(feature = "alcove-server")]
 fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()> {
     match subcmd {
-        ServerCommands::Start { host: _, port: _ } => launchd::start(),
-        ServerCommands::Stop => launchd::stop(),
-        ServerCommands::Restart { host: _, port: _ } => launchd::restart(),
-        ServerCommands::Status => launchd::status(),
+        ServerCommands::Start { host: _, port: _ } => launchd::start(kind),
+        ServerCommands::Stop => launchd::stop(kind),
+        ServerCommands::Restart { host: _, port: _ } => launchd::restart(kind),
+        ServerCommands::Status => launchd::status(kind),
         ServerCommands::Enable { now } => {
-            let res = launchd::enable();
+            let res = launchd::enable(kind);
             if now && res.is_ok() {
-                let _ = launchd::start();
+                let _ = launchd::start(kind);
             }
             res
         }
         ServerCommands::Disable { now } => {
             if now {
-                let _ = launchd::stop();
+                let _ = launchd::stop(kind);
             }
-            launchd::disable()
+            launchd::disable(kind)
         }
         ServerCommands::Serve { host, port, token } => {
             let cfg = config::load_config();

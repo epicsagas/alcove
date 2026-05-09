@@ -909,7 +909,7 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
         // ── Enable as background service ──
         #[cfg(all(feature = "alcove-server", target_os = "macos"))]
         {
-            let already_enabled = crate::launchd::is_loaded();
+            let already_enabled = crate::launchd::is_loaded(crate::ServiceKind::Mcp);
             let enable_labels = vec![
                 style("← Go back").yellow().to_string(),
                 if already_enabled {
@@ -1177,7 +1177,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
     if state.enable_server {
         println!();
         println!("  {}", style("Background Service").cyan());
-        match crate::launchd::enable() {
+        match crate::launchd::enable(crate::ServiceKind::Mcp) {
             Ok(()) => {}
             Err(e) => {
                 println!(
