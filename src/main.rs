@@ -491,7 +491,7 @@ fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()
             let srv_cfg = cfg.server_config();
             let bind_host = host.as_deref().unwrap_or(&srv_cfg.host);
             // Resolve port: CLI flag > config.toml > kind-specific default
-            let bind_port = port.unwrap_or_else(|| match kind {
+            let bind_port = port.unwrap_or(match kind {
                 ServiceKind::Mcp => 57384,
                 ServiceKind::Api => 8080,
             });

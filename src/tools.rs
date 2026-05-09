@@ -2091,10 +2091,7 @@ pub fn tool_backup_vault(args: Value) -> Result<Value> {
     // Determine vaults root
     let vaults_root = crate::vault::vaults_root();
     if !vaults_root.is_dir() {
-        anyhow::bail!(
-            "Vaults directory does not exist: {}",
-            vaults_root.display()
-        );
+        anyhow::bail!("Vaults directory does not exist: {}", vaults_root.display());
     }
 
     let timestamp = format_timestamp();
@@ -2201,7 +2198,9 @@ fn run_git_backup(vault_path: &Path, vault_name: &str, timestamp: &str) -> Resul
             .output()
             .context("Failed to get commit hash")?;
 
-        let hash = String::from_utf8_lossy(&hash_output.stdout).trim().to_string();
+        let hash = String::from_utf8_lossy(&hash_output.stdout)
+            .trim()
+            .to_string();
         Ok(json!({
             "vault": vault_name,
             "status": "committed",
