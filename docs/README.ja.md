@@ -481,17 +481,29 @@ root = "/path/to/your/vaults"
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcoveは**obsidian-forge**と自然に連携できます。obsidian-forgeはObsidianボルトのジェネレーターかつ自動化デーモンです。obsidian-forgeで知識グラフを構築・強化した後、`alcove promote`でノートをdoc-repoに取り込みましょう — AIエージェントはコンテキストを無駄にせずにランク検索でプロジェクトナレッジベースを活用できます。
+Alcoveは、Obsidianボルトの生成および自動化デーモンである **obsidian-forge** と自然に連携します。最適な統合のために、Alcoveの **`docs_root`** が obsidian-forge のプロジェクトアーカイブを指すように設定することをお勧めします。
 
-**連動方法：**
-obsidian-forgeのプロジェクトアーカイブをボルトとしてリンクし、エージェントから検索可能にします：
-
+**1. ドキュメントルートの設定**
+プライマリドキュメントのパスを obsidian-forge のプロジェクトディレクトリに設定します（直接指定またはシンボリックリンク経由）：
 ```bash
-# obsidian-forgeプロジェクトアーカイブをボルトとしてリンク
-alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
+# alcove setup の際、docs_root を以下に設定します：
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
 
-これで、エージェントは `search_vault` ツールや `alcove search --vault forge` を使用して、プロジェクトアーカイブ全体を検索できるようになります。
+**2. 知識領域をボルトとしてリンク**
+他の3つの obsidian-forge カテゴリを独立した Alcove ボルトとしてリンクします。これにより、`~/.alcove/vaults/` 内にシンボリックリンクが作成されます：
+```bash
+# obsidian-forge カテゴリをリンク
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
+```
+
+これで、エージェントが構造化されたアクセスを行えるようになります：
+- **`search_project_docs`**: アーカイブされたプロジェクトの知識（PRDなど）を検索
+- **`search_vault`**: より広範な知識領域や研究ノートを検索
+
+`~/.alcove/vaults/` 内のシンボリックリンクを確認することで、物理的なストレージマッピングを検証できます。
 
 ## コントリビュート
 

@@ -445,12 +445,29 @@ root = "/path/to/your/vaults"
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove, **obsidian-forge** के साथ स्वाभाविक रूप से काम करता है — यह एक Obsidian वॉल्ट जनरेटर और ऑटोमेशन डेमॉन है। obsidian-forge से अपना नॉलेज ग्राफ बनाएं और मजबूत करें, फिर `alcove promote` से नोट्स को doc-repo में लाएँ — आपके AI एजेंट्स को बिना कॉन्टेक्स्ट बर्बाद किए प्रोजेक्ट नॉलेज बेस पर रैंक्ड सर्च मिलेगी।
+Alcove स्वाभाविक रूप से **obsidian-forge** के साथ जुड़ता है, जो एक Obsidian वॉल्ट जनरेटर और ऑटोमेशन डेमॉन है। सर्वोत्तम एकीकरण के लिए, आपके Alcove का **`docs_root`** obsidian-forge प्रोजेक्ट आर्काइव की ओर संकेत करना चाहिए।
 
+**1. दस्तावेज़ रूट सेट करें**
+अपने प्राथमिक दस्तावेज़ों को obsidian-forge प्रोजेक्ट डायरेक्टरी पर इंगित करें (सीधे या सिमलिंक के माध्यम से):
+```bash
+# alcove सेटअप के दौरान, docs_root को इस पर सेट करें:
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
-obsidian-forge (व्यक्तिगत ज्ञान)   →   alcove promote   →   alcove (प्रोजेक्ट दस्तावेज़)
-  vault / इनबॉक्स / ग्राफ               एक कमांड            BM25 + वेक्टर सर्च
+
+**2. ज्ञान क्षेत्रों को वॉल्ट के रूप में लिंक करें**
+अन्य तीन obsidian-forge श्रेणियों को स्वतंत्र Alcove वॉल्ट के रूप में लिंक करें। यह `~/.alcove/vaults/` में सिमलिंक बनाता है:
+```bash
+# obsidian-forge श्रेणियों को लिंक करें
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
 ```
+
+अब आपके एजेंटों के पास संरचित पहुंच है:
+- **`search_project_docs`**: आर्काइव किए गए प्रोजेक्ट ज्ञान (PRD आदि) को खोजता है
+- **`search_vault`**: आपके व्यापक ज्ञान क्षेत्रों और अनुसंधान नोट्स को खोजता है।
+
+आप `~/.alcove/vaults/` में सिमलिंक की जाँच करके भौतिक स्टोरेज मैपिंग को सत्यापित कर सकते हैं।
 
 ## योगदान
 

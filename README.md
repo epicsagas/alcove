@@ -679,17 +679,29 @@ Refer to the [Configuration](#configuration) section for more details on `config
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and automation daemon. Use obsidian-forge to build and strengthen your knowledge graph in Obsidian, then promote notes into alcove with `alcove promote` — your AI agents get ranked, scoped search over your project knowledge base without any context bloat.
+Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and automation daemon. For the best integration, your alcove **`docs_root`** should point to the obsidian-forge project archives.
 
-**Integration:**
-Link your obsidian-forge project archives as a vault to make them searchable by your agents:
-
+**1. Set Documents Root**
+Point your primary docs to the obsidian-forge project directory (directly or via symlink):
 ```bash
-# Link obsidian-forge project archives as a vault
-alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
+# During alcove setup, set docs_root to:
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
 
-Now your agents can search through your entire project archive using the `search_vault` tool or `alcove search --vault forge`.
+**2. Link Knowledge Areas as Vaults**
+Link the other three obsidian-forge categories as independent alcove vaults. This creates symlinks in `~/.alcove/vaults/`:
+```bash
+# Link obsidian-forge categories
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
+```
+
+Now your agents have structured access:
+- **`search_project_docs`**: Searches archived project knowledge (PRDs, etc.)
+- **`search_vault`**: Searches your broader knowledge areas and research notes.
+
+You can verify the physical storage mapping by checking the symlinks in `~/.alcove/vaults/`.
 
 ## Contributing
 

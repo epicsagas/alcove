@@ -477,17 +477,29 @@ root = "/path/to/your/vaults"
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove естественно интегрируется с **obsidian-forge** — генератором хранилищ Obsidian и демоном автоматизации. Постройте и укрепите граф знаний в Obsidian с помощью obsidian-forge, затем используйте `alcove promote` для переноса нужных заметок в doc-repo — ваши ИИ-агенты получат ранжированный поиск по всей личной базе знаний без лишнего засорения контекста.
+Alcove идеально сочетается с **obsidian-forge**, генератором хранилищ Obsidian и демоном автоматизации. Для наилучшей интеграции ваш Alcove **`docs_root`** должен указывать на архивы проектов obsidian-forge.
 
-**Интеграция:**
-Свяжите ваши архивы проектов obsidian-forge как хранилище (vault), чтобы сделать их доступными для поиска вашим агентам:
-
+**1. Установка корня документов**
+Укажите основной каталог документов на директорию проектов obsidian-forge (напрямую или через символьную ссылку):
 ```bash
-# Связать архивы проектов obsidian-forge как vault
-alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
+# Во время настройки alcove установите docs_root в:
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
 
-Теперь ваши агенты могут осуществлять поиск по всему архиву проектов с помощью инструмента `search_vault` или команды `alcove search --vault forge`.
+**2. Привязка областей знаний как хранилищ (vaults)**
+Привяжите остальные три категории obsidian-forge как независимые хранилища Alcove. Это создаст символьные ссылки в `~/.alcove/vaults/`:
+```bash
+# Привязка категорий obsidian-forge
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
+```
+
+Теперь у ваших агентов есть структурированный доступ:
+- **`search_project_docs`**: поиск по архивированным знаниям проекта (PRD и т. д.)
+- **`search_vault`**: поиск по вашим более широким областям знаний и исследовательским заметкам.
+
+Вы можете проверить сопоставление физического хранилища, просмотрев символьные ссылки в `~/.alcove/vaults/`.
 
 ## Вклад в проект
 

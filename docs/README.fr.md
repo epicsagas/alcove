@@ -477,17 +477,29 @@ Consultez la section [Configuration](#configuration) pour plus de détails sur l
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove s'intègre naturellement avec l'écosystème **obsidian-forge**, un générateur de coffres Obsidian et un démon d'automatisation. Utilisez obsidian-forge pour construire et renforcer votre graphe de connaissances dans Obsidian, puis utilisez `alcove promote` pour importer les notes pertinentes dans le doc-repo — vos agents IA bénéficient ainsi d'une recherche classée sur toute votre base de connaissances personnelle sans encombrer le contexte.
+Alcove s'associe naturellement avec **obsidian-forge**, un générateur de coffres Obsidian et un démon d'automatisation. Pour une intégration optimale, votre **`docs_root`** Alcove doit pointer vers les archives de projet obsidian-forge.
 
-**Intégration :**
-Liez vos archives de projet obsidian-forge en tant que vault pour les rendre consultables par vos agents :
-
+**1. Définir la racine des documents**
+Pointez vos documents principaux vers le répertoire de projet obsidian-forge (directement ou via un lien symbolique) :
 ```bash
-# Lier les archives de projet obsidian-forge en tant que vault
-alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
+# Lors de la configuration d'alcove, définissez docs_root sur :
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
 
-Désormais, vos agents peuvent effectuer des recherches dans l'ensemble de vos archives de projet à l'aide de l'outil `search_vault` ou de `alcove search --vault forge`.
+**2. Lier les domaines de connaissances en tant que vaults**
+Liez les trois autres catégories obsidian-forge en tant que vaults Alcove indépendants. Cela crée des liens symboliques dans `~/.alcove/vaults/` :
+```bash
+# Lier les catégories obsidian-forge
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
+```
+
+Désormais, vos agents disposent d'un accès structuré :
+- **`search_project_docs`** : Recherche dans les connaissances de projet archivées (PRD, etc.)
+- **`search_vault`** : Recherche dans vos domaines de connaissances plus larges et vos notes de recherche.
+
+Vous pouvez vérifier le mappage du stockage physique en consultant les liens symboliques dans `~/.alcove/vaults/`.
 
 ## Contribuer
 

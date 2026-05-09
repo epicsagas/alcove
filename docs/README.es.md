@@ -481,17 +481,29 @@ Consulta la sección de [Configuración](#configuración) para más detalles sob
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove se integra de forma natural con **obsidian-forge**, un generador de bóvedas de Obsidian y demonio de automatización. Construye y refuerza tu grafo de conocimiento con obsidian-forge y luego usa `alcove promote` para traer las notas al doc-repo — tus agentes de IA obtendrán búsqueda por relevancia sobre el conocimiento del proyecto sin desperdiciar contexto.
+Alcove se integra de forma natural con **obsidian-forge**, un generador de bóvedas de Obsidian y demonio de automatización. Para una mejor integración, tu **`docs_root`** de Alcove debe apuntar a los archivos de proyectos de obsidian-forge.
 
-**Integración:**
-Vincula tus archivos de proyectos de obsidian-forge como un vault para que tus agentes puedan buscarlos:
-
+**1. Establecer la raíz de documentos**
+Apunta tus documentos principales al directorio de proyectos de obsidian-forge (directamente o mediante un enlace simbólico):
 ```bash
-# Vincular archivos de proyectos de obsidian-forge como un vault
-alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
+# Durante la configuración de alcove, establece docs_root en:
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
 
-Ahora tus agentes pueden buscar en todo tu archivo de proyectos usando la herramienta `search_vault` o `alcove search --vault forge`.
+**2. Vincular áreas de conocimiento como vaults**
+Vincula las otras tres categorías de obsidian-forge como vaults independientes de Alcove. Esto crea enlaces simbólicos en `~/.alcove/vaults/`:
+```bash
+# Vincular categorías de obsidian-forge
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
+```
+
+Ahora tus agentes tienen acceso estructurado:
+- **`search_project_docs`**: Busca en el conocimiento de proyectos archivados (PRD, etc.)
+- **`search_vault`**: Busca en tus áreas de conocimiento más amplias y notas de investigación.
+
+Puedes verificar el mapeo de almacenamiento físico comprobando los enlaces simbólicos en `~/.alcove/vaults/`.
 
 ## Contribuir
 

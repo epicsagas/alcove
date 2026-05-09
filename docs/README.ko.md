@@ -639,17 +639,29 @@ root = "/path/to/your/vaults"
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove는 **obsidian-forge**와 자연스럽게 연동됩니다. obsidian-forge는 Obsidian 볼트 생성기이자 자동화 데몬입니다. obsidian-forge로 지식 그래프를 구축한 뒤, `alcove promote`로 노트를 doc-repo에 가져오세요 — AI 에이전트가 컨텍스트 낭비 없이 랭킹 검색으로 프로젝트 지식 베이스를 활용할 수 있습니다.
+Alcove는 **obsidian-forge**와 자연스럽게 연동됩니다. obsidian-forge는 Obsidian 볼트 생성기이자 자동화 데몬입니다. 최적의 연동을 위해, alcove의 **`docs_root`**가 obsidian-forge의 프로젝트 아카이브를 가리키도록 설정하는 것이 권장됩니다.
 
-**연동 방법:**
-obsidian-forge의 프로젝트 아카이브를 볼트로 연결하여 에이전트가 검색할 수 있게 하세요:
-
+**1. 문서 루트 설정**
+기본 문서 경로를 obsidian-forge 프로젝트 디렉토리로 설정하세요 (직접 지정 또는 심볼릭 링크):
 ```bash
-# obsidian-forge 프로젝트 아카이브를 볼트로 연결
-alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
+# alcove setup 실행 시, docs_root를 다음으로 설정:
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
 
-이제 에이전트는 `search_vault` 도구 또는 `alcove search --vault forge`를 사용하여 전체 프로젝트 아카이브를 검색할 수 있습니다.
+**2. 지식 영역을 볼트로 연결**
+나머지 세 가지 obsidian-forge 카테고리를 독립적인 alcove 볼트로 연결하세요. 이 명령은 `~/.alcove/vaults/`에 심볼릭 링크를 생성합니다:
+```bash
+# obsidian-forge 카테고리 연결
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
+```
+
+이제 에이전트가 체계적으로 문서에 접근할 수 있습니다:
+- **`search_project_docs`**: 아카이브된 프로젝트 지식(PRD 등) 검색
+- **`search_vault`**: 더 넓은 지식 영역 및 연구 노트 검색
+
+`~/.alcove/vaults/` 내부의 심볼릭 링크를 확인하여 물리적인 저장소 매핑 상태를 검증할 수 있습니다.
 
 ## 기여
 

@@ -477,17 +477,29 @@ Weitere Details zur `config.toml` finden Sie im Abschnitt [Konfiguration](#konfi
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove lässt sich nahtlos mit **obsidian-forge** kombinieren — einem Obsidian-Vault-Generator und Automatisierungs-Daemon. Baue und stärke deinen Wissensgraphen in Obsidian mit obsidian-forge, nutze dann `alcove promote` um relevante Notizen ins doc-repo zu übertragen — und deine KI-Agenten erhalten kontextschonenden Ranked-Search-Zugriff auf deine gesamte persönliche Wissensbasis.
+Alcove lässt sich nahtlos mit **obsidian-forge** kombinieren, einem Obsidian-Vault-Generator und Automatisierungs-Daemon. Für die beste Integration sollte dein Alcove **`docs_root`** auf die obsidian-forge Projektarchive zeigen.
 
-**Integration:**
-Verknüpfen Sie Ihre obsidian-forge Projektarchive als Vault, um sie für Ihre Agents durchsuchbar zu machen:
-
+**1. Dokumenten-Root festlegen**
+Verweise mit deinen primären Dokumenten auf das obsidian-forge Projektverzeichnis (direkt oder über einen Symlink):
 ```bash
-# obsidian-forge Projektarchive als Vault verknüpfen
-alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
+# Setze während des Alcove-Setups docs_root auf:
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
 
-Jetzt können Ihre Agents mithilfe des `search_vault`-Tools oder `alcove search --vault forge` Ihr gesamtes Projektarchiv durchsuchen.
+**2. Wissensbereiche als Vaults verknüpfen**
+Verknüpfe die anderen drei obsidian-forge Kategorien als unabhängige Alcove-Vaults. Dies erstellt Symlinks in `~/.alcove/vaults/`:
+```bash
+# obsidian-forge Kategorien verknüpfen
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
+```
+
+Jetzt haben deine Agenten strukturierten Zugriff:
+- **`search_project_docs`**: Durchsucht archiviertes Projektwissen (PRDs usw.)
+- **`search_vault`**: Durchsucht deine breiteren Wissensbereiche und Forschungsnotizen.
+
+Du kannst das physische Speicher-Mapping überprüfen, indem du die Symlinks in `~/.alcove/vaults/` kontrollierst.
 
 ## Mitwirken
 

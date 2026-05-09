@@ -477,17 +477,29 @@ Consulte a seção de [Configuração](#configuração) para mais detalhes sobre
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove se integra naturalmente com o **obsidian-forge**, um gerador de cofres Obsidian e daemon de automação. Use o obsidian-forge para construir e fortalecer seu grafo de conhecimento no Obsidian, depois use `alcove promote` para trazer as notas relevantes para o doc-repo — e aponte o `DOCS_ROOT` do alcove para que seus agentes de IA tenham busca por relevância em toda a sua base de conhecimento pessoal sem desperdiçar contexto.
+O Alcove combina perfeitamente com o **obsidian-forge**, um gerador de cofres Obsidian e daemon de automação. Para a melhor integração, o seu **`docs_root`** do Alcove deve apontar para os arquivos de projeto do obsidian-forge.
 
-**Integração:**
-Conecte seus arquivos de projeto do obsidian-forge como um vault para torná-los pesquisáveis por seus agentes:
-
+**1. Definir a Raiz de Documentos**
+Aponte seus documentos principais para o diretório de projetos do obsidian-forge (diretamente ou via link simbólico):
 ```bash
-# Conectar arquivos de projeto do obsidian-forge como um vault
-alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
+# Durante a configuração do alcove, defina docs_root como:
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
 
-Agora seus agentes podem pesquisar em todo o seu arquivo de projeto usando a ferramenta `search_vault` ou `alcove search --vault forge`.
+**2. Vincular Áreas de Conhecimento como Vaults**
+Vincule as outras três categorias do obsidian-forge como vaults independentes do Alcove. Isso cria links simbólicos em `~/.alcove/vaults/`:
+```bash
+# Vincular categorias do obsidian-forge
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
+```
+
+Agora seus agentes têm acesso estruturado:
+- **`search_project_docs`**: Busca conhecimento de projetos arquivados (PRDs, etc.)
+- **`search_vault`**: Busca em suas áreas de conhecimento mais amplas e notas de pesquisa.
+
+Você pode verificar o mapeamento do armazenamento físico verificando os links simbólicos em `~/.alcove/vaults/`.
 
 ## Contribuindo
 

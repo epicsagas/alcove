@@ -481,17 +481,29 @@ root = "/path/to/your/vaults"
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove 与 **obsidian-forge** 天然配合。obsidian-forge 是 Obsidian 知识库生成器和自动化守护进程。用 obsidian-forge 构建知识图谱，再通过 `alcove promote` 将笔记引入 doc-repo — AI 智能体即可通过排序搜索高效利用项目知识库，无需任何上下文冗余。
+Alcove 与 **obsidian-forge** 天然配合。obsidian-forge 是 Obsidian 知识库生成器和自动化守护进程。为了获得最佳集成效果，您的 Alcove **`docs_root`** 应该指向 obsidian-forge 项目归档。
 
-**集成方式：**
-将您的 obsidian-forge 项目归档链接为 vault，以便您的代理可以搜索它们：
-
+**1. 设置文档根目录**
+将您的主文档目录指向 obsidian-forge 项目目录（直接指向或通过符号链接）：
 ```bash
-# 将 obsidian-forge 项目归档链接为 vault
-alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
+# 在 alcove setup 期间，将 docs_root 设置为：
+~/Obsidian/SecondBrain/99-Archives/projects
 ```
 
-现在，您的代理可以使用 `search_vault` 工具或 `alcove search --vault forge` 搜索整个项目归档。
+**2. 将知识领域链接为 Vault**
+将其他三个 obsidian-forge 类别链接为独立的 Alcove Vault。这会在 `~/.alcove/vaults/` 中创建符号链接：
+```bash
+# 链接 obsidian-forge 类别
+alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
+```
+
+现在您的智能体拥有结构化的访问权限：
+- **`search_project_docs`**: 搜索归档的项目知识（PRD 等）
+- **`search_vault`**: 搜索更广泛的知识领域和研究笔记。
+
+您可以通过检查 `~/.alcove/vaults/` 中的符号链接来验证物理存储映射。
 
 ## 贡献
 
