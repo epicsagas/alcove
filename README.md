@@ -658,12 +658,11 @@ Vaults are **completely isolated** from project docs — separate indexes, separ
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
 
-Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and automation daemon. They follow a read/write split — alcove handles read/pull (MCP server, request-based), obsidian-forge handles write/push (daemon, 24/7 background). Use obsidian-forge to build and strengthen your knowledge graph in Obsidian, then promote notes into alcove with `alcove promote` — your AI agents get ranked, scoped search over your project knowledge base without any context bloat.
+Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and automation daemon. Use obsidian-forge to build and strengthen your knowledge graph in Obsidian, then promote notes into alcove with `alcove promote` — your AI agents get ranked, scoped search over your project knowledge base without any context bloat.
 
 ```
-obsidian-forge (vault automation)   →   alcove promote   →   alcove (project docs)
-  graph strengthening, MOC, sync        one command          BM25 + vector search
-  daemon (24/7 background)                                   request-based (stdio JSON-RPC)
+obsidian-forge (write / daemon)   →   alcove promote   →   alcove (read / MCP)
+  graph, MOC, vault automation        one command         BM25 + vector search
 ```
 
 ## Contributing
