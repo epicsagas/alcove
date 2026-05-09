@@ -2068,6 +2068,223 @@ pub fn tool_promote_document(docs_root: &Path, args: Value) -> Result<Value> {
         "action": result.action,
     }))
 }
+
+// ---------------------------------------------------------------------------
+// Tool: backup_vault
+// ---------------------------------------------------------------------------
+
+pub fn tool_backup_vault(args: Value) -> Result<Value> {
+    let vault_name = args
+        .get("vault_name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    // Validate vault_name is a single path component
+    if let Some(ref name) = vault_name {
+        let components: Vec<_> = Path::new(name.as_str()).components().collect();
+        if components.len() != 1 || !matches!(components[0], std::path::Component::Normal(_)) {
+            anyhow::bail!("Invalid vault name: '{name}'");
+        }
+    }
+
+    // Determine vaults root
+    let vaults_root = crate::vault::vaults_root();
+    if !vaults_root.is_dir() {
+        anyhow::bail!(
+            "Vaults directory does not exist: {}",
+            vaults_root.display()
+        );
+    }
+
+    let timestamp = format_timestamp();
+
+    if let Some(name) = vault_name {
+        // Back up a single vault
+        let vault_path = vaults_root.join(&name);
+        if !vault_path.is_dir() {
+            anyhow::bail!("Vault '{}' does not exist", name);
+        }
+        run_git_backup(&vault_path, &name, &timestamp.to_string())
+    } else {
+        // Back up all vaults
+        let entries = std::fs::read_dir(&vaults_root).context("Failed to read vaults directory")?;
+        let mut results = Vec::new();
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let dir_name = entry.file_name().to_string_lossy().to_string();
+            if crate::config::is_reserved_dir_name(&dir_name) {
+                continue;
+            }
+            match run_git_backup(&path, &dir_name, &timestamp.to_string()) {
+                Ok(v) => results.push(v),
+                Err(e) => results.push(json!({
+                    "vault": dir_name,
+                    "status": "error",
+                    "error": e.to_string(),
+                })),
+            }
+        }
+
+        Ok(json!({
+            "status": "completed",
+            "vaults": results,
+        }))
+    }
+}
+
+/// Run `git add -A && git commit` in the vault directory.
+/// Returns a JSON object with the vault name, status, and optional commit hash.
+fn run_git_backup(vault_path: &Path, vault_name: &str, timestamp: &str) -> Result<Value> {
+    let commit_message = format!("chore(vault): auto-sync {timestamp}");
+
+    // git add -A
+    let add_output = std::process::Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(vault_path)
+        .output()
+        .context("Failed to run git add")?;
+
+    if !add_output.status.success() {
+        let stderr = String::from_utf8_lossy(&add_output.stderr);
+        // If git is not initialized, init and retry
+        if stderr.contains("not a git repository") {
+            let init_output = std::process::Command::new("git")
+                .args(["init"])
+                .current_dir(vault_path)
+                .output()
+                .context("Failed to run git init")?;
+
+            if !init_output.status.success() {
+                anyhow::bail!(
+                    "git init failed in {}: {}",
+                    vault_path.display(),
+                    String::from_utf8_lossy(&init_output.stderr)
+                );
+            }
+
+            // Retry git add
+            let retry_add = std::process::Command::new("git")
+                .args(["add", "-A"])
+                .current_dir(vault_path)
+                .output()
+                .context("Failed to run git add after init")?;
+
+            if !retry_add.status.success() {
+                anyhow::bail!(
+                    "git add failed in {}: {}",
+                    vault_path.display(),
+                    String::from_utf8_lossy(&retry_add.stderr)
+                );
+            }
+        } else {
+            anyhow::bail!("git add failed in {}: {}", vault_path.display(), stderr);
+        }
+    }
+
+    // git commit
+    let commit_output = std::process::Command::new("git")
+        .args(["commit", "-m", &commit_message])
+        .current_dir(vault_path)
+        .output()
+        .context("Failed to run git commit")?;
+
+    if commit_output.status.success() {
+        // Get commit hash
+        let hash_output = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(vault_path)
+            .output()
+            .context("Failed to get commit hash")?;
+
+        let hash = String::from_utf8_lossy(&hash_output.stdout).trim().to_string();
+        Ok(json!({
+            "vault": vault_name,
+            "status": "committed",
+            "commit": hash,
+            "message": commit_message,
+        }))
+    } else {
+        let stderr = String::from_utf8_lossy(&commit_output.stderr);
+        // "nothing to commit" is a normal case -- not an error
+        if stderr.contains("nothing to commit")
+            || stderr.contains("no changes added to commit")
+            || stderr.contains("nothing added to commit")
+        {
+            // Try to get the current HEAD hash anyway
+            let hash_output = std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(vault_path)
+                .output()
+                .ok();
+
+            let current_hash = hash_output.and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else {
+                    None
+                }
+            });
+
+            let mut result = json!({
+                "vault": vault_name,
+                "status": "no_changes",
+                "message": "Nothing to commit. Vault is already up to date.",
+            });
+            if let Some(hash) = current_hash {
+                result["commit"] = json!(hash);
+            }
+            Ok(result)
+        } else {
+            anyhow::bail!("git commit failed in {}: {}", vault_path.display(), stderr);
+        }
+    }
+}
+
+/// Generate a compact UTC timestamp like `20260508T143025Z`.
+fn format_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration.as_secs();
+
+    // Calculate date/time components from unix timestamp
+    let days = secs / 86400;
+    let time_secs = secs % 86400;
+    let hours = time_secs / 3600;
+    let minutes = (time_secs % 3600) / 60;
+    let seconds = time_secs % 60;
+
+    // Convert days since epoch to year/month/day
+    let (year, month, day) = days_to_ymd(days);
+
+    format!(
+        "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
+        year, month, day, hours, minutes, seconds
+    )
+}
+
+/// Convert days since Unix epoch to (year, month, day).
+fn days_to_ymd(days: u64) -> (u64, u64, u64) {
+    // Algorithm based on the civil date algorithms by Howard Hinnant
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
 // Tests
 // ---------------------------------------------------------------------------
 

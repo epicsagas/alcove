@@ -457,6 +457,31 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
             }),
         },
         ToolDescription {
+            name: "backup_vault".into(),
+            description: concat!(
+                "Create a git commit snapshot of a vault's current state.\n",
+                "\n",
+                "Use this tool when the user asks to back up, sync, or save the current state of ",
+                "their knowledge base vault. Runs `git add -A && git commit` with a conventional ",
+                "commit message containing a timestamp.\n",
+                "\n",
+                "If vault_name is provided, backs up only that vault. If omitted, backs up all vaults.\n",
+                "\n",
+                "If the vault directory is not a git repository, it will be initialized automatically.\n",
+                "If there are no changes to commit, returns a 'no_changes' status rather than an error."
+            ).into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "vault_name": {
+                        "type": "string",
+                        "description": "Name of the vault to back up. Omit to back up all vaults."
+                    }
+                },
+                "required": []
+            }),
+        },
+        ToolDescription {
             name: "promote_document".into(),
             description: concat!(
                 "Promote a document from an external vault (e.g. Obsidian) into the alcove doc-repo.\n",
@@ -504,6 +529,7 @@ struct ToolCallParams {
 fn tool_enum(name: &str) -> Option<Tool> {
     match name {
         "audit_project" => Some(Tool::AuditProject),
+        "backup_vault" => Some(Tool::BackupVault),
         "check_doc_changes" => Some(Tool::CheckDocChanges),
         "configure_project" => Some(Tool::ConfigureProject),
         "get_doc_file" => Some(Tool::GetDocFile),
@@ -592,6 +618,13 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     }
     if call.name == "promote_document" {
         return match tools::tool_promote_document(&docs_root, call.arguments) {
+            Ok(v) => ok!(v),
+            Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
+        };
+    }
+
+    if call.name == "backup_vault" {
+        return match tools::tool_backup_vault(call.arguments) {
             Ok(v) => ok!(v),
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };

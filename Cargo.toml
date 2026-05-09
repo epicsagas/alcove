@@ -44,6 +44,7 @@ rayon = "1"
 rust-i18n = "4"
 sys-locale = "0.3.2"
 tantivy = "0.26"
+chrono = { version = "0.4", features = ["clock"] }
 
 # alcove-full feature dependencies (lazy embedding + vector search)
 fastembed = { version = "5", optional = true }

@@ -25,6 +25,7 @@ use std::time::Duration;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tool {
     AuditProject,
+    BackupVault,
     CheckDocChanges,
     ConfigureProject,
     GetDocFile,
@@ -44,6 +45,7 @@ impl Tool {
     fn as_str(self) -> &'static str {
         match self {
             Self::AuditProject => "audit_project",
+            Self::BackupVault => "backup_vault",
             Self::CheckDocChanges => "check_doc_changes",
             Self::ConfigureProject => "configure_project",
             Self::GetDocFile => "get_doc_file",
