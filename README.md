@@ -249,14 +249,11 @@ alcove promote      Bring a file from an external vault into your doc-repo
 alcove index        Update the search index (incremental — only changed files)
 alcove rebuild      Rebuild the search index from scratch (use after schema changes)
 alcove search       Search docs from the terminal
-alcove serve        Start HTTP RAG server for external access
-alcove enable       Register as macOS login item and start background server
-alcove disable      Unregister from login items and stop server
-alcove start        Start the background server
-alcove stop         Stop the background server
-alcove restart      Restart the background server
 alcove token        Print the bearer token for team sharing
 alcove uninstall    Remove skills, config, and legacy files
+
+alcove mcp <CMD>      Manage background MCP server lifecycle (start, stop, status, enable, disable)
+alcove api <CMD>      Manage background REST API server lifecycle (start, stop, status, enable, disable)
 
 alcove vault create   Create a new knowledge base vault
 alcove vault link     Link an external directory as a vault (e.g., Obsidian)
@@ -310,13 +307,20 @@ Running a persistent background server eliminates cold-start latency (2–5s ONN
 
 ```bash
 # Enable and start (persists across reboots — macOS)
-alcove enable
+alcove mcp enable --now
 
 # Lifecycle
-alcove stop / start / restart
+alcove mcp stop / start / restart / status
 
 # Disable and remove login item
-alcove disable
+alcove mcp disable
+```
+
+You can also run a separate REST API server:
+
+```bash
+# Start the API server in background
+alcove api start
 ```
 
 The server uses a bearer token for authentication — auto-generated during `alcove setup` and stored in `config.toml`. Your existing MCP config (`command: alcove`) stays unchanged; the stdio process auto-detects the running server and proxies to it.

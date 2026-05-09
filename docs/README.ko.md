@@ -224,14 +224,11 @@ alcove promote      외부 볼트의 노트를 doc-repo에 가져오기
 alcove index        검색 인덱스 업데이트 (증분 — 변경된 파일만)
 alcove rebuild      검색 인덱스 전체 재구축 (스키마 변경 후 사용)
 alcove search       터미널에서 문서 검색
-alcove serve        HTTP RAG 서버 시작 (외부 접근용)
-alcove enable       macOS 로그인 항목으로 등록 및 백그라운드 서버 시작
-alcove disable      로그인 항목 해제 및 서버 중지
-alcove start        백그라운드 서버 시작
-alcove stop         백그라운드 서버 중지
-alcove restart      백그라운드 서버 재시작
 alcove token        팀 공유용 베어러 토큰 출력
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
+
+alcove mcp <CMD>      백그라운드 MCP 서버 관리 (start, stop, status, enable, disable)
+alcove api <CMD>      백그라운드 REST API 서버 관리 (start, stop, status, enable, disable)
 ```
 
 ### 린트
@@ -302,15 +299,20 @@ Alcove를 macOS 로그인 항목으로 등록하면 HTTP 서버가 로그인 시
 
 ```bash
 # 등록 및 시작 (재부팅 후에도 유지)
-alcove enable
+alcove mcp enable --now
 
 # 생명주기 관리
-alcove stop         # 서버 중지
-alcove start        # 다시 시작
-alcove restart      # 중지 + 시작
+alcove mcp stop / start / restart / status
 
 # 등록 해제 (서버 중지 및 로그인 항목 제거)
-alcove disable
+alcove mcp disable
+```
+
+별도의 REST API 서버를 백그라운드에서 실행할 수도 있습니다:
+
+```bash
+# API 서버를 백그라운드에서 시작
+alcove api start
 ```
 
 `~/Library/LaunchAgents/com.epicsagas.alcove.plist`에 LaunchAgent가 설치됩니다. 로그는 `~/.alcove/logs/`에 기록됩니다.
