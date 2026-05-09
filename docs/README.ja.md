@@ -422,6 +422,55 @@ alcove uninstall          # スキルと設定を削除
 cargo uninstall alcove    # バイナリを削除
 ```
 
+## ナレッジベースボルト
+
+プロジェクトドキュメントに加えて、Alcoveは研究ノート、参考資料、LLMが検索可能なキュレーションされた知識のための**独立したナレッジベースボルト**をサポートしています。
+
+```bash
+# AI研究ノート用のボルトを作成
+alcove vault create ai-research
+
+# 既存のObsidianボルトをリンク（コピーなし — その場でインデックス作成）
+alcove vault link my-obsidian ~/Obsidian/research
+
+# ドキュメントを追加
+alcove vault add ai-research ~/Downloads/transformer-survey.md
+
+# ボルトの検索インデックスを構築
+alcove vault index
+
+# CLIから検索
+alcove search "attention mechanism" --vault ai-research
+
+# エージェントがMCP経由で検索
+search_vault(query="attention mechanism", vault="ai-research")
+
+# すべてのボルトを一度に検索
+search_vault(query="transformer", vault="*")
+```
+
+ボルトはプロジェクトドキュメントから**完全に分離**されています — 別々のインデックス、別々のキャッシュ、別々の検索。コーディングエージェントのプロジェクトドキュメント検索がボルトの活動に影響されることはありません。
+
+| 機能 | プロジェクトドキュメント | ボルト |
+|---------|-------------|--------|
+| 目的 | プロジェクトごとのドキュメント化 | 一般的なナレッジベース |
+| 保存場所 | `~/.alcove/docs/` | `~/.alcove/vaults/` |
+| インデックス | 共有プロジェクトインデックス | ボルトごとの独立インデックス |
+| キャッシュ | `PROJECT_READER_CACHE` | `VAULT_READER_CACHE` |
+| 検索 | `search_project_docs` | `search_vault` |
+| シンボリックリンク | なし | あり（外部ディレクトリをリンク） |
+
+### ボルト設定
+
+デフォルトでは、ボルトは `~/.alcove/vaults/` に保存されます。`config.toml` でこれを変更できます：
+
+```toml
+[vaults]
+root = "/path/to/your/vaults"
+```
+
+詳細については、[設定](#設定)セクションを参照してください。
+
 ## エコシステム
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)

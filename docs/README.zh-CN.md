@@ -422,6 +422,55 @@ alcove uninstall          # 移除技能和配置
 cargo uninstall alcove    # 移除二进制文件
 ```
 
+## 知识库 Vault
+
+除了项目文档，Alcove 还支持**独立的知识库 Vault**，用于存放研究笔记、参考资料以及供 LLM 搜索的精选知识。
+
+```bash
+# 为 AI 研究笔记创建一个 vault
+alcove vault create ai-research
+
+# 链接一个现有的 Obsidian vault（不复制 —— 就地索引）
+alcove vault link my-obsidian ~/Obsidian/research
+
+# 添加文档
+alcove vault add ai-research ~/Downloads/transformer-survey.md
+
+# 构建 vault 搜索索引
+alcove vault index
+
+# 从 CLI 搜索
+alcove search "attention mechanism" --vault ai-research
+
+# 代理通过 MCP 搜索
+search_vault(query="attention mechanism", vault="ai-research")
+
+# 一次性搜索所有 vault
+search_vault(query="transformer", vault="*")
+```
+
+Vault 与项目文档**完全隔离** —— 独立的索引、独立的缓存、独立的搜索。您的编码代理对项目文档的搜索不会受到 vault 活动的影响。
+
+| 功能 | 项目文档 | Vault |
+|---------|-------------|--------|
+| 用途 | 按项目的文档化 | 通用知识库 |
+| 存储 | `~/.alcove/docs/` | `~/.alcove/vaults/` |
+| 索引 | 共享的项目索引 | 每个 vault 独立的索引 |
+| 缓存 | `PROJECT_READER_CACHE` | `VAULT_READER_CACHE` |
+| 搜索 | `search_project_docs` | `search_vault` |
+| 符号链接 | 不支持 | 支持（链接外部目录） |
+
+### Vault 配置
+
+默认情况下，vault 存储在 `~/.alcove/vaults/`。您可以在 `config.toml` 中进行更改：
+
+```toml
+[vaults]
+root = "/path/to/your/vaults"
+```
+
+有关 `config.toml` 的更多详细信息，请参阅[配置](#配置)部分。
+
 ## 生态系统
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)

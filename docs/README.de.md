@@ -418,6 +418,55 @@ alcove uninstall          # Skills & Konfiguration entfernen
 cargo uninstall alcove    # Binary entfernen
 ```
 
+## Wissensdatenbank-Vaults
+
+Über die Projektdokumentation hinaus unterstützt Alcove **unabhängige Wissensdatenbank-Vaults** für Forschungsnotizen, Referenzmaterialien und kuratiertes Wissen, das LLMs durchsuchen können.
+
+```bash
+# Einen Vault für KI-Forschungsnotizen erstellen
+alcove vault create ai-research
+
+# Einen bestehenden Obsidian-Vault verknüpfen (kein Kopieren — Indexierung vor Ort)
+alcove vault link my-obsidian ~/Obsidian/research
+
+# Ein Dokument hinzufügen
+alcove vault add ai-research ~/Downloads/transformer-survey.md
+
+# Den Suchindex für den Vault aufbauen
+alcove vault index
+
+# Über das CLI suchen
+alcove search "attention mechanism" --vault ai-research
+
+# Agenten suchen über MCP
+search_vault(query="attention mechanism", vault="ai-research")
+
+# Alle Vaults gleichzeitig durchsuchen
+search_vault(query="transformer", vault="*")
+```
+
+Vaults sind **vollständig isoliert** von Projektdokumenten — separate Indizes, separate Caches, separate Suche. Die Suche Ihres Codierungs-Agenten nach Projektdokumenten wird niemals durch Vault-Aktivitäten beeinflusst.
+
+| Funktion | Projektdokumente | Vaults |
+|---------|-------------|--------|
+| Zweck | Dokumentation pro Projekt | Allgemeine Wissensdatenbank |
+| Speicherung | `~/.alcove/docs/` | `~/.alcove/vaults/` |
+| Index | Gemeinsamer Projektindex | Unabhängiger Index pro Vault |
+| Cache | `PROJECT_READER_CACHE` | `VAULT_READER_CACHE` |
+| Suche | `search_project_docs` | `search_vault` |
+| Symlink | Nein | Ja (externe Verzeichnisse verknüpfen) |
+
+### Vault-Konfiguration
+
+Standardmäßig werden Vaults in `~/.alcove/vaults/` gespeichert. Sie können dies in Ihrer `config.toml` ändern:
+
+```toml
+[vaults]
+root = "/pfad/zu/deinen/vaults"
+```
+
+Weitere Details zur `config.toml` finden Sie im Abschnitt [Konfiguration](#konfiguration).
+
 ## Ökosystem
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)

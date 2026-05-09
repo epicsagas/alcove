@@ -658,6 +658,17 @@ Vaults are **completely isolated** from project docs — separate indexes, separ
 | Search | `search_project_docs` | `search_vault` |
 | Symlink | No | Yes (link external dirs) |
 
+### Vault Configuration
+
+By default, vaults are stored in `~/.alcove/vaults/`. You can change this in your `config.toml`:
+
+```toml
+[vaults]
+root = "/path/to/your/vaults"
+```
+
+Refer to the [Configuration](#configuration) section for more details on `config.toml`.
+
 ## Ecosystem
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)

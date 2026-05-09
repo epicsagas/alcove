@@ -418,6 +418,55 @@ alcove uninstall          # remove habilidades e configuração
 cargo uninstall alcove    # remove o binário
 ```
 
+## Vaults de Base de Conhecimento
+
+Além da documentação do projeto, o Alcove suporta **vaults de base de conhecimento independentes** para notas de pesquisa, materiais de referência e conhecimento curado que LLMs podem buscar.
+
+```bash
+# Criar um vault para notas de pesquisa de IA
+alcove vault create ai-research
+
+# Vincular um vault Obsidian existente (sem cópia — indexa no local)
+alcove vault link meu-obsidian ~/Obsidian/research
+
+# Adicionar um documento
+alcove vault add ai-research ~/Downloads/transformer-survey.md
+
+# Construir o índice de busca do vault
+alcove vault index
+
+# Buscar pelo CLI
+alcove search "attention mechanism" --vault ai-research
+
+# Agentes buscam via MCP
+search_vault(query="attention mechanism", vault="ai-research")
+
+# Buscar em TODOS os vaults de uma vez
+search_vault(query="transformer", vault="*")
+```
+
+Os vaults são **completamente isolados** dos docs do projeto — índices separados, caches separados, busca separada. A busca de documentos de projeto do seu agente de codificação nunca é afetada pela atividade do vault.
+
+| Funcionalidade | Documentos do projeto | Vaults |
+|---------|-------------|--------|
+| Propósito | Documentação por projeto | Base de conhecimento geral |
+| Armazenamento | `~/.alcove/docs/` | `~/.alcove/vaults/` |
+| Índice | Índice de projeto compartilhado | Índice independente por vault |
+| Cache | `PROJECT_READER_CACHE` | `VAULT_READER_CACHE` |
+| Busca | `search_project_docs` | `search_vault` |
+| Symlink | Não | Sim (vincular diretórios externos) |
+
+### Configuração de Vault
+
+Por padrão, os vaults são armazenados em `~/.alcove/vaults/`. Você pode alterar isso no seu `config.toml`:
+
+```toml
+[vaults]
+root = "/caminho/para/seus/vaults"
+```
+
+Consulte a seção de [Configuração](#configuração) para mais detalhes sobre o `config.toml`.
+
 ## Ecossistema
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)

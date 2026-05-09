@@ -422,6 +422,55 @@ alcove uninstall          # eliminar habilidades y configuración
 cargo uninstall alcove    # eliminar binario
 ```
 
+## Vaults de base de conocimiento
+
+Más allá de la documentación del proyecto, Alcove admite **vaults de base de conocimiento independientes** para notas de investigación, materiales de referencia y conocimiento curado que los LLM pueden buscar.
+
+```bash
+# Crear un vault para notas de investigación de IA
+alcove vault create ai-research
+
+# Vincular un vault de Obsidian existente (sin copiar — indexa en el lugar)
+alcove vault link my-obsidian ~/Obsidian/research
+
+# Añadir un documento
+alcove vault add ai-research ~/Downloads/transformer-survey.md
+
+# Construir el índice de búsqueda del vault
+alcove vault index
+
+# Buscar desde la CLI
+alcove search "attention mechanism" --vault ai-research
+
+# Los agentes buscan a través de MCP
+search_vault(query="attention mechanism", vault="ai-research")
+
+# Buscar en TODOS los vaults a la vez
+search_vault(query="transformer", vault="*")
+```
+
+Los vaults están **completamente aislados** de los documentos del proyecto — índices separados, cachés separadas, búsqueda separada. La búsqueda de documentos del proyecto de tu agente de codificación nunca se ve afectada por la actividad del vault.
+
+| Característica | Documentos del proyecto | Vaults |
+|---------|-------------|--------|
+| Propósito | Documentación por proyecto | Base de conocimiento general |
+| Almacenamiento | `~/.alcove/docs/` | `~/.alcove/vaults/` |
+| Índice | Índice de proyecto compartido | Índice independiente por vault |
+| Caché | `PROJECT_READER_CACHE` | `VAULT_READER_CACHE` |
+| Búsqueda | `search_project_docs` | `search_vault` |
+| Enlace simbólico | No | Sí (vincular directorios externos) |
+
+### Configuración del Vault
+
+Por defecto, los vaults se almacenan en `~/.alcove/vaults/`. Puedes cambiar esto en tu `config.toml`:
+
+```toml
+[vaults]
+root = "/path/to/your/vaults"
+```
+
+Consulta la sección de [Configuración](#configuración) para más detalles sobre `config.toml`.
+
 ## Ecosistema
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)

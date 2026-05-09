@@ -580,6 +580,55 @@ alcove uninstall          # 스킬 & 설정 제거
 cargo uninstall alcove    # 바이너리 제거
 ```
 
+## 지식 베이스 볼트
+
+프로젝트 문서 외에도 Alcove는 연구 노트, 참고 자료 및 LLM이 검색할 수 있는 큐레이션된 지식을 위한 **독립적인 지식 베이스 볼트**를 지원합니다.
+
+```bash
+# AI 연구 노트를 위한 볼트 생성
+alcove vault create ai-research
+
+# 기존 Obsidian 볼트 연결 (복사 없음 — 제자리에서 인덱싱)
+alcove vault link my-obsidian ~/Obsidian/research
+
+# 문서 추가
+alcove vault add ai-research ~/Downloads/transformer-survey.md
+
+# 볼트 검색 인덱스 빌드
+alcove vault index
+
+# CLI에서 검색
+alcove search "attention mechanism" --vault ai-research
+
+# 에이전트가 MCP를 통해 검색
+search_vault(query="attention mechanism", vault="ai-research")
+
+# 모든 볼트를 한 번에 검색
+search_vault(query="transformer", vault="*")
+```
+
+볼트는 프로젝트 문서와 **완전히 격리**되어 있습니다 — 별도의 인덱스, 캐시 및 검색을 사용합니다. 코딩 에이전트의 프로젝트 문서 검색은 볼트 활동의 영향을 받지 않습니다.
+
+| 기능 | 프로젝트 문서 | 볼트 |
+|---------|-------------|--------|
+| 목적 | 프로젝트별 문서화 | 일반 지식 베이스 |
+| 저장소 | `~/.alcove/docs/` | `~/.alcove/vaults/` |
+| 인덱스 | 공유 프로젝트 인덱스 | 볼트별 독립 인덱스 |
+| 캐시 | `PROJECT_READER_CACHE` | `VAULT_READER_CACHE` |
+| 검색 | `search_project_docs` | `search_vault` |
+| 심볼릭 링크 | 아니요 | 예 (외부 디렉토리 연결) |
+
+### 볼트 설정
+
+기본적으로 볼트는 `~/.alcove/vaults/`에 저장됩니다. `config.toml`에서 이를 변경할 수 있습니다:
+
+```toml
+[vaults]
+root = "/path/to/your/vaults"
+```
+
+자세한 내용은 [설정](#설정) 섹션을 참조하세요.
+
 ## 에코시스템
 
 ### [obsidian-forge](https://github.com/epicsagas/obsidian-forge)
