@@ -584,10 +584,15 @@ cargo uninstall alcove    # 바이너리 제거
 
 Alcove는 **obsidian-forge**와 자연스럽게 연동됩니다. obsidian-forge는 Obsidian 볼트 생성기이자 자동화 데몬입니다. obsidian-forge로 지식 그래프를 구축한 뒤, `alcove promote`로 노트를 doc-repo에 가져오세요 — AI 에이전트가 컨텍스트 낭비 없이 랭킹 검색으로 프로젝트 지식 베이스를 활용할 수 있습니다.
 
+**연동 방법:**
+obsidian-forge의 프로젝트 아카이브를 볼트로 연결하여 에이전트가 검색할 수 있게 하세요:
+
+```bash
+# obsidian-forge 프로젝트 아카이브를 볼트로 연결
+alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
 ```
-obsidian-forge (개인 지식)   →   alcove promote   →   alcove (프로젝트 문서)
-  볼트 / 인박스 / 그래프          한 명령                BM25 + 벡터 검색
-```
+
+이제 에이전트는 `search_vault` 도구 또는 `alcove search --vault forge`를 사용하여 전체 프로젝트 아카이브를 검색할 수 있습니다.
 
 ## 기여
 

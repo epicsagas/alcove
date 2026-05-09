@@ -660,10 +660,15 @@ Vaults are **completely isolated** from project docs — separate indexes, separ
 
 Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and automation daemon. Use obsidian-forge to build and strengthen your knowledge graph in Obsidian, then promote notes into alcove with `alcove promote` — your AI agents get ranked, scoped search over your project knowledge base without any context bloat.
 
+**Integration:**
+Link your obsidian-forge project archives as a vault to make them searchable by your agents:
+
+```bash
+# Link obsidian-forge project archives as a vault
+alcove vault link forge ~/Obsidian/SecondBrain/99-Archives/projects
 ```
-obsidian-forge (write / daemon)   →   alcove promote   →   alcove (read / MCP)
-  graph, MOC, vault automation        one command         BM25 + vector search
-```
+
+Now your agents can search through your entire project archive using the `search_vault` tool or `alcove search --vault forge`.
 
 ## Contributing
 
