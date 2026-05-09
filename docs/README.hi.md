@@ -400,8 +400,14 @@ alcove vault link my-obsidian ~/Obsidian/research
 # एक दस्तावेज़ जोड़ें
 alcove vault add ai-research ~/Downloads/transformer-survey.md
 
-# वॉल्ट सर्च इंडेक्स बनाएं
+# वॉल्ट के लिए सर्च इंडेक्स बनाएं
 alcove vault index
+
+# सभी वॉल्ट सूचीबद्ध करें
+alcove vault list
+#   areas (8 docs) → (linked)
+#   resources (71 docs) → (linked)
+#   zettelkasten (17 docs) → (linked)
 
 # CLI से खोजें
 alcove search "attention mechanism" --vault ai-research

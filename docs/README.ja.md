@@ -439,6 +439,12 @@ alcove vault add ai-research ~/Downloads/transformer-survey.md
 # ボルトの検索インデックスを構築
 alcove vault index
 
+# すべてのボルトを一覧表示
+alcove vault list
+#   areas (8 docs) → (linked)
+#   resources (71 docs) → (linked)
+#   zettelkasten (17 docs) → (linked)
+
 # CLIから検索
 alcove search "attention mechanism" --vault ai-research
 

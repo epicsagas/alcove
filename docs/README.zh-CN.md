@@ -439,7 +439,13 @@ alcove vault add ai-research ~/Downloads/transformer-survey.md
 # 构建 vault 搜索索引
 alcove vault index
 
-# 从 CLI 搜索
+# 列出所有 vault
+alcove vault list
+#   areas (8 docs) → (linked)
+#   resources (71 docs) → (linked)
+#   zettelkasten (17 docs) → (linked)
+
+# 从终端搜索
 alcove search "attention mechanism" --vault ai-research
 
 # 代理通过 MCP 搜索

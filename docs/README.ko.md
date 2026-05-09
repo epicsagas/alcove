@@ -597,6 +597,12 @@ alcove vault add ai-research ~/Downloads/transformer-survey.md
 # 볼트 검색 인덱스 빌드
 alcove vault index
 
+# 모든 볼트 목록 확인
+alcove vault list
+#   areas (8 docs) → (linked)
+#   resources (71 docs) → (linked)
+#   zettelkasten (17 docs) → (linked)
+
 # CLI에서 검색
 alcove search "attention mechanism" --vault ai-research
 

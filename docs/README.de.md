@@ -432,10 +432,16 @@ alcove vault link my-obsidian ~/Obsidian/research
 # Ein Dokument hinzufügen
 alcove vault add ai-research ~/Downloads/transformer-survey.md
 
-# Den Suchindex für den Vault aufbauen
+# Suchindex für Vaults aufbauen
 alcove vault index
 
-# Über das CLI suchen
+# Alle Vaults auflisten
+alcove vault list
+#   areas (8 docs) → (linked)
+#   resources (71 docs) → (linked)
+#   zettelkasten (17 docs) → (linked)
+
+# Über CLI suchen
 alcove search "attention mechanism" --vault ai-research
 
 # Agenten suchen über MCP

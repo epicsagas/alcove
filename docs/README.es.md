@@ -439,6 +439,12 @@ alcove vault add ai-research ~/Downloads/transformer-survey.md
 # Construir el índice de búsqueda del vault
 alcove vault index
 
+# Listar todos los vaults
+alcove vault list
+#   areas (8 docs) → (linked)
+#   resources (71 docs) → (linked)
+#   zettelkasten (17 docs) → (linked)
+
 # Buscar desde la CLI
 alcove search "attention mechanism" --vault ai-research
 
