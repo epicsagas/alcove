@@ -96,8 +96,7 @@ pub fn link_vault(name: &str, target: &Path) -> Result<PathBuf> {
         anyhow::bail!("Vault '{}' already exists", name);
     }
     // Ensure parent directory exists
-    fs::create_dir_all(vaults_root())
-        .with_context(|| "Failed to create vaults root directory")?;
+    fs::create_dir_all(vaults_root()).with_context(|| "Failed to create vaults root directory")?;
     #[cfg(unix)]
     std::os::unix::fs::symlink(target, &link_path)
         .with_context(|| format!("Failed to create symlink: {}", link_path.display()))?;
@@ -150,8 +149,9 @@ pub fn remove_vault(name: &str) -> Result<()> {
         fs::remove_file(&vault_path)
             .with_context(|| format!("Failed to remove symlink: {}", vault_path.display()))?;
     } else {
-        fs::remove_dir_all(&vault_path)
-            .with_context(|| format!("Failed to remove vault directory: {}", vault_path.display()))?;
+        fs::remove_dir_all(&vault_path).with_context(|| {
+            format!("Failed to remove vault directory: {}", vault_path.display())
+        })?;
     }
     Ok(())
 }
@@ -189,8 +189,8 @@ pub fn add_to_vault(name: &str, source: &Path) -> Result<PathBuf> {
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     fs::create_dir_all(dst)
         .with_context(|| format!("Failed to create directory: {}", dst.display()))?;
-    for entry in fs::read_dir(src)
-        .with_context(|| format!("Failed to read directory: {}", src.display()))?
+    for entry in
+        fs::read_dir(src).with_context(|| format!("Failed to read directory: {}", src.display()))?
     {
         let entry = entry?;
         let src_path = entry.path();
@@ -482,7 +482,10 @@ mod tests {
 
         let dest = add_to_vault_in(&vaults, "myvault", &source).unwrap();
         assert!(dest.exists());
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "# My Note\nContent here.");
+        assert_eq!(
+            fs::read_to_string(&dest).unwrap(),
+            "# My Note\nContent here."
+        );
         // Source should still exist (it's a copy)
         assert!(source.exists());
     }

@@ -5,8 +5,8 @@ use anyhow::Result;
 /// Helper to extract text from XML tags (e.g., w:t for Word, a:t for PPT)
 #[cfg(feature = "alcove-full")]
 pub(crate) fn extract_xml_text(content: &str, tag_name: &[u8]) -> Result<String> {
-    use quick_xml::reader::Reader;
     use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
 
     let mut reader = Reader::from_str(content);
     let mut text = String::new();
@@ -23,7 +23,7 @@ pub(crate) fn extract_xml_text(content: &str, tag_name: &[u8]) -> Result<String>
             Ok(Event::Text(e)) if in_tag => {
                 if let Ok(s) = std::str::from_utf8(&e.into_inner()) {
                     text.push_str(
-                        &quick_xml::escape::unescape(s).unwrap_or(std::borrow::Cow::Borrowed(s))
+                        &quick_xml::escape::unescape(s).unwrap_or(std::borrow::Cow::Borrowed(s)),
                     );
                 }
             }
@@ -87,10 +87,15 @@ impl FileReader for PdfReader {
         }
         let saved_stderr = unsafe { libc::dup(libc::STDERR_FILENO) };
         if saved_stderr < 0 {
-            unsafe { libc::close(saved_stdout); }
+            unsafe {
+                libc::close(saved_stdout);
+            }
             return Err(anyhow::anyhow!("dup(STDERR_FILENO) failed"));
         }
-        let _guard = FdGuard { saved_stdout, saved_stderr };
+        let _guard = FdGuard {
+            saved_stdout,
+            saved_stderr,
+        };
         unsafe {
             libc::dup2(devnull_fd, libc::STDOUT_FILENO);
             libc::dup2(devnull_fd, libc::STDERR_FILENO);
@@ -105,11 +110,15 @@ impl FileReader for PdfReader {
             Ok(text) if !text.trim().is_empty() => Ok(text),
             _ => {
                 use std::time::{Duration, Instant};
-                let pdftotext_bin = ["/usr/bin/pdftotext", "/usr/local/bin/pdftotext", "/opt/homebrew/bin/pdftotext"]
-                    .iter()
-                    .find(|p| std::path::Path::new(p).exists())
-                    .copied()
-                    .unwrap_or("pdftotext");
+                let pdftotext_bin = [
+                    "/usr/bin/pdftotext",
+                    "/usr/local/bin/pdftotext",
+                    "/opt/homebrew/bin/pdftotext",
+                ]
+                .iter()
+                .find(|p| std::path::Path::new(p).exists())
+                .copied()
+                .unwrap_or("pdftotext");
                 let mut child = std::process::Command::new(pdftotext_bin)
                     .args([path.as_os_str(), std::ffi::OsStr::new("-")])
                     .stdout(std::process::Stdio::piped())
@@ -132,12 +141,14 @@ impl FileReader for PdfReader {
                 };
                 let status = status?;
                 if status.success() {
-                    let mut stdout = child.stdout.take().unwrap_or_else(|| {
-                        unreachable!("stdout pipe must be present after spawn")
-                    });
+                    let mut stdout = child
+                        .stdout
+                        .take()
+                        .unwrap_or_else(|| unreachable!("stdout pipe must be present after spawn"));
                     let mut buf = Vec::new();
                     use std::io::Read;
-                    stdout.read_to_end(&mut buf)
+                    stdout
+                        .read_to_end(&mut buf)
                         .map_err(|e| anyhow::anyhow!("pdftotext read error: {}", e))?;
                     String::from_utf8(buf)
                         .map_err(|e| anyhow::anyhow!("pdftotext output not UTF-8: {}", e))
@@ -162,7 +173,11 @@ impl FileReader for DocxPptxReader {
 
     fn read(&self, path: &Path) -> Result<String> {
         use std::io::Read;
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
         let file = std::fs::File::open(path)?;
         let mut archive = zip::ZipArchive::new(file)
             .map_err(|e| anyhow::anyhow!("Failed to open {} (ZIP): {}", ext, e))?;
@@ -170,21 +185,24 @@ impl FileReader for DocxPptxReader {
         let mut text = String::new();
 
         if ext == "docx" {
-            let mut doc_xml = archive.by_name("word/document.xml")
+            let mut doc_xml = archive
+                .by_name("word/document.xml")
                 .map_err(|e| anyhow::anyhow!("Failed to find word/document.xml in DOCX: {}", e))?;
             let mut content = String::new();
             doc_xml.read_to_string(&mut content)?;
             text = extract_xml_text(&content, b"w:t")?;
         } else {
             // PPTX: iterate through slides
-            let mut slide_names: Vec<String> = archive.file_names()
+            let mut slide_names: Vec<String> = archive
+                .file_names()
                 .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
                 .map(|n| n.to_string())
                 .collect();
             slide_names.sort_by_key(|n| {
                 n.trim_start_matches("ppt/slides/slide")
-                 .trim_end_matches(".xml")
-                 .parse::<u32>().unwrap_or(0)
+                    .trim_end_matches(".xml")
+                    .parse::<u32>()
+                    .unwrap_or(0)
             });
 
             for name in slide_names {
@@ -223,14 +241,17 @@ impl FileReader for XlsxCsvReader {
             if let Ok(range) = workbook.worksheet_range(&sheet_name) {
                 text.push_str(&format!("\n--- Sheet: {} ---\n", sheet_name));
                 for row in range.rows() {
-                    let row_text: Vec<String> = row.iter().map(|c| match c {
-                        calamine::Data::Empty => "".to_string(),
-                        calamine::Data::String(s) => s.clone(),
-                        calamine::Data::Float(f) => f.to_string(),
-                        calamine::Data::Int(i) => i.to_string(),
-                        calamine::Data::Bool(b) => b.to_string(),
-                        _ => "".to_string(),
-                    }).collect();
+                    let row_text: Vec<String> = row
+                        .iter()
+                        .map(|c| match c {
+                            calamine::Data::Empty => "".to_string(),
+                            calamine::Data::String(s) => s.clone(),
+                            calamine::Data::Float(f) => f.to_string(),
+                            calamine::Data::Int(i) => i.to_string(),
+                            calamine::Data::Bool(b) => b.to_string(),
+                            _ => "".to_string(),
+                        })
+                        .collect();
                     text.push_str(&row_text.join("\t"));
                     text.push('\n');
                 }
@@ -257,7 +278,11 @@ impl FileReader for PlainTextReader {
 
 /// Read file content, extracting text from PDF/DOCX/XLSX if needed.
 pub(crate) fn read_file_content(path: &Path) -> Result<String> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
 
     #[cfg(all(unix, feature = "alcove-full"))]
     let readers: &[&dyn FileReader] = &[
@@ -268,16 +293,10 @@ pub(crate) fn read_file_content(path: &Path) -> Result<String> {
     ];
 
     #[cfg(all(not(unix), feature = "alcove-full"))]
-    let readers: &[&dyn FileReader] = &[
-        &DocxPptxReader,
-        &XlsxCsvReader,
-        &PlainTextReader,
-    ];
+    let readers: &[&dyn FileReader] = &[&DocxPptxReader, &XlsxCsvReader, &PlainTextReader];
 
     #[cfg(not(feature = "alcove-full"))]
-    let readers: &[&dyn FileReader] = &[
-        &PlainTextReader,
-    ];
+    let readers: &[&dyn FileReader] = &[&PlainTextReader];
 
     for reader in readers {
         if reader.can_read(&ext) {

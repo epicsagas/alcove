@@ -30,13 +30,13 @@ struct VectorCounters {
     vector_errors: u64,
 }
 
-use crate::config::{effective_config, is_reserved_dir_name};
 #[cfg(not(test))]
 use crate::config::load_config;
+use crate::config::{effective_config, is_reserved_dir_name};
 
 use super::cache::{CacheCategory, invalidate_reader_cache};
 use super::chunker::{chunk_content, extract_title};
-use super::lock::{index_dir, meta_path, is_locked, try_acquire_lock, release_lock};
+use super::lock::{index_dir, is_locked, meta_path, release_lock, try_acquire_lock};
 use super::reader::read_file_content;
 use super::schema::{IndexSchema, SCHEMA_VERSION, register_ngram_tokenizer};
 
@@ -120,18 +120,29 @@ pub fn check_doc_changes(docs_root: &Path) -> JsonValue {
             continue;
         }
         let proj_cfg = effective_config(&path);
-        let docs_root_canonical = docs_root.canonicalize().unwrap_or_else(|_| docs_root.to_path_buf());
+        let docs_root_canonical = docs_root
+            .canonicalize()
+            .unwrap_or_else(|_| docs_root.to_path_buf());
         for walk_entry in WalkDir::new(&path)
             .into_iter()
             .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())
-                && !e.path().file_name().unwrap_or_default().to_string_lossy().starts_with('_'))
+            .filter(|e| {
+                e.file_type().is_file()
+                    && proj_cfg.is_indexable(e.path())
+                    && !e
+                        .path()
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .starts_with('_')
+            })
         {
             let file_path = walk_entry.path();
             if let Ok(canonical) = file_path.canonicalize()
-                && !canonical.starts_with(&docs_root_canonical) {
-                    continue;
-                }
+                && !canonical.starts_with(&docs_root_canonical)
+            {
+                continue;
+            }
             let rel = file_path
                 .strip_prefix(docs_root)
                 .unwrap_or(file_path)
@@ -197,12 +208,22 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
             continue;
         }
         let proj_cfg = effective_config(&path);
-        let docs_root_canonical = docs_root.canonicalize().unwrap_or_else(|_| docs_root.to_path_buf());
+        let docs_root_canonical = docs_root
+            .canonicalize()
+            .unwrap_or_else(|_| docs_root.to_path_buf());
         for walk_entry in WalkDir::new(&path)
             .into_iter()
             .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_type().is_file() && proj_cfg.is_indexable(e.path())
-                && !e.path().file_name().unwrap_or_default().to_string_lossy().starts_with('_'))
+            .filter(|e| {
+                e.file_type().is_file()
+                    && proj_cfg.is_indexable(e.path())
+                    && !e
+                        .path()
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .starts_with('_')
+            })
         {
             let file_path = walk_entry.path();
             if let Ok(canonical) = file_path.canonicalize()
@@ -246,7 +267,9 @@ pub fn ensure_index_fresh(docs_root: &Path) -> bool {
         return false;
     }
     if is_locked(docs_root) {
-        eprintln!("[alcove] index is stale but a rebuild is already in progress — serving stale results");
+        eprintln!(
+            "[alcove] index is stale but a rebuild is already in progress — serving stale results"
+        );
         return true;
     }
     // Index is stale and no rebuild is running: rebuild synchronously.
@@ -273,7 +296,11 @@ fn build_index_with_mode(docs_root: &Path, force_rebuild: bool) -> Result<JsonVa
     build_index_with_options(docs_root, force_rebuild, false)
 }
 
-fn build_index_with_options(docs_root: &Path, force_rebuild: bool, skip_embedding: bool) -> Result<JsonValue> {
+fn build_index_with_options(
+    docs_root: &Path,
+    force_rebuild: bool,
+    skip_embedding: bool,
+) -> Result<JsonValue> {
     if !try_acquire_lock(docs_root) {
         return Ok(json!({
             "status": "skipped",
@@ -339,7 +366,15 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
     let indexed_count = write_tantivy_index(
         &dir,
         schema,
-        &IndexFields { project: project_field, file: file_field, filename: filename_field, title: title_field, chunk_id: chunk_id_field, body: body_field, line_start: line_start_field },
+        &IndexFields {
+            project: project_field,
+            file: file_field,
+            filename: filename_field,
+            title: title_field,
+            chunk_id: chunk_id_field,
+            body: body_field,
+            line_start: line_start_field,
+        },
         &files_to_index,
         needs_full_rebuild,
     )?;
@@ -388,17 +423,32 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
         .flatten()
     {
         let path = entry.path();
-        if !path.is_dir() { continue; }
-        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-        if is_reserved_dir_name(&name) { continue; }
+        if !path.is_dir() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        if is_reserved_dir_name(&name) {
+            continue;
+        }
         project_count += 1;
 
         let proj_cfg = effective_config(&path);
-        let docs_root_canonical = docs_root.canonicalize().unwrap_or_else(|_| docs_root.to_path_buf());
+        let docs_root_canonical = docs_root
+            .canonicalize()
+            .unwrap_or_else(|_| docs_root.to_path_buf());
         for walk_entry in WalkDir::new(&path).into_iter().flatten().filter(|e| {
             e.file_type().is_file()
                 && proj_cfg.is_indexable(e.path())
-                && !e.path().file_name().unwrap_or_default().to_string_lossy().starts_with('_')
+                && !e
+                    .path()
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .starts_with('_')
         }) {
             let file_path = walk_entry.path().to_path_buf();
             if let Ok(canonical) = file_path.canonicalize()
@@ -406,7 +456,11 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
             {
                 continue;
             }
-            let rel_to_project = file_path.strip_prefix(&path).unwrap_or(&file_path).to_string_lossy().to_string();
+            let rel_to_project = file_path
+                .strip_prefix(&path)
+                .unwrap_or(&file_path)
+                .to_string_lossy()
+                .to_string();
             all_files.push((name.clone(), rel_to_project, file_path));
         }
     }
@@ -426,11 +480,17 @@ fn filter_changed_files(
     let mut skipped_count = 0u64;
 
     for (proj, rel_to_proj, full_path) in all_files {
-        let rel_to_root = full_path.strip_prefix(docs_root).unwrap_or(&full_path).to_string_lossy().to_string();
+        let rel_to_root = full_path
+            .strip_prefix(docs_root)
+            .unwrap_or(&full_path)
+            .to_string_lossy()
+            .to_string();
         let fp = file_fingerprint(&full_path);
         current_files.insert(rel_to_root.clone(), fp);
 
-        if meta.files.get(&rel_to_root).copied() == Some(fp) && meta.schema_version >= SCHEMA_VERSION {
+        if meta.files.get(&rel_to_root).copied() == Some(fp)
+            && meta.schema_version >= SCHEMA_VERSION
+        {
             skipped_count += 1;
         } else {
             files_to_index.push((proj, rel_to_proj, full_path));
@@ -461,16 +521,21 @@ fn open_or_create_index(
     }
 }
 
-fn chunk_files_parallel(
-    files_to_index: &[ProjectFile],
-) -> Vec<ChunkedFile> {
+fn chunk_files_parallel(files_to_index: &[ProjectFile]) -> Vec<ChunkedFile> {
     use rayon::prelude::*;
     files_to_index
         .par_iter()
         .filter_map(|(proj, rel, full)| {
-            let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            let ext = full
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
             read_file_content(full).ok().map(|content| {
-                let chunks = chunk_content(&content, &ext).into_iter().enumerate().collect();
+                let chunks = chunk_content(&content, &ext)
+                    .into_iter()
+                    .enumerate()
+                    .collect();
                 (proj.clone(), rel.clone(), chunks)
             })
         })
@@ -486,26 +551,42 @@ fn write_chunks_to_index(
 ) -> Result<u64> {
     let mut indexed_count = 0u64;
     for (proj, rel, chunks) in all_chunks {
-        let ext = Path::new(rel).extension().and_then(|e| e.to_str()).unwrap_or("md").to_lowercase();
+        let ext = Path::new(rel)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("md")
+            .to_lowercase();
         let label = match ext.as_str() {
-            "pdf"  => format!("{proj}  pdf"),
+            "pdf" => format!("{proj}  pdf"),
             "docx" => format!("{proj}  docx"),
             "xlsx" => format!("{proj}  xlsx"),
-            _      => proj.clone(),
+            _ => proj.clone(),
         };
         pb.set_message(label);
         if !needs_full_rebuild {
             let proj_term = tantivy::Term::from_field_text(fields.project, proj);
             let file_term = tantivy::Term::from_field_text(fields.file, rel);
             let delete_query = BooleanQuery::new(vec![
-                (Occur::Must, Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
-                (Occur::Must, Box::new(TermQuery::new(file_term, IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+                (
+                    Occur::Must,
+                    Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic))
+                        as Box<dyn tantivy::query::Query>,
+                ),
+                (
+                    Occur::Must,
+                    Box::new(TermQuery::new(file_term, IndexRecordOption::Basic))
+                        as Box<dyn tantivy::query::Query>,
+                ),
             ]);
             writer.delete_query(Box::new(delete_query))?;
         }
         for (chunk_idx, chunk) in chunks {
             let title_text = extract_title(&chunk.text, rel, *chunk_idx);
-            let filename_text = Path::new(rel).file_stem().and_then(|s| s.to_str()).unwrap_or(rel).to_string();
+            let filename_text = Path::new(rel)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(rel)
+                .to_string();
             let mut doc = TantivyDocument::new();
             doc.add_text(fields.project, proj);
             doc.add_text(fields.file, rel);
@@ -547,10 +628,8 @@ fn write_tantivy_index(
     #[cfg(test)]
     let mut writer = index.writer_with_num_threads(1, 15_000_000)?;
     let all_chunks = chunk_files_parallel(files_to_index);
-    let indexed_count = write_chunks_to_index(
-        &mut writer, &all_chunks, fields,
-        needs_full_rebuild, &pb,
-    )?;
+    let indexed_count =
+        write_chunks_to_index(&mut writer, &all_chunks, fields, needs_full_rebuild, &pb)?;
     pb.set_message("saving...");
     writer.commit()?;
     pb.finish_and_clear();
@@ -573,16 +652,20 @@ fn flush_embed_batch(
     }
     let count = pending.len() as u64;
     let doc_pfx = model.doc_prefix();
-    let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
-        match doc_pfx {
+    let texts: Vec<String> = pending
+        .iter()
+        .map(|(_, _, _, t)| match doc_pfx {
             Some(pfx) => format!("{}{}", pfx, t),
             None => t.clone(),
-        }
-    }).collect();
+        })
+        .collect();
     let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
     match service.embed(&text_refs) {
         Ok(embeddings) => {
-            let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
+            let it = pending
+                .drain(..)
+                .zip(embeddings)
+                .map(|((p, r, id, _), emb)| (p, r, id, emb));
             if let Err(e) = store.batch_upsert(it) {
                 eprintln!("[alcove] batch upsert failed: {}", e);
                 counters.vector_errors += count;
@@ -637,9 +720,9 @@ fn run_full_vector_indexing(
     docs_root: &Path,
     files_to_index: Vec<ProjectFile>,
 ) -> Result<(String, u64, u64, String)> {
+    use crate::config::load_config;
     use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
     use crate::vector::VectorStore;
-    use crate::config::load_config;
 
     let cfg = load_config();
     let emb_cfg = cfg.embedding_config_with_defaults();
@@ -657,13 +740,24 @@ fn run_full_vector_indexing(
     });
     let _ = service.ensure_model();
     if service.state() != crate::embedding::ModelState::Ready {
-        return Ok(("model_not_ready".to_string(), 0, 0, model.as_str().to_string()));
+        return Ok((
+            "model_not_ready".to_string(),
+            0,
+            0,
+            model.as_str().to_string(),
+        ));
     }
 
     let vector_path = docs_root.join(".alcove").join("vectors.db");
     let mut store = VectorStore::open(&vector_path, service.model_name(), service.dimension())
-        .map_err(|e| { eprintln!("[alcove] Failed to open vector store: {}", e); e })?;
-    let mut counters = VectorCounters { vectors_indexed: 0, vector_errors: 0 };
+        .map_err(|e| {
+            eprintln!("[alcove] Failed to open vector store: {}", e);
+            e
+        })?;
+    let mut counters = VectorCounters {
+        vectors_indexed: 0,
+        vector_errors: 0,
+    };
 
     if !files_to_index.is_empty() {
         let to_embed: Vec<ProjectFile> = files_to_index
@@ -679,14 +773,31 @@ fn run_full_vector_indexing(
         vpb.enable_steady_tick(Duration::from_millis(80));
         vpb.set_message("embedding");
         // Batch size tuned to model size: small < 100 MB → 128, medium ≤ 800 MB → 64, large → 32
-        let embed_batch: usize = match model.size_mb() { s if s < 100 => 128, s if s <= 800 => 64, _ => 32 };
-        embed_files_in_batches(&to_embed, &service, &mut store, &model, embed_batch, &vpb, &mut counters);
+        let embed_batch: usize = match model.size_mb() {
+            s if s < 100 => 128,
+            s if s <= 800 => 64,
+            _ => 32,
+        };
+        embed_files_in_batches(
+            &to_embed,
+            &service,
+            &mut store,
+            &model,
+            embed_batch,
+            &vpb,
+            &mut counters,
+        );
         vpb.finish_and_clear();
     }
     if let Ok(meta) = store.meta() {
         counters.vectors_indexed = meta.count as u64;
     }
-    Ok(("ok".to_string(), counters.vectors_indexed, counters.vector_errors, model.as_str().to_string()))
+    Ok((
+        "ok".to_string(),
+        counters.vectors_indexed,
+        counters.vector_errors,
+        model.as_str().to_string(),
+    ))
 }
 
 fn run_vector_indexing(
@@ -802,10 +913,7 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
             .to_string();
 
         if let Ok(content) = read_file_content(file_path) {
-            let file_ext = file_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
+            let file_ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
             for (chunk_idx, chunk) in chunk_content(&content, file_ext).iter().enumerate() {
                 let title_text = extract_title(&chunk.text, &rel, chunk_idx);
                 let filename_text = Path::new(&rel)
@@ -855,9 +963,9 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
 
     #[cfg(feature = "alcove-full")]
     {
+        use crate::config::vault_embedding_config;
         use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
         use crate::vector::VectorStore;
-        use crate::config::vault_embedding_config;
 
         let emb_cfg = vault_embedding_config(vault_path);
 
@@ -885,10 +993,8 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                         let to_embed: Vec<&PathBuf> = files
                             .iter()
                             .filter(|fp| {
-                                let rel = fp
-                                    .strip_prefix(vault_path)
-                                    .unwrap_or(*fp)
-                                    .to_string_lossy();
+                                let rel =
+                                    fp.strip_prefix(vault_path).unwrap_or(*fp).to_string_lossy();
                                 !matches!(store.has_file(&vault_name, &rel), Ok(true))
                             })
                             .collect();
@@ -921,25 +1027,40 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                                 vpb.set_message(rel.clone());
 
                                 if let Ok(content) = read_file_content(fp) {
-                                    let file_ext = fp.extension().and_then(|e| e.to_str()).unwrap_or("");
-                                    for (i, chunk) in chunk_content(&content, file_ext).into_iter().enumerate() {
-                                        pending.push((vault_name.clone(), rel.clone(), i as u64, chunk.text));
+                                    let file_ext =
+                                        fp.extension().and_then(|e| e.to_str()).unwrap_or("");
+                                    for (i, chunk) in
+                                        chunk_content(&content, file_ext).into_iter().enumerate()
+                                    {
+                                        pending.push((
+                                            vault_name.clone(),
+                                            rel.clone(),
+                                            i as u64,
+                                            chunk.text,
+                                        ));
 
                                         if pending.len() >= embed_batch {
                                             let actual = pending.len();
                                             let doc_pfx = model.doc_prefix();
-                                            let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
-                                                match doc_pfx {
+                                            let texts: Vec<String> = pending
+                                                .iter()
+                                                .map(|(_, _, _, t)| match doc_pfx {
                                                     Some(pfx) => format!("{}{}", pfx, t),
                                                     None => t.clone(),
-                                                }
-                                            }).collect();
-                                            let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                                                })
+                                                .collect();
+                                            let text_refs: Vec<&str> =
+                                                texts.iter().map(|s| s.as_str()).collect();
                                             match service.embed(&text_refs) {
                                                 Ok(embeddings) => {
-                                                    let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
+                                                    let it = pending.drain(..).zip(embeddings).map(
+                                                        |((p, r, id, _), emb)| (p, r, id, emb),
+                                                    );
                                                     if let Err(e) = store.batch_upsert(it) {
-                                                        eprintln!("[alcove] vault batch upsert failed: {}", e);
+                                                        eprintln!(
+                                                            "[alcove] vault batch upsert failed: {}",
+                                                            e
+                                                        );
                                                         vector_errors += actual as u64;
                                                     } else {
                                                         vectors_indexed += actual as u64;
@@ -960,17 +1081,22 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                             // Flush remaining
                             if !pending.is_empty() {
                                 let doc_pfx = model.doc_prefix();
-                                let texts: Vec<String> = pending.iter().map(|(_, _, _, t)| {
-                                    match doc_pfx {
+                                let texts: Vec<String> = pending
+                                    .iter()
+                                    .map(|(_, _, _, t)| match doc_pfx {
                                         Some(pfx) => format!("{}{}", pfx, t),
                                         None => t.clone(),
-                                    }
-                                }).collect();
-                                let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                                    })
+                                    .collect();
+                                let text_refs: Vec<&str> =
+                                    texts.iter().map(|s| s.as_str()).collect();
                                 match service.embed(&text_refs) {
                                     Ok(embeddings) => {
                                         let count = pending.len() as u64;
-                                        let it = pending.drain(..).zip(embeddings).map(|((p, r, id, _), emb)| (p, r, id, emb));
+                                        let it = pending
+                                            .drain(..)
+                                            .zip(embeddings)
+                                            .map(|((p, r, id, _), emb)| (p, r, id, emb));
                                         if let Err(e) = store.batch_upsert(it) {
                                             eprintln!("[alcove] vault batch upsert failed: {}", e);
                                             vector_errors += count;

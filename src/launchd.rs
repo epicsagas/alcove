@@ -37,19 +37,27 @@ fn generate_plist(alcove_bin: &str) -> String {
     let cfg = load_config();
     let srv = cfg.server_config();
 
-    let host_arg = format!("        <string>--host</string>\n        <string>{}</string>", srv.host);
-    let port_arg = format!("        <string>--port</string>\n        <string>{}</string>", srv.port);
+    let host_arg = format!(
+        "        <string>--host</string>\n        <string>{}</string>",
+        srv.host
+    );
+    let port_arg = format!(
+        "        <string>--port</string>\n        <string>{}</string>",
+        srv.port
+    );
 
     let token_env = srv
         .token
         .as_deref()
-        .map(|t| format!(
-            r#"    <key>EnvironmentVariables</key>
+        .map(|t| {
+            format!(
+                r#"    <key>EnvironmentVariables</key>
     <dict>
         <key>ALCOVE_TOKEN</key>
         <string>{t}</string>
     </dict>"#
-        ))
+            )
+        })
         .unwrap_or_default();
 
     format!(
@@ -167,11 +175,7 @@ pub fn enable() -> Result<()> {
         "  {} Alcove registered as login item and started.",
         console::style("✓").green()
     );
-    println!(
-        "  {} Plist: {}",
-        console::style("→").dim(),
-        plist.display()
-    );
+    println!("  {} Plist: {}", console::style("→").dim(), plist.display());
     println!(
         "  {} Logs:  {}",
         console::style("→").dim(),
@@ -248,10 +252,7 @@ pub fn stop() -> Result<()> {
     }
 
     std::thread::sleep(std::time::Duration::from_millis(300));
-    println!(
-        "  {} Alcove stopped.",
-        console::style("✓").green()
-    );
+    println!("  {} Alcove stopped.", console::style("✓").green());
     Ok(())
 }
 

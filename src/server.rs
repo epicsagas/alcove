@@ -7,20 +7,20 @@
 use anyhow::Result;
 #[cfg(feature = "alcove-server")]
 use axum::{
+    Router,
     extract::{ConnectInfo, Query, State},
     http::{HeaderMap, Method, StatusCode, header},
     response::Json,
     routing::{get, post},
-    Router,
 };
 #[cfg(feature = "alcove-server")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "alcove-server")]
+use serde_json::Value;
+#[cfg(feature = "alcove-server")]
 use std::net::SocketAddr;
 #[cfg(feature = "alcove-server")]
 use std::sync::Arc;
-#[cfg(feature = "alcove-server")]
-use serde_json::Value;
 #[cfg(feature = "alcove-server")]
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
@@ -112,7 +112,8 @@ pub struct RateLimiter {
 #[cfg(feature = "alcove-server")]
 struct RateLimiterInner {
     /// Per-IP sliding-window timestamp buckets.
-    buckets: std::collections::HashMap<std::net::IpAddr, std::collections::VecDeque<std::time::Instant>>,
+    buckets:
+        std::collections::HashMap<std::net::IpAddr, std::collections::VecDeque<std::time::Instant>>,
 }
 
 #[cfg(feature = "alcove-server")]
@@ -215,8 +216,12 @@ fn is_allowed_origin(origin: &[u8]) -> bool {
     let s = std::str::from_utf8(origin).unwrap_or("");
     s == "http://localhost"
         || s == "http://127.0.0.1"
-        || s.strip_prefix("http://localhost:").and_then(|p| p.parse::<u16>().ok()).is_some()
-        || s.strip_prefix("http://127.0.0.1:").and_then(|p| p.parse::<u16>().ok()).is_some()
+        || s.strip_prefix("http://localhost:")
+            .and_then(|p| p.parse::<u16>().ok())
+            .is_some()
+        || s.strip_prefix("http://127.0.0.1:")
+            .and_then(|p| p.parse::<u16>().ok())
+            .is_some()
 }
 
 /// Check Bearer token authentication. Returns `Err` with 401 if the token is
@@ -343,7 +348,10 @@ async fn handle_search(
                 let vault_name = vi.name.clone();
                 let q = req.q.clone();
                 join_set.spawn_blocking(move || {
-                    (vault_name, crate::index::search_vault(&vault_path, &q, limit))
+                    (
+                        vault_name,
+                        crate::index::search_vault(&vault_path, &q, limit),
+                    )
                 });
             }
 
@@ -375,10 +383,7 @@ async fn handle_search(
                                         project: project.to_string(),
                                         file: file.to_string(),
                                         line,
-                                        snippet: m["snippet"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string(),
+                                        snippet: m["snippet"].as_str().unwrap_or("").to_string(),
                                         score: m["score"].as_f64().unwrap_or(0.0),
                                         source: "vault".to_string(),
                                     });
@@ -423,30 +428,29 @@ async fn handle_search(
         }
 
         let q = req.q.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            crate::index::search_vault(&vp, &q, limit)
-        })
-        .await
-        .map_err(|e| {
-            eprintln!("[alcove] Vault search task failed: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Internal server error".into(),
-                    code: 500,
-                }),
-            )
-        })?
-        .map_err(|e| {
-            eprintln!("[alcove] Vault search failed: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Internal server error".into(),
-                    code: 500,
-                }),
-            )
-        })?;
+        let result =
+            tokio::task::spawn_blocking(move || crate::index::search_vault(&vp, &q, limit))
+                .await
+                .map_err(|e| {
+                    eprintln!("[alcove] Vault search task failed: {e}");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: "Internal server error".into(),
+                            code: 500,
+                        }),
+                    )
+                })?
+                .map_err(|e| {
+                    eprintln!("[alcove] Vault search failed: {e}");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: "Internal server error".into(),
+                            code: 500,
+                        }),
+                    )
+                })?;
 
         let results: Vec<SearchResult> = result["matches"]
             .as_array()
@@ -505,71 +509,64 @@ async fn handle_search(
     let q = req.q.clone();
     let limit = req.limit.clamp(1, 200);
     #[cfg_attr(not(feature = "alcove-full"), allow(unused_variables))]
-    let use_hybrid = req.mode == "hybrid"
-        || (req.mode == "auto" && cfg!(feature = "alcove-full"));
+    let use_hybrid = req.mode == "hybrid" || (req.mode == "auto" && cfg!(feature = "alcove-full"));
 
     // Try hybrid search first if available
     #[cfg(feature = "alcove-full")]
     if use_hybrid
         && let Some(service_arc) = state.embedding_service.clone()
-            && crate::index::index_exists(&docs_root) {
-                let docs_root2 = docs_root.clone();
-                let q2 = q.clone();
-                let pf = project_filter_owned.clone();
+        && crate::index::index_exists(&docs_root)
+    {
+        let docs_root2 = docs_root.clone();
+        let q2 = q.clone();
+        let pf = project_filter_owned.clone();
 
-                let result = tokio::task::spawn_blocking(move || {
-                    crate::index::search_hybrid(
-                        &docs_root2,
-                        &q2,
-                        &service_arc,
-                        limit,
-                        pf.as_deref(),
-                    )
-                })
-                .await
-                .map_err(|_| (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: "Internal search error".to_string(),
-                        code: 500,
-                    }),
-                ))?;
+        let result = tokio::task::spawn_blocking(move || {
+            crate::index::search_hybrid(&docs_root2, &q2, &service_arc, limit, pf.as_deref())
+        })
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Internal search error".to_string(),
+                    code: 500,
+                }),
+            )
+        })?;
 
-                match result {
-                    Ok(json) => {
-                        let results: Vec<SearchResult> = json["matches"]
-                            .as_array()
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|m| {
-                                        Some(SearchResult {
-                                            project: m["project"].as_str()?.to_string(),
-                                            file: m["file"].as_str()?.to_string(),
-                                            line: m["line_start"].as_u64()?,
-                                            snippet: m["snippet"]
-                                                .as_str()
-                                                .unwrap_or("")
-                                                .to_string(),
-                                            score: m["score"].as_f64().unwrap_or(0.0),
-                                            source: "hybrid".to_string(),
-                                        })
-                                    })
-                                    .collect()
+        match result {
+            Ok(json) => {
+                let results: Vec<SearchResult> = json["matches"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|m| {
+                                Some(SearchResult {
+                                    project: m["project"].as_str()?.to_string(),
+                                    file: m["file"].as_str()?.to_string(),
+                                    line: m["line_start"].as_u64()?,
+                                    snippet: m["snippet"].as_str().unwrap_or("").to_string(),
+                                    score: m["score"].as_f64().unwrap_or(0.0),
+                                    source: "hybrid".to_string(),
+                                })
                             })
-                            .unwrap_or_default();
+                            .collect()
+                    })
+                    .unwrap_or_default();
 
-                        return Ok(Json(SearchResponse {
-                            query: req.q,
-                            results,
-                            mode: "hybrid".to_string(),
-                            truncated: json["truncated"].as_bool().unwrap_or(false),
-                        }));
-                    }
-                    Err(err) => {
-                        eprintln!("[alcove] hybrid search error, falling back to BM25: {err}");
-                    }
-                }
+                return Ok(Json(SearchResponse {
+                    query: req.q,
+                    results,
+                    mode: "hybrid".to_string(),
+                    truncated: json["truncated"].as_bool().unwrap_or(false),
+                }));
             }
+            Err(err) => {
+                eprintln!("[alcove] hybrid search error, falling back to BM25: {err}");
+            }
+        }
+    }
 
     // Fall back to BM25 search
     if crate::index::index_exists(&docs_root) {
@@ -581,13 +578,15 @@ async fn handle_search(
             crate::index::search_indexed(&docs_root2, &q2, limit, pf.as_deref())
         })
         .await
-        .map_err(|_| (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: "Internal search error".to_string(),
-                code: 500,
-            }),
-        ))?;
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Internal search error".to_string(),
+                    code: 500,
+                }),
+            )
+        })?;
 
         match result {
             Ok(json) => {
@@ -730,8 +729,8 @@ pub async fn run_server(
 
     #[cfg(feature = "alcove-full")]
     let embedding_service = {
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
         use crate::config::load_config;
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
 
         let cfg = load_config();
         let emb_cfg = cfg.embedding_config_with_defaults();
@@ -747,13 +746,15 @@ pub async fn run_server(
                     .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
                     .unwrap_or_else(|| emb_cfg.cache_dir.clone()),
             );
-            Some(Arc::new(EmbeddingService::new(crate::config::EmbeddingConfig {
-                model: model.as_str().to_string(),
-                auto_download: emb_cfg.auto_download,
-                cache_dir: cache_dir.to_string_lossy().into_owned(),
-                enabled: true,
-                query_cache_size: emb_cfg.query_cache_size,
-            })))
+            Some(Arc::new(EmbeddingService::new(
+                crate::config::EmbeddingConfig {
+                    model: model.as_str().to_string(),
+                    auto_download: emb_cfg.auto_download,
+                    cache_dir: cache_dir.to_string_lossy().into_owned(),
+                    enabled: true,
+                    query_cache_size: emb_cfg.query_cache_size,
+                },
+            )))
         } else {
             None
         }
@@ -783,9 +784,9 @@ pub async fn run_server(
         )
         .with_state(state);
 
-    let ip: std::net::IpAddr = host.parse().map_err(|e| {
-        anyhow::anyhow!("Invalid server host '{}': {}", host, e)
-    })?;
+    let ip: std::net::IpAddr = host
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid server host '{}': {}", host, e))?;
     let addr = SocketAddr::from((ip, port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
@@ -801,7 +802,11 @@ pub async fn run_server(
     println!("      POST /mcp        - MCP JSON-RPC dispatch (proxy target)");
     println!();
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -873,10 +878,7 @@ async fn mcp_dispatch(
             StatusCode::OK,
             Json(serde_json::to_value(&resp).unwrap_or_default()),
         ),
-        None => (
-            StatusCode::NO_CONTENT,
-            Json(serde_json::json!(null)),
-        ),
+        None => (StatusCode::NO_CONTENT, Json(serde_json::json!(null))),
     }
 }
 
@@ -1132,7 +1134,9 @@ mod tests {
     // Rate limiter tests
     // -----------------------------------------------------------------------
 
-    fn ip(s: &str) -> std::net::IpAddr { s.parse().unwrap() }
+    fn ip(s: &str) -> std::net::IpAddr {
+        s.parse().unwrap()
+    }
 
     #[test]
     fn rate_limiter_allows_within_budget() {

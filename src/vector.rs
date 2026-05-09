@@ -67,7 +67,10 @@ impl PartialOrd for MinScoreEntry {
 impl Ord for MinScoreEntry {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reversed: smallest score at the top (min-heap)
-        other.score.partial_cmp(&self.score).unwrap_or(Ordering::Equal)
+        other
+            .score
+            .partial_cmp(&self.score)
+            .unwrap_or(Ordering::Equal)
     }
 }
 
@@ -121,9 +124,7 @@ pub struct VectorStore {
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "alcove-full")]
-fn evict_stale(
-    cache: &mut std::collections::HashMap<Option<String>, HnswCacheEntry>,
-) {
+fn evict_stale(cache: &mut std::collections::HashMap<Option<String>, HnswCacheEntry>) {
     let ttl = std::time::Duration::from_secs(300); // 5 minutes
     cache.retain(|_, entry| entry.last_accessed.elapsed() < ttl);
 }
@@ -165,11 +166,11 @@ impl VectorStore {
         )?;
 
         // Check/set metadata
-        let existing_model: Option<String> = conn.query_row(
-            "SELECT value FROM meta WHERE key = 'model'",
-            [],
-            |row| row.get(0),
-        ).ok();
+        let existing_model: Option<String> = conn
+            .query_row("SELECT value FROM meta WHERE key = 'model'", [], |row| {
+                row.get(0)
+            })
+            .ok();
 
         let existing_dim: Option<usize> = conn
             .query_row(
@@ -224,7 +225,7 @@ impl VectorStore {
                 r#"
                 INSERT OR REPLACE INTO vectors (project, file, chunk_id, embedding)
                 VALUES (?1, ?2, ?3, ?4)
-                "#
+                "#,
             )?;
             for (project, file, chunk_id, embedding) in embeddings {
                 let blob = Self::encode_embedding(&embedding);
@@ -301,10 +302,9 @@ impl VectorStore {
     /// Removes `Some(project)` and `None` cache entries.
     #[allow(dead_code)]
     pub fn delete_project(&self, project: &str) -> Result<usize> {
-        let count = self.conn.execute(
-            "DELETE FROM vectors WHERE project = ?1",
-            params![project],
-        )?;
+        let count = self
+            .conn
+            .execute("DELETE FROM vectors WHERE project = ?1", params![project])?;
         let mut cache = self.hnsw_cache.borrow_mut();
         cache.remove(&Some(project.to_string()));
         cache.remove(&None);
@@ -316,11 +316,7 @@ impl VectorStore {
     /// When `project_filter` is `Some`, only that project's vectors are loaded
     /// into the HNSW index (or searched linearly), reducing memory footprint.
     #[allow(dead_code)]
-    pub fn search(
-        &self,
-        query: &[f32],
-        limit: usize,
-    ) -> Result<Vec<VectorResult>> {
+    pub fn search(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
         self.search_with_filter(query, limit, None)
     }
 
@@ -338,11 +334,8 @@ impl VectorStore {
                 |row| row.get(0),
             )?
         } else {
-            self.conn.query_row(
-                "SELECT COUNT(*) FROM vectors",
-                [],
-                |row| row.get(0),
-            )?
+            self.conn
+                .query_row("SELECT COUNT(*) FROM vectors", [], |row| row.get(0))?
         };
 
         // Use HNSW for large datasets (>= 5000 vectors)
@@ -384,7 +377,12 @@ impl VectorStore {
             if score > 0.0 {
                 heap.push(MinScoreEntry {
                     score,
-                    result: VectorResult { project, file, chunk_id, score },
+                    result: VectorResult {
+                        project,
+                        file,
+                        chunk_id,
+                        score,
+                    },
                 });
                 if heap.len() > limit {
                     heap.pop(); // evict the lowest score
@@ -413,9 +411,9 @@ impl VectorStore {
                 push_if_positive(&mut heap, limit, proj, file, chunk_id, score);
             }
         } else {
-            let mut stmt = self.conn.prepare(
-                "SELECT project, file, chunk_id, embedding FROM vectors",
-            )?;
+            let mut stmt = self
+                .conn
+                .prepare("SELECT project, file, chunk_id, embedding FROM vectors")?;
             let mapped = stmt.query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -489,9 +487,9 @@ impl VectorStore {
                     vectors.push((id, proj, file, chunk_id, embedding));
                 }
             } else {
-                let mut stmt = self.conn.prepare(
-                    "SELECT id, project, file, chunk_id, embedding FROM vectors",
-                )?;
+                let mut stmt = self
+                    .conn
+                    .prepare("SELECT id, project, file, chunk_id, embedding FROM vectors")?;
                 let rows = stmt.query_map([], |row| {
                     let id: i64 = row.get(0)?;
                     let proj: String = row.get(1)?;
@@ -512,13 +510,8 @@ impl VectorStore {
             }
 
             let ef_build = 200;
-            let hnsw = Hnsw::<f32, DistCosine>::new(
-                16,
-                vectors.len().max(1),
-                16,
-                ef_build,
-                DistCosine {},
-            );
+            let hnsw =
+                Hnsw::<f32, DistCosine>::new(16, vectors.len().max(1), 16, ef_build, DistCosine {});
 
             let mut id_map: HashMap<usize, (String, String, u64)> =
                 HashMap::with_capacity(vectors.len());
@@ -601,11 +594,9 @@ impl VectorStore {
     /// Get store metadata
     #[allow(dead_code)]
     pub fn meta(&self) -> Result<VectorMeta> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM vectors",
-            [],
-            |row| row.get(0),
-        )?;
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM vectors", [], |row| row.get(0))?;
 
         Ok(VectorMeta {
             model: self.model.clone(),
@@ -617,11 +608,9 @@ impl VectorStore {
     /// Check if store is empty
     #[allow(dead_code)]
     pub fn is_empty(&self) -> Result<bool> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM vectors",
-            [],
-            |row| row.get(0),
-        )?;
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM vectors", [], |row| row.get(0))?;
         Ok(count == 0)
     }
 
@@ -772,7 +761,10 @@ mod tests {
         // Reopen with a different model — vectors must be gone
         {
             let store = VectorStore::open(&db_path, "model-b", 3).unwrap();
-            assert!(store.is_empty().unwrap(), "vectors must be cleared when model changes");
+            assert!(
+                store.is_empty().unwrap(),
+                "vectors must be cleared when model changes"
+            );
         }
     }
 
@@ -862,8 +854,13 @@ mod tests {
         // Insert one more vector — global cache key must be invalidated.
         store
             .batch_upsert(
-                vec![("proj".into(), "extra.md".into(), 9999u64, vec![0.0, 0.0, 0.0, 1.0])]
-                    .into_iter(),
+                vec![(
+                    "proj".into(),
+                    "extra.md".into(),
+                    9999u64,
+                    vec![0.0, 0.0, 0.0, 1.0],
+                )]
+                .into_iter(),
             )
             .unwrap();
 
@@ -995,8 +992,18 @@ mod tests {
             ("p1".into(), "b.md".into(), 0, 2.0),
         ];
         let vector = vec![
-            VectorResult { project: "p1".into(), file: "b.md".into(), chunk_id: 0, score: 0.9 },
-            VectorResult { project: "p1".into(), file: "c.md".into(), chunk_id: 0, score: 0.8 },
+            VectorResult {
+                project: "p1".into(),
+                file: "b.md".into(),
+                chunk_id: 0,
+                score: 0.9,
+            },
+            VectorResult {
+                project: "p1".into(),
+                file: "c.md".into(),
+                chunk_id: 0,
+                score: 0.8,
+            },
         ];
 
         let fused = reciprocal_rank_fusion(&bm25, &vector, 60);

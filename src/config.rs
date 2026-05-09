@@ -79,13 +79,26 @@ pub const PROJECT_REPO_FILES: &[&str] = &[
 /// Canonical list of OS-sensitive paths that alcove must never read from or write to.
 /// Used by `is_blocked_system_path` to guard `ALCOVE_HOME`, vault links, and `DOCS_ROOT`.
 const BLOCKED_SYSTEM_PATHS: &[&str] = &[
-    "/etc", "/proc", "/sys", "/dev",
-    "/bin", "/sbin", "/lib", "/lib64",
-    "/usr/bin", "/usr/sbin", "/usr/lib",
-    "/boot", "/root",
-    "/run", "/var/run",
-    "/tmp", "/private/tmp",
-    "/private/etc", "/private/var/run", "/private/var/db",
+    "/etc",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/usr/bin",
+    "/usr/sbin",
+    "/usr/lib",
+    "/boot",
+    "/root",
+    "/run",
+    "/var/run",
+    "/tmp",
+    "/private/tmp",
+    "/private/etc",
+    "/private/var/run",
+    "/private/var/db",
 ];
 
 /// Returns `true` when `path` refers to (or is a parent of) a sensitive system directory.
@@ -94,7 +107,9 @@ const BLOCKED_SYSTEM_PATHS: &[&str] = &[
 /// exist yet (e.g. a future `ALCOVE_HOME` that will be created on first run).
 pub fn is_blocked_system_path(path: &Path) -> bool {
     if let Ok(canonical) = path.canonicalize() {
-        BLOCKED_SYSTEM_PATHS.iter().any(|b| canonical.starts_with(b))
+        BLOCKED_SYSTEM_PATHS
+            .iter()
+            .any(|b| canonical.starts_with(b))
     } else {
         let raw = path.to_string_lossy();
         BLOCKED_SYSTEM_PATHS.iter().any(|b| raw.starts_with(b))
@@ -360,7 +375,6 @@ pub struct DocConfig {
     pub memory: Option<MemoryConfig>,
 }
 
-
 impl DocConfig {
     /// Return a new config where `self` values take precedence and `base` fills
     /// any unset fields.  Used to layer project-level config over global config.
@@ -372,7 +386,10 @@ impl DocConfig {
             public: self.public.clone().or_else(|| base.public.clone()),
             diagram: self.diagram.clone().or_else(|| base.diagram.clone()),
             index: self.index.clone().or_else(|| base.index.clone()),
-            extra_extensions: self.extra_extensions.clone().or_else(|| base.extra_extensions.clone()),
+            extra_extensions: self
+                .extra_extensions
+                .clone()
+                .or_else(|| base.extra_extensions.clone()),
             #[cfg(feature = "alcove-full")]
             embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
             server: self.server.clone().or_else(|| base.server.clone()),
@@ -387,7 +404,12 @@ impl DocConfig {
 
     pub fn core_files(&self) -> Vec<String> {
         self.core.as_ref().map_or_else(
-            || DOC_REPO_REQUIRED.iter().map(std::string::ToString::to_string).collect(),
+            || {
+                DOC_REPO_REQUIRED
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect()
+            },
             |c| c.files.clone(),
         )
     }
@@ -406,7 +428,12 @@ impl DocConfig {
 
     pub fn public_files(&self) -> Vec<String> {
         self.public.as_ref().map_or_else(
-            || PROJECT_REPO_FILES.iter().map(std::string::ToString::to_string).collect(),
+            || {
+                PROJECT_REPO_FILES
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect()
+            },
             |c| c.files.clone(),
         )
     }
@@ -447,7 +474,11 @@ impl DocConfig {
         if is_doc_file(path) {
             return true;
         }
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
         self.extra_extensions
             .as_deref()
             .unwrap_or(&[])
@@ -499,11 +530,14 @@ pub fn migrate_legacy_paths() {
     match std::fs::rename(&legacy, &new_home) {
         Ok(_) => eprintln!(
             "[alcove] Migrated config directory: {} → {}",
-            legacy.display(), new_home.display()
+            legacy.display(),
+            new_home.display()
         ),
         Err(e) => eprintln!(
             "[alcove] Warning: could not migrate {} to {}: {}",
-            legacy.display(), new_home.display(), e
+            legacy.display(),
+            new_home.display(),
+            e
         ),
     }
 }
@@ -569,8 +603,11 @@ pub fn vault_embedding_config(vault_path: &Path) -> EmbeddingConfig {
 
 /// alcove docs_root 직하위 탐색/색인 대상에서 제외할 예약 디렉터리 이름을 판별한다.
 pub fn is_reserved_dir_name(name: &str) -> bool {
-    name.starts_with('.') || name.starts_with('_')
-        || name == "mcp" || name == "skills" || name == "scripts"
+    name.starts_with('.')
+        || name.starts_with('_')
+        || name == "mcp"
+        || name == "skills"
+        || name == "scripts"
 }
 
 /// Classify a doc file path using a provided config (enables project-level overrides).
@@ -609,9 +646,21 @@ pub struct TierClassifier {
 impl TierClassifier {
     pub fn new(cfg: &DocConfig) -> Self {
         Self {
-            core: cfg.core_files().into_iter().map(|f| f.to_lowercase()).collect(),
-            team: cfg.team_files().into_iter().map(|f| f.to_lowercase()).collect(),
-            public: cfg.public_files().into_iter().map(|f| f.to_lowercase()).collect(),
+            core: cfg
+                .core_files()
+                .into_iter()
+                .map(|f| f.to_lowercase())
+                .collect(),
+            team: cfg
+                .team_files()
+                .into_iter()
+                .map(|f| f.to_lowercase())
+                .collect(),
+            public: cfg
+                .public_files()
+                .into_iter()
+                .map(|f| f.to_lowercase())
+                .collect(),
         }
     }
 
@@ -1052,12 +1101,18 @@ mod tests {
     #[test]
     fn overlay_project_overrides_base() {
         let base = DocConfig {
-            diagram: Some(DiagramConfig { format: "mermaid".into() }),
-            core: Some(CategoryConfig { files: vec!["BASE.md".into()] }),
+            diagram: Some(DiagramConfig {
+                format: "mermaid".into(),
+            }),
+            core: Some(CategoryConfig {
+                files: vec!["BASE.md".into()],
+            }),
             ..DocConfig::default()
         };
         let project = DocConfig {
-            diagram: Some(DiagramConfig { format: "plantuml".into() }),
+            diagram: Some(DiagramConfig {
+                format: "plantuml".into(),
+            }),
             ..DocConfig::default()
         };
         let merged = project.overlay(&base);
@@ -1070,8 +1125,12 @@ mod tests {
     #[test]
     fn overlay_empty_project_uses_base() {
         let base = DocConfig {
-            core: Some(CategoryConfig { files: vec!["PRD.md".into()] }),
-            diagram: Some(DiagramConfig { format: "ascii".into() }),
+            core: Some(CategoryConfig {
+                files: vec!["PRD.md".into()],
+            }),
+            diagram: Some(DiagramConfig {
+                format: "ascii".into(),
+            }),
             ..DocConfig::default()
         };
         let merged = DocConfig::default().overlay(&base);
@@ -1082,7 +1141,9 @@ mod tests {
     #[test]
     fn classify_tier_with_custom_config() {
         let cfg = DocConfig {
-            core: Some(CategoryConfig { files: vec!["CUSTOM.md".into()] }),
+            core: Some(CategoryConfig {
+                files: vec!["CUSTOM.md".into()],
+            }),
             ..DocConfig::default()
         };
         assert_eq!(classify_tier_with("CUSTOM.md", &cfg), "doc-repo-required");
@@ -1220,7 +1281,10 @@ format = "plantuml"
     fn extra_extensions_toml_deserialization() {
         let toml = r#"extra_extensions = ["yaml", "json"]"#;
         let cfg: DocConfig = toml::from_str(toml).unwrap();
-        assert_eq!(cfg.extra_extensions.unwrap_or_default(), vec!["yaml", "json"]);
+        assert_eq!(
+            cfg.extra_extensions.unwrap_or_default(),
+            vec!["yaml", "json"]
+        );
     }
 
     // -- MemoryConfig --
@@ -1277,11 +1341,20 @@ reader_ttl_secs = 120
         let cfg = DocConfig::default();
         let classifier = TierClassifier::new(&cfg);
         let test_paths = [
-            "PRD.md", "prd.md", "ARCHITECTURE.md", "architecture.md",
-            "reports/weekly.md", "reports\\weekly.md",
-            "CHANGELOG.md", "README.md", "DESIGN.md", "design.md",
-            "random-notes.md", "foo.md",
-            "CONVENTIONS.md", "SECRETS_MAP.md",
+            "PRD.md",
+            "prd.md",
+            "ARCHITECTURE.md",
+            "architecture.md",
+            "reports/weekly.md",
+            "reports\\weekly.md",
+            "CHANGELOG.md",
+            "README.md",
+            "DESIGN.md",
+            "design.md",
+            "random-notes.md",
+            "foo.md",
+            "CONVENTIONS.md",
+            "SECRETS_MAP.md",
         ];
         for path in test_paths {
             assert_eq!(
@@ -1295,7 +1368,9 @@ reader_ttl_secs = 120
     #[test]
     fn tier_classifier_custom_config() {
         let cfg = DocConfig {
-            core: Some(CategoryConfig { files: vec!["CUSTOM.md".into()] }),
+            core: Some(CategoryConfig {
+                files: vec!["CUSTOM.md".into()],
+            }),
             ..DocConfig::default()
         };
         let classifier = TierClassifier::new(&cfg);
@@ -1314,7 +1389,9 @@ reader_ttl_secs = 120
         // Save original
         let orig = std::env::var("ALCOVE_HOME").ok();
         // SAFETY: test is single-threaded for this env var; guarded by mutex.
-        unsafe { std::env::set_var("ALCOVE_HOME", "/tmp"); }
+        unsafe {
+            std::env::set_var("ALCOVE_HOME", "/tmp");
+        }
         let result = alcove_home();
         // Should NOT return /tmp — it should fall back to default
         // (On macOS /tmp -> /private/tmp, both should be blocked)
@@ -1335,11 +1412,17 @@ reader_ttl_secs = 120
     #[test]
     fn memory_config_overlay_project_wins() {
         let base = DocConfig {
-            memory: Some(MemoryConfig { reader_ttl_secs: 300, ..MemoryConfig::default() }),
+            memory: Some(MemoryConfig {
+                reader_ttl_secs: 300,
+                ..MemoryConfig::default()
+            }),
             ..DocConfig::default()
         };
         let project = DocConfig {
-            memory: Some(MemoryConfig { reader_ttl_secs: 60, ..MemoryConfig::default() }),
+            memory: Some(MemoryConfig {
+                reader_ttl_secs: 60,
+                ..MemoryConfig::default()
+            }),
             ..DocConfig::default()
         };
         let merged = project.overlay(&base);

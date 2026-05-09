@@ -3,17 +3,17 @@ mod bench;
 mod cli;
 mod commands;
 mod config;
-mod setup;
-mod telemetry;
 #[cfg(feature = "alcove-full")]
 mod embedding;
 mod index;
-mod lint;
 #[cfg(feature = "alcove-server")]
 mod launchd;
+mod lint;
 mod mcp;
 mod policy;
 mod promote;
+mod setup;
+mod telemetry;
 mod tools;
 mod vault;
 
@@ -272,9 +272,11 @@ fn main() -> Result<()> {
             limit,
         }) => cli::cmd_search(&query, &scope, &mode, limit),
         Some(Commands::Lint { format }) => cli::cmd_lint(&format),
-        Some(Commands::Promote { source, project, mv }) => {
-            cli::cmd_promote(&source, project.as_deref(), mv)
-        }
+        Some(Commands::Promote {
+            source,
+            project,
+            mv,
+        }) => cli::cmd_promote(&source, project.as_deref(), mv),
         Some(Commands::Vault { subcmd }) => match subcmd {
             VaultCommands::Create { name } => {
                 let path = vault::create_vault(&name)?;
@@ -284,7 +286,11 @@ fn main() -> Result<()> {
             VaultCommands::Link { name, path } => {
                 let vault_path = vault::link_vault(&name, &path)?;
                 let _ = vault_path;
-                println!("  \u{2713} Linked vault '{}' \u{2192} {}", name, path.display());
+                println!(
+                    "  \u{2713} Linked vault '{}' \u{2192} {}",
+                    name,
+                    path.display()
+                );
                 Ok(())
             }
             VaultCommands::List => {
@@ -326,9 +332,15 @@ fn main() -> Result<()> {
                     let vec_status = result["vector_status"].as_str().unwrap_or("disabled");
                     let model = result["embedding_model"].as_str().unwrap_or("");
                     if vectors > 0 {
-                        println!("  ✓ Indexed vault '{}' ({} files, {} vectors via {})", name, files, vectors, model);
+                        println!(
+                            "  ✓ Indexed vault '{}' ({} files, {} vectors via {})",
+                            name, files, vectors, model
+                        );
                     } else if vec_status != "disabled" {
-                        println!("  ✓ Indexed vault '{}' ({} files, vectors: {})", name, files, vec_status);
+                        println!(
+                            "  ✓ Indexed vault '{}' ({} files, vectors: {})",
+                            name, files, vec_status
+                        );
                     } else {
                         println!("  ✓ Indexed vault '{}' ({} files)", name, files);
                     }
@@ -355,7 +367,10 @@ fn main() -> Result<()> {
                     let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
                     let model = result["embedding_model"].as_str().unwrap_or("");
                     if vectors > 0 {
-                        println!("  \u{2713} Rebuilt vault '{}' ({} files, {} vectors via {})", name, files, vectors, model);
+                        println!(
+                            "  \u{2713} Rebuilt vault '{}' ({} files, {} vectors via {})",
+                            name, files, vectors, model
+                        );
                     } else {
                         println!("  \u{2713} Rebuilt vault '{}' ({} files)", name, files);
                     }
@@ -366,7 +381,10 @@ fn main() -> Result<()> {
                         let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
                         let model = result["embedding_model"].as_str().unwrap_or("");
                         if vectors > 0 {
-                            println!("  \u{2713} Rebuilt vault '{}' ({} files, {} vectors via {})", v.name, files, vectors, model);
+                            println!(
+                                "  \u{2713} Rebuilt vault '{}' ({} files, {} vectors via {})",
+                                v.name, files, vectors, model
+                            );
                         } else {
                             println!("  \u{2713} Rebuilt vault '{}' ({} files)", v.name, files);
                         }
@@ -396,25 +414,30 @@ fn main() -> Result<()> {
             output,
             queries,
             output_file,
-        }) => bench::cmd_bench(&metrics, &scope, &output, queries.as_deref(), output_file.as_deref()),
+        }) => bench::cmd_bench(
+            &metrics,
+            &scope,
+            &output,
+            queries.as_deref(),
+            output_file.as_deref(),
+        ),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Serve { host, port, token }) => {
             let cfg = config::load_config();
-            let docs_root = cfg
-                .docs_root()
-                .ok_or_else(|| anyhow::anyhow!("docs_root not configured. Run 'alcove setup' first."))?;
-            
+            let docs_root = cfg.docs_root().ok_or_else(|| {
+                anyhow::anyhow!("docs_root not configured. Run 'alcove setup' first.")
+            })?;
+
             // Resolve host: CLI flag > config.toml > default (127.0.0.1)
             let srv_cfg = cfg.server_config();
             let bind_host = host.as_deref().unwrap_or(&srv_cfg.host);
             // Resolve port: CLI flag > config.toml > default (57384)
             let bind_port = port.unwrap_or(srv_cfg.port);
             // Resolve token: CLI flag > config.toml > none
-            let resolved_token = token.as_ref()
+            let resolved_token = token
+                .as_ref()
                 .cloned()
-                .or_else(|| {
-                    cfg.server.as_ref().and_then(|s| s.token.clone())
-                });
+                .or_else(|| cfg.server.as_ref().and_then(|s| s.token.clone()));
 
             println!("{}", console::style("Starting Alcove RAG server...").bold());
             println!(
@@ -425,14 +448,20 @@ fn main() -> Result<()> {
             println!(
                 "  {} Bind: {}:{}",
                 console::style("→").dim(),
-                bind_host, bind_port
+                bind_host,
+                bind_port
             );
             println!();
 
             // Create tokio runtime for async server
             tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime")
-                .block_on(server::run_server(docs_root, bind_host, bind_port, resolved_token))
+                .block_on(server::run_server(
+                    docs_root,
+                    bind_host,
+                    bind_port,
+                    resolved_token,
+                ))
         }
     }
 }
@@ -497,14 +526,12 @@ fn proxy_request(base: &str, line: &str, token: Option<&str>) -> Option<String> 
 fn serve() -> Result<()> {
     let proxy_base = detect_proxy_target();
     // Token: env var > config.toml
-    let token: Option<String> = std::env::var("ALCOVE_TOKEN")
-        .ok()
-        .or_else(|| {
-            config::load_config()
-                .server
-                .as_ref()
-                .and_then(|s| s.token.clone())
-        });
+    let token: Option<String> = std::env::var("ALCOVE_TOKEN").ok().or_else(|| {
+        config::load_config()
+            .server
+            .as_ref()
+            .and_then(|s| s.token.clone())
+    });
 
     // Fire startup telemetry in background to avoid blocking stdin loop
     std::thread::spawn(|| {

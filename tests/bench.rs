@@ -8,7 +8,10 @@
 use std::process::Command;
 
 fn alcove_bin() -> String {
-    format!("{}/debug/alcove", std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string()))
+    format!(
+        "{}/debug/alcove",
+        std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string())
+    )
 }
 
 #[test]
@@ -20,10 +23,19 @@ fn bench_help_succeeds() {
         .expect("failed to run alcove bench --help");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "alcove bench --help should succeed");
-    assert!(stdout.contains("--metrics"), "help should mention --metrics");
+    assert!(
+        output.status.success(),
+        "alcove bench --help should succeed"
+    );
+    assert!(
+        stdout.contains("--metrics"),
+        "help should mention --metrics"
+    );
     assert!(stdout.contains("--output"), "help should mention --output");
-    assert!(stdout.contains("--queries"), "help should mention --queries");
+    assert!(
+        stdout.contains("--queries"),
+        "help should mention --queries"
+    );
     assert!(stdout.contains("--scope"), "help should mention --scope");
 }
 
@@ -39,7 +51,9 @@ fn bench_without_docs_root_errors() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "bench without docs should fail");
     assert!(
-        stderr.contains("setup") || stderr.contains("not found") || stderr.contains("not configured"),
+        stderr.contains("setup")
+            || stderr.contains("not found")
+            || stderr.contains("not configured"),
         "error should mention setup or missing config, got: {stderr}"
     );
 }
@@ -59,7 +73,9 @@ fn bench_with_custom_queries_path_errors_when_missing() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success());
     assert!(
-        stderr.contains("setup") || stderr.contains("not found") || stderr.contains("not configured"),
+        stderr.contains("setup")
+            || stderr.contains("not found")
+            || stderr.contains("not configured"),
         "should report config error, got: {stderr}"
     );
 }

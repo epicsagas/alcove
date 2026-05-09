@@ -8,15 +8,8 @@
 pub use crate::setup::cmd_setup;
 
 pub use crate::commands::{
-    cmd_doctor,
-    cmd_index,
-    cmd_lint,
-    cmd_promote,
-    cmd_rebuild,
-    cmd_search,
-    cmd_token,
-    cmd_uninstall,
-    cmd_validate,
+    cmd_doctor, cmd_index, cmd_lint, cmd_promote, cmd_rebuild, cmd_search, cmd_token,
+    cmd_uninstall, cmd_validate,
 };
 
 #[cfg(feature = "alcove-full")]

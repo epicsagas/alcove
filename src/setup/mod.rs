@@ -6,13 +6,13 @@ use console::style;
 use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
 use rust_i18n::t;
 
-use crate::config::{
-    CategoryConfig, DiagramConfig, DOC_REPO_REQUIRED, DOC_REPO_SUPPLEMENTARY, DocConfig,
-    PROJECT_REPO_FILES, config_path, default_docs_root, load_config,
-};
 use crate::agents::{
-    McpConfig, agents, expand_path, install_skill_to,
-    write_codex_mcp, write_json_mcp, write_opencode_mcp,
+    McpConfig, agents, expand_path, install_skill_to, write_codex_mcp, write_json_mcp,
+    write_opencode_mcp,
+};
+use crate::config::{
+    CategoryConfig, DOC_REPO_REQUIRED, DOC_REPO_SUPPLEMENTARY, DiagramConfig, DocConfig,
+    PROJECT_REPO_FILES, config_path, default_docs_root, load_config,
 };
 
 // ---------------------------------------------------------------------------
@@ -55,9 +55,12 @@ pub(crate) fn save_docs_root(path: &Path) -> Result<()> {
 }
 
 pub(crate) fn save_docs_root_to(cfg_path: &Path, path: &Path) -> Result<()> {
-    let parent = cfg_path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("config path has no parent directory: {}", cfg_path.display()))?;
+    let parent = cfg_path.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "config path has no parent directory: {}",
+            cfg_path.display()
+        )
+    })?;
     fs::create_dir_all(parent)?;
 
     if cfg_path.exists() {
@@ -68,7 +71,10 @@ pub(crate) fn save_docs_root_to(cfg_path: &Path, path: &Path) -> Result<()> {
                 .lines()
                 .map(|l| {
                     if l.trim_start().starts_with("docs_root") {
-                        format!("docs_root = {}", toml::Value::String(path.display().to_string()))
+                        format!(
+                            "docs_root = {}",
+                            toml::Value::String(path.display().to_string())
+                        )
                     } else {
                         l.to_string()
                     }
@@ -78,11 +84,21 @@ pub(crate) fn save_docs_root_to(cfg_path: &Path, path: &Path) -> Result<()> {
             fs::write(cfg_path, updated)?;
         } else {
             // Prepend
-            let updated = format!("docs_root = {}\n\n{}", toml::Value::String(path.display().to_string()), content);
+            let updated = format!(
+                "docs_root = {}\n\n{}",
+                toml::Value::String(path.display().to_string()),
+                content
+            );
             fs::write(cfg_path, updated)?;
         }
     } else {
-        fs::write(cfg_path, format!("docs_root = {}\n", toml::Value::String(path.display().to_string())))?;
+        fs::write(
+            cfg_path,
+            format!(
+                "docs_root = {}\n",
+                toml::Value::String(path.display().to_string())
+            ),
+        )?;
     }
     Ok(())
 }
@@ -253,7 +269,6 @@ struct SetupState {
     selected_agents: Vec<usize>,
 }
 
-
 /// Print step header with progress indicator
 fn print_step_header(step: &Step) {
     println!();
@@ -267,10 +282,30 @@ fn print_step_header(step: &Step) {
 /// Embedding model options for setup wizard
 #[cfg(feature = "alcove-full")]
 const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
-    ("MultilingualE5Small", "Default, balanced (100+ langs, ~235MB)", 384, 235),
-    ("SnowflakeArcticEmbedXS", "Smallest, fastest (~30MB)", 384, 30),
-    ("SnowflakeArcticEmbedXSQ", "Quantized, minimal disk (~15MB)", 384, 15),
-    ("SnowflakeArcticEmbedS", "Quality/size balance (~130MB)", 384, 130),
+    (
+        "MultilingualE5Small",
+        "Default, balanced (100+ langs, ~235MB)",
+        384,
+        235,
+    ),
+    (
+        "SnowflakeArcticEmbedXS",
+        "Smallest, fastest (~30MB)",
+        384,
+        30,
+    ),
+    (
+        "SnowflakeArcticEmbedXSQ",
+        "Quantized, minimal disk (~15MB)",
+        384,
+        15,
+    ),
+    (
+        "SnowflakeArcticEmbedS",
+        "Quality/size balance (~130MB)",
+        384,
+        130,
+    ),
     ("MultilingualE5Base", "Large scale docs (~555MB)", 768, 555),
     ("disabled", "Disable embedding (BM25 only)", 0, 0),
 ];
@@ -309,7 +344,10 @@ fn step_docs_root(state: &mut SetupState) -> Result<StepResult> {
     let default_path = current.as_ref().unwrap_or(&fallback);
 
     // Add back option info
-    println!("{}", style("  (Press Enter to confirm, or type '..' to go back)").dim());
+    println!(
+        "{}",
+        style("  (Press Enter to confirm, or type '..' to go back)").dim()
+    );
 
     let input: String = Input::with_theme(&theme)
         .with_prompt(prompt.as_ref())
@@ -363,13 +401,20 @@ fn step_categories(state: &mut SetupState) -> Result<StepResult> {
 }
 
 /// Modified category selection that supports going back
-fn select_categories_with_back(state: &SetupState) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
+fn select_categories_with_back(
+    state: &SetupState,
+) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
     // Use existing state or load from config
     let cfg = load_fresh_config();
     let existing: [Vec<String>; 3] = [
         if state.core_files.is_empty() {
             cfg.as_ref().map_or_else(
-                || DOC_REPO_REQUIRED.iter().map(std::string::ToString::to_string).collect(),
+                || {
+                    DOC_REPO_REQUIRED
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect()
+                },
                 crate::config::DocConfig::core_files,
             )
         } else {
@@ -377,7 +422,12 @@ fn select_categories_with_back(state: &SetupState) -> Result<(Vec<String>, Vec<S
         },
         if state.team_files.is_empty() {
             cfg.as_ref().map_or_else(
-                || DOC_REPO_SUPPLEMENTARY.iter().map(std::string::ToString::to_string).collect(),
+                || {
+                    DOC_REPO_SUPPLEMENTARY
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect()
+                },
                 crate::config::DocConfig::team_files,
             )
         } else {
@@ -385,7 +435,12 @@ fn select_categories_with_back(state: &SetupState) -> Result<(Vec<String>, Vec<S
         },
         if state.public_files.is_empty() {
             cfg.as_ref().map_or_else(
-                || PROJECT_REPO_FILES.iter().map(std::string::ToString::to_string).collect(),
+                || {
+                    PROJECT_REPO_FILES
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect()
+                },
                 crate::config::DocConfig::public_files,
             )
         } else {
@@ -441,7 +496,7 @@ fn step_diagram(state: &mut SetupState) -> Result<StepResult> {
         &DIAGRAM_FORMATS
             .iter()
             .map(|(_, l)| l.to_string())
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>(),
     );
 
     let diagram_default = DIAGRAM_FORMATS
@@ -481,7 +536,9 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
     #[cfg(feature = "alcove-full")]
     {
         // Check current config
-        let current_model = state.embedding_section.as_ref()
+        let current_model = state
+            .embedding_section
+            .as_ref()
             .and_then(|s| {
                 s.lines()
                     .find_map(|l| l.strip_prefix("model = ").map(|v| v.trim_matches('"')))
@@ -504,7 +561,11 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
             let model_labels: Vec<String> = EMBEDDING_OPTIONS
                 .iter()
                 .map(|(name, desc, dim, size)| {
-                    let marker = if *name == current_model { " [current]" } else { "" };
+                    let marker = if *name == current_model {
+                        " [current]"
+                    } else {
+                        ""
+                    };
                     if *size == 0 {
                         format!("{} — {}{}", name, desc, marker)
                     } else {
@@ -580,7 +641,12 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
             );
 
             let default_cache_dir = dirs::home_dir()
-                .map(|p| p.join(".alcove").join("models").to_string_lossy().to_string())
+                .map(|p| {
+                    p.join(".alcove")
+                        .join("models")
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_else(|| "~/.alcove/models".to_string());
 
             let model_toml = toml::Value::String(model_name.to_string()).to_string();
@@ -647,11 +713,16 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
     print_step_header(&Step::Server);
 
     // Resolve current values: existing state > config.toml > defaults
-    let (current_host, current_port) = state.server_section.as_ref()
+    let (current_host, current_port) = state
+        .server_section
+        .as_ref()
         .and_then(|s| {
-            let host = s.lines()
-                .find_map(|l| l.strip_prefix("host = ").map(|v| v.trim_matches('"').to_string()));
-            let port = s.lines()
+            let host = s.lines().find_map(|l| {
+                l.strip_prefix("host = ")
+                    .map(|v| v.trim_matches('"').to_string())
+            });
+            let port = s
+                .lines()
                 .find_map(|l| l.strip_prefix("port = ").map(|v| v.trim().to_string()));
             host.zip(port)
         })
@@ -670,7 +741,11 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
             SERVER_HOST_OPTIONS
                 .iter()
                 .map(|(addr, desc)| {
-                    let marker = if *addr == current_host { " [current]" } else { "" };
+                    let marker = if *addr == current_host {
+                        " [current]"
+                    } else {
+                        ""
+                    };
                     format!("{} — {}{}", addr, desc, marker)
                 })
                 .collect::<Vec<_>>(),
@@ -695,7 +770,10 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
         let selected_host = SERVER_HOST_OPTIONS[host_idx - 1].0;
 
         // ── Port input ──
-        println!("{}", style("  (Press Enter to confirm, or '..' to go back)").dim());
+        println!(
+            "{}",
+            style("  (Press Enter to confirm, or '..' to go back)").dim()
+        );
         let port_input: String = Input::with_theme(&ColorfulTheme::default())
             .with_prompt("Listen port")
             .default(current_port.clone())
@@ -708,21 +786,31 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
         let port: u16 = match port_input.trim().parse() {
             Ok(p) => p,
             Err(_) => {
-                println!("  {} Invalid port number. Please enter 1-65535.", style("⚠").yellow());
+                println!(
+                    "  {} Invalid port number. Please enter 1-65535.",
+                    style("⚠").yellow()
+                );
                 continue;
             }
         };
 
         if port == 0 {
-            println!("  {} Port 0 is not valid. Please enter 1-65535.", style("⚠").yellow());
+            println!(
+                "  {} Port 0 is not valid. Please enter 1-65535.",
+                style("⚠").yellow()
+            );
             continue;
         }
 
         // ── Token configuration ──
-        let existing_token = state.server_section.as_ref()
+        let existing_token = state
+            .server_section
+            .as_ref()
             .and_then(|s| {
-                s.lines()
-                    .find_map(|l| l.strip_prefix("token = ").map(|v| v.trim_matches('"').to_string()))
+                s.lines().find_map(|l| {
+                    l.strip_prefix("token = ")
+                        .map(|v| v.trim_matches('"').to_string())
+                })
             })
             .or_else(|| {
                 load_fresh_config()
@@ -880,14 +968,18 @@ fn step_agents(state: &mut SetupState) -> Result<StepResult> {
         let defaults: Vec<bool> = if state.selected_agents.is_empty() {
             vec![false; names.len()]
         } else {
-            names.iter()
+            names
+                .iter()
                 .enumerate()
                 .map(|(i, _)| state.selected_agents.contains(&i))
                 .collect()
         };
 
         let selected = MultiSelect::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!("{} (select at least 1)", t!("setup.agents_prompt").as_ref()))
+            .with_prompt(format!(
+                "{} (select at least 1)",
+                t!("setup.agents_prompt").as_ref()
+            ))
             .items(&names)
             .defaults(&defaults)
             .interact()?;
@@ -920,10 +1012,16 @@ fn step_telemetry() -> Result<StepResult> {
     crate::telemetry::write_consent(level);
     match level {
         crate::telemetry::ConsentLevel::On => {
-            println!("  {} Telemetry enabled. To opt out later: alcove telemetry off", style("✓").green());
+            println!(
+                "  {} Telemetry enabled. To opt out later: alcove telemetry off",
+                style("✓").green()
+            );
         }
         crate::telemetry::ConsentLevel::Off => {
-            println!("  {} Telemetry disabled. To enable later: alcove telemetry on", style("✓").green());
+            println!(
+                "  {} Telemetry disabled. To enable later: alcove telemetry on",
+                style("✓").green()
+            );
         }
     }
     Ok(StepResult::Continue)
@@ -934,7 +1032,10 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
     print_step_header(&Step::Summary);
 
     let docs_root = state.docs_root.clone().unwrap_or_else(default_docs_root);
-    let diagram_format = state.diagram_format.clone().unwrap_or_else(|| "mermaid".to_string());
+    let diagram_format = state
+        .diagram_format
+        .clone()
+        .unwrap_or_else(|| "mermaid".to_string());
 
     // Save config
     save_full_config(
@@ -953,11 +1054,15 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
 
     // Compute MCP connection mode: enable_server → HTTP direct, else stdio
     let server_url: Option<String> = if state.enable_server {
-        state.server_section.as_ref()
+        state
+            .server_section
+            .as_ref()
             .and_then(|s| {
-                let host = s.lines()
+                let host = s
+                    .lines()
                     .find_map(|l| l.strip_prefix("host = ").map(|v| v.trim_matches('"')));
-                let port = s.lines()
+                let port = s
+                    .lines()
                     .find_map(|l| l.strip_prefix("port = ").map(|v| v.trim()));
                 host.zip(port)
             })
@@ -969,7 +1074,10 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
 
     // Extract stored token from server_section for shell rc seeding
     let stored_token: Option<String> = state.server_section.as_ref().and_then(|s| {
-        s.lines().find_map(|l| l.strip_prefix("token = ").map(|v| v.trim_matches('"').to_string()))
+        s.lines().find_map(|l| {
+            l.strip_prefix("token = ")
+                .map(|v| v.trim_matches('"').to_string())
+        })
     });
 
     for &idx in &state.selected_agents {
@@ -978,39 +1086,76 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
         println!("  {}", style(agent.name).cyan());
 
         // Compute per-agent token reference string (None when no token configured).
-        let token_ref: Option<String> = stored_token.as_deref()
+        let token_ref: Option<String> = stored_token
+            .as_deref()
             .and_then(|_| agent.env_syntax.render("ALCOVE_TOKEN"));
 
         // MCP
         match &agent.mcp_config {
-            McpConfig::Json { path, server_key, omit_type } => {
+            McpConfig::Json {
+                path,
+                server_key,
+                omit_type,
+            } => {
                 let p = expand_path(path);
-                write_json_mcp(&p, server_key, &bin, &docs_root, server_url.as_deref(), token_ref.as_deref(), *omit_type)?;
+                write_json_mcp(
+                    &p,
+                    server_key,
+                    &bin,
+                    &docs_root,
+                    server_url.as_deref(),
+                    token_ref.as_deref(),
+                    *omit_type,
+                )?;
                 println!(
                     "  {} {} ({})",
                     style("✓").green(),
                     t!("setup.mcp_set", path = path),
-                    if server_url.is_some() { "HTTP" } else { "stdio" }
+                    if server_url.is_some() {
+                        "HTTP"
+                    } else {
+                        "stdio"
+                    }
                 );
             }
             McpConfig::OpenCode { path } => {
                 let p = expand_path(path);
-                write_opencode_mcp(&p, &bin, &docs_root, server_url.as_deref(), token_ref.as_deref())?;
+                write_opencode_mcp(
+                    &p,
+                    &bin,
+                    &docs_root,
+                    server_url.as_deref(),
+                    token_ref.as_deref(),
+                )?;
                 println!(
                     "  {} {} ({})",
                     style("✓").green(),
                     t!("setup.mcp_set", path = path),
-                    if server_url.is_some() { "HTTP" } else { "stdio" }
+                    if server_url.is_some() {
+                        "HTTP"
+                    } else {
+                        "stdio"
+                    }
                 );
             }
             McpConfig::Codex { path } => {
                 let p = expand_path(path);
-                write_codex_mcp(&p, &bin, &docs_root, server_url.as_deref(), token_ref.as_deref())?;
+                write_codex_mcp(
+                    &p,
+                    &bin,
+                    &docs_root,
+                    server_url.as_deref(),
+                    token_ref.as_deref(),
+                )?;
                 println!(
                     "  {} {} ({})",
                     style("✓").green(),
                     t!("setup.mcp_set", path = path),
-                    if server_url.is_some() { "HTTP" } else { "stdio" }
+                    if server_url.is_some() {
+                        "HTTP"
+                    } else {
+                        "stdio"
+                    }
                 );
             }
         }
@@ -1088,9 +1233,11 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
     // Show server status
     match &state.server_section {
         Some(section) => {
-            let host = section.lines()
+            let host = section
+                .lines()
                 .find_map(|l| l.strip_prefix("host = ").map(|v| v.trim_matches('"')));
-            let port = section.lines()
+            let port = section
+                .lines()
                 .find_map(|l| l.strip_prefix("port = ").map(|v| v.trim()));
 
             #[cfg(all(feature = "alcove-server", target_os = "macos"))]
@@ -1274,21 +1421,32 @@ pub(crate) fn save_full_config_to(
         server_section,
     }: FullConfigParams<'_>,
 ) -> Result<()> {
-    let parent = cfg_path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("config path has no parent directory: {}", cfg_path.display()))?;
+    let parent = cfg_path.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "config path has no parent directory: {}",
+            cfg_path.display()
+        )
+    })?;
     fs::create_dir_all(parent)?;
 
     let base = DocConfig {
         docs_root: Some(docs_root.display().to_string()),
-        core: Some(CategoryConfig { files: core_files.to_vec() }),
-        team: Some(CategoryConfig { files: team_files.to_vec() }),
-        public: Some(CategoryConfig { files: public_files.to_vec() }),
-        diagram: Some(DiagramConfig { format: diagram_format.to_string() }),
+        core: Some(CategoryConfig {
+            files: core_files.to_vec(),
+        }),
+        team: Some(CategoryConfig {
+            files: team_files.to_vec(),
+        }),
+        public: Some(CategoryConfig {
+            files: public_files.to_vec(),
+        }),
+        diagram: Some(DiagramConfig {
+            format: diagram_format.to_string(),
+        }),
         ..DocConfig::default()
     };
-    let mut content = toml::to_string(&base)
-        .map_err(|e| anyhow::anyhow!("failed to serialize config: {}", e))?;
+    let mut content =
+        toml::to_string(&base).map_err(|e| anyhow::anyhow!("failed to serialize config: {}", e))?;
 
     // Guard: DocConfig::default() must not emit [embedding] or [server] sections,
     // otherwise the manually appended sections below will create duplicate headers.
@@ -1323,13 +1481,15 @@ pub(crate) fn save_full_config_to(
 
 /// Generate a random bearer token prefixed with `alcove-`.
 pub(crate) fn generate_token() -> String {
-    use std::fmt::Write;
     use rand::RngExt;
+    use std::fmt::Write;
     let bytes: [u8; 16] = rand::rng().random();
-    let hex = bytes.iter().fold(String::with_capacity(32), |mut s: String, b| {
-        let _ = write!(s, "{b:02x}");
-        s
-    });
+    let hex = bytes
+        .iter()
+        .fold(String::with_capacity(32), |mut s: String, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        });
     format!("alcove-{hex}")
 }
 
@@ -1636,7 +1796,10 @@ mod tests {
     #[test]
     fn generate_token_has_correct_prefix_and_length() {
         let token = generate_token();
-        assert!(token.starts_with("alcove-"), "expected 'alcove-' prefix, got: {token}");
+        assert!(
+            token.starts_with("alcove-"),
+            "expected 'alcove-' prefix, got: {token}"
+        );
         assert_eq!(token.len(), 39, "unexpected token length: {token}");
     }
 

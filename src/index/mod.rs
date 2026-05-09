@@ -1,9 +1,9 @@
-pub mod cache;
-pub mod lock;
-pub mod schema;
-pub mod chunker;
-pub mod reader;
 pub mod builder;
+pub mod cache;
+pub mod chunker;
+pub mod lock;
+pub mod reader;
+pub mod schema;
 pub mod searcher;
 
 // ---------------------------------------------------------------------------
@@ -12,22 +12,12 @@ pub mod searcher;
 // ---------------------------------------------------------------------------
 
 pub use builder::{
-    build_index,
-    rebuild_index,
-    build_index_bm25_only,
-    build_vault_index,
+    build_all_vault_indexes, build_index, build_index_bm25_only, build_vault_index,
+    check_doc_changes, ensure_index_fresh, index_exists, is_index_stale, rebuild_index,
     rebuild_vault_index,
-    build_all_vault_indexes,
-    check_doc_changes,
-    ensure_index_fresh,
-    index_exists,
-    is_index_stale,
 };
 
-pub use searcher::{
-    search_indexed,
-    search_vault,
-};
+pub use searcher::{search_indexed, search_vault};
 
 #[cfg(feature = "alcove-full")]
 pub use searcher::search_hybrid;
@@ -40,25 +30,25 @@ pub use cache::CacheCategory;
 
 // Internal symbols used only by the tests module below.
 #[cfg(test)]
+pub(crate) use builder::IndexMeta;
+#[cfg(test)]
 pub(crate) use builder::build_index_inner;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use builder::build_index_unlocked;
 #[cfg(test)]
-pub(crate) use builder::IndexMeta;
-#[cfg(test)]
-pub(crate) use lock::{index_dir, lock_file, try_acquire_lock, is_locked, release_lock};
-#[cfg(test)]
-pub(crate) use schema::{SCHEMA_VERSION, register_ngram_tokenizer};
+pub(crate) use cache::{get_cached_reader, reader_cache_for};
 #[cfg(test)]
 #[allow(unused_imports)]
-pub(crate) use chunker::{chunk_content, extract_title, Chunk};
+pub(crate) use chunker::{Chunk, chunk_content, extract_title};
+#[cfg(test)]
+pub(crate) use lock::{index_dir, is_locked, lock_file, release_lock, try_acquire_lock};
 #[cfg(test)]
 pub(crate) use reader::read_file_content;
 #[cfg(test)]
-pub(crate) use cache::{reader_cache_for, get_cached_reader};
+pub(crate) use schema::{SCHEMA_VERSION, register_ngram_tokenizer};
 #[cfg(test)]
-pub(crate) use searcher::{sanitize_query, build_search_query, apply_project_diversity};
+pub(crate) use searcher::{apply_project_diversity, build_search_query, sanitize_query};
 
 // ---------------------------------------------------------------------------
 // Tests (verbatim from original index.rs)
@@ -248,7 +238,10 @@ mod tests {
     #[test]
     fn is_index_fresh_after_build() {
         let root = shared_indexed_root();
-        assert!(!is_index_stale(root), "just-built index should not be stale");
+        assert!(
+            !is_index_stale(root),
+            "just-built index should not be stale"
+        );
     }
 
     #[test]
@@ -434,7 +427,10 @@ mod tests {
         let matches = result["matches"].as_array().unwrap();
         assert!(!matches.is_empty());
         for m in matches {
-            assert!(m.get("chunk_id").is_some(), "each match must have a chunk_id field");
+            assert!(
+                m.get("chunk_id").is_some(),
+                "each match must have a chunk_id field"
+            );
             assert!(m["chunk_id"].is_number(), "chunk_id must be numeric");
         }
     }
@@ -632,8 +628,8 @@ mod tests {
     #[cfg(feature = "alcove-full")]
     #[test]
     fn search_hybrid_returns_bm25_only_when_embedding_not_ready() {
-        use crate::embedding::EmbeddingService;
         use crate::config::EmbeddingConfig;
+        use crate::embedding::EmbeddingService;
 
         let root = shared_indexed_root();
         let svc = EmbeddingService::new(EmbeddingConfig {
@@ -645,7 +641,10 @@ mod tests {
         });
 
         let result = search_hybrid(root, "OAuth", &svc, 5, None).unwrap();
-        assert_eq!(result["mode"], "bm25-only", "expected bm25-only when embedding is not ready");
+        assert_eq!(
+            result["mode"], "bm25-only",
+            "expected bm25-only when embedding is not ready"
+        );
     }
 
     // B4: vector store open/search errors must be surfaced in embedding_status,
@@ -653,8 +652,8 @@ mod tests {
     #[cfg(feature = "alcove-full")]
     #[test]
     fn search_hybrid_vector_store_error_reflected_in_embedding_status() {
-        use crate::embedding::EmbeddingService;
         use crate::config::EmbeddingConfig;
+        use crate::embedding::EmbeddingService;
 
         let root = shared_indexed_root();
         let svc = EmbeddingService::new(EmbeddingConfig {
@@ -671,8 +670,10 @@ mod tests {
         if mode == "hybrid-bm25-vector" {
             assert_eq!(status, "ready");
         } else {
-            assert_ne!(status, "ready",
-                "embedding_status should reflect the failure reason, not 'ready'");
+            assert_ne!(
+                status, "ready",
+                "embedding_status should reflect the failure reason, not 'ready'"
+            );
         }
     }
 
@@ -719,12 +720,20 @@ mod tests {
         // Create minimal index content for project.
         let proj_docs = tmp_project.path().join("docs");
         fs::create_dir_all(&proj_docs).unwrap();
-        fs::write(proj_docs.join("proj.md"), "# Project doc\nHello project world.\n").unwrap();
+        fs::write(
+            proj_docs.join("proj.md"),
+            "# Project doc\nHello project world.\n",
+        )
+        .unwrap();
 
         // Create minimal index content for vault.
         let vault_docs = tmp_vault.path().join("docs");
         fs::create_dir_all(&vault_docs).unwrap();
-        fs::write(vault_docs.join("vault.md"), "# Vault doc\nHello vault world.\n").unwrap();
+        fs::write(
+            vault_docs.join("vault.md"),
+            "# Vault doc\nHello vault world.\n",
+        )
+        .unwrap();
 
         // Build indexes.
         let proj_index_dir = index_dir(tmp_project.path());
@@ -746,15 +755,27 @@ mod tests {
         // Verify isolation: project cache has the project entry but not the vault entry.
         {
             let proj_cache = reader_cache_for(CacheCategory::Project).lock().unwrap();
-            assert!(proj_cache.contains_key(&proj_index_dir), "project cache must contain project index");
-            assert!(!proj_cache.contains_key(&vault_index_dir), "project cache must not contain vault index");
+            assert!(
+                proj_cache.contains_key(&proj_index_dir),
+                "project cache must contain project index"
+            );
+            assert!(
+                !proj_cache.contains_key(&vault_index_dir),
+                "project cache must not contain vault index"
+            );
         }
 
         // Verify isolation: vault cache has the vault entry but not the project entry.
         {
             let vault_cache = reader_cache_for(CacheCategory::Vault).lock().unwrap();
-            assert!(vault_cache.contains_key(&vault_index_dir), "vault cache must contain vault index");
-            assert!(!vault_cache.contains_key(&proj_index_dir), "vault cache must not contain project index");
+            assert!(
+                vault_cache.contains_key(&vault_index_dir),
+                "vault cache must contain vault index"
+            );
+            assert!(
+                !vault_cache.contains_key(&proj_index_dir),
+                "vault cache must not contain project index"
+            );
         }
     }
 
@@ -914,22 +935,34 @@ mod tests {
 
     #[test]
     fn test_extract_title_h1() {
-        assert_eq!(extract_title("# My Title\nSome text", "doc.md", 0), "My Title");
+        assert_eq!(
+            extract_title("# My Title\nSome text", "doc.md", 0),
+            "My Title"
+        );
     }
 
     #[test]
     fn test_extract_title_h2() {
-        assert_eq!(extract_title("## Sub Title\nSome text", "doc.md", 0), "Sub Title");
+        assert_eq!(
+            extract_title("## Sub Title\nSome text", "doc.md", 0),
+            "Sub Title"
+        );
     }
 
     #[test]
     fn test_extract_title_h3() {
-        assert_eq!(extract_title("### Deep Title\nSome text", "doc.md", 0), "Deep Title");
+        assert_eq!(
+            extract_title("### Deep Title\nSome text", "doc.md", 0),
+            "Deep Title"
+        );
     }
 
     #[test]
     fn test_extract_title_no_heading_falls_back_to_filename() {
-        assert_eq!(extract_title("Just some text\nNo heading here", "README.md", 0), "README");
+        assert_eq!(
+            extract_title("Just some text\nNo heading here", "README.md", 0),
+            "README"
+        );
     }
 
     #[test]
@@ -953,7 +986,10 @@ mod tests {
 
     #[test]
     fn test_extract_title_heading_with_extra_whitespace() {
-        assert_eq!(extract_title("  #   Spaced Title  \nBody", "doc.md", 0), "Spaced Title");
+        assert_eq!(
+            extract_title("  #   Spaced Title  \nBody", "doc.md", 0),
+            "Spaced Title"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -962,10 +998,10 @@ mod tests {
 
     #[test]
     fn test_build_search_query_returns_non_null() {
-        use tantivy::schema::{Schema, TEXT};
-        use tantivy::{Index, TantivyDocument};
         use tantivy::collector::TopDocs;
+        use tantivy::schema::{Schema, TEXT};
         use tantivy::{DocAddress, Score};
+        use tantivy::{Index, TantivyDocument};
 
         let mut schema_builder = Schema::builder();
         let body_field = schema_builder.add_text_field("body", TEXT);
@@ -991,14 +1027,17 @@ mod tests {
         let top_docs: Vec<(Score, DocAddress)> = searcher
             .search(&query, &TopDocs::with_limit(10).order_by_score())
             .unwrap();
-        assert!(!top_docs.is_empty(), "query should match the indexed document");
+        assert!(
+            !top_docs.is_empty(),
+            "query should match the indexed document"
+        );
     }
 
     #[test]
     fn test_build_search_query_empty_sanitized() {
-        use tantivy::schema::{Schema, TEXT};
         use tantivy::Index;
         use tantivy::collector::TopDocs;
+        use tantivy::schema::{Schema, TEXT};
         use tantivy::{DocAddress, Score};
 
         let mut schema_builder = Schema::builder();
@@ -1037,7 +1076,10 @@ mod tests {
         apply_project_diversity(&mut results, 2);
 
         let backend_count = results.iter().filter(|r| r["project"] == "backend").count();
-        let frontend_count = results.iter().filter(|r| r["project"] == "frontend").count();
+        let frontend_count = results
+            .iter()
+            .filter(|r| r["project"] == "frontend")
+            .count();
         assert_eq!(backend_count, 2, "backend should be capped at 2");
         assert_eq!(frontend_count, 2, "frontend should be capped at 2");
         assert_eq!(results.len(), 4);
@@ -1104,7 +1146,11 @@ mod tests {
         ];
         let mut results = results;
         apply_project_diversity(&mut results, 2);
-        assert_eq!(results.len(), 2, "empty-string project should also be capped");
+        assert_eq!(
+            results.len(),
+            2,
+            "empty-string project should also be capped"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1155,24 +1201,45 @@ mod tests {
     fn test_index_schema_build_returns_all_fields() {
         let s = IndexSchema::build();
         let schema = &s.schema;
-        assert!(schema.get_field("project").is_ok(), "schema must have 'project' field");
-        assert!(schema.get_field("file").is_ok(), "schema must have 'file' field");
-        assert!(schema.get_field("filename").is_ok(), "schema must have 'filename' field");
-        assert!(schema.get_field("title").is_ok(), "schema must have 'title' field");
-        assert!(schema.get_field("chunk_id").is_ok(), "schema must have 'chunk_id' field");
-        assert!(schema.get_field("body").is_ok(), "schema must have 'body' field");
-        assert!(schema.get_field("line_start").is_ok(), "schema must have 'line_start' field");
+        assert!(
+            schema.get_field("project").is_ok(),
+            "schema must have 'project' field"
+        );
+        assert!(
+            schema.get_field("file").is_ok(),
+            "schema must have 'file' field"
+        );
+        assert!(
+            schema.get_field("filename").is_ok(),
+            "schema must have 'filename' field"
+        );
+        assert!(
+            schema.get_field("title").is_ok(),
+            "schema must have 'title' field"
+        );
+        assert!(
+            schema.get_field("chunk_id").is_ok(),
+            "schema must have 'chunk_id' field"
+        );
+        assert!(
+            schema.get_field("body").is_ok(),
+            "schema must have 'body' field"
+        );
+        assert!(
+            schema.get_field("line_start").is_ok(),
+            "schema must have 'line_start' field"
+        );
     }
 
     #[test]
     fn test_index_schema_fields_match_schema() {
         let s = IndexSchema::build();
         assert_eq!(s.project, s.schema.get_field("project").unwrap());
-        assert_eq!(s.file,    s.schema.get_field("file").unwrap());
+        assert_eq!(s.file, s.schema.get_field("file").unwrap());
         assert_eq!(s.filename, s.schema.get_field("filename").unwrap());
-        assert_eq!(s.title,   s.schema.get_field("title").unwrap());
+        assert_eq!(s.title, s.schema.get_field("title").unwrap());
         assert_eq!(s.chunk_id, s.schema.get_field("chunk_id").unwrap());
-        assert_eq!(s.body,    s.schema.get_field("body").unwrap());
+        assert_eq!(s.body, s.schema.get_field("body").unwrap());
         assert_eq!(s.line_start, s.schema.get_field("line_start").unwrap());
     }
 }

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::config::load_config;
 
@@ -193,17 +193,16 @@ pub fn has_naming_policy(policy: &PolicyFile) -> bool {
 
 pub fn validate_doc_name(policy: &PolicyFile, doc_name: &str) -> Result<(), String> {
     use std::path::Path;
-    
+
     if let Some(naming) = &policy.policy.naming {
         let path = Path::new(doc_name);
-        let name_without_ext = path.file_stem()
+        let name_without_ext = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or(doc_name);
-        
+
         // Check extension matches (use the extension field)
-        let actual_ext = path.extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let actual_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let expected_ext = naming.extension.trim_start_matches('.');
         if !actual_ext.is_empty() && actual_ext != expected_ext {
             return Err(format!(
@@ -211,7 +210,7 @@ pub fn validate_doc_name(policy: &PolicyFile, doc_name: &str) -> Result<(), Stri
                 naming.extension
             ));
         }
-        
+
         // Check max length
         if name_without_ext.len() > naming.max_length {
             return Err(format!(
@@ -227,7 +226,7 @@ pub fn validate_doc_name(policy: &PolicyFile, doc_name: &str) -> Result<(), Stri
                 for c in name_without_ext.chars() {
                     if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_' {
                         return Err(String::from(
-                            "Document name must be in kebab-case (lowercase letters, numbers, hyphens, underscores)"
+                            "Document name must be in kebab-case (lowercase letters, numbers, hyphens, underscores)",
                         ));
                     }
                 }
@@ -237,7 +236,7 @@ pub fn validate_doc_name(policy: &PolicyFile, doc_name: &str) -> Result<(), Stri
                 for c in name_without_ext.chars() {
                     if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_' {
                         return Err(String::from(
-                            "Document name must be in snake_case (lowercase letters, numbers, underscores)"
+                            "Document name must be in snake_case (lowercase letters, numbers, underscores)",
                         ));
                     }
                 }
@@ -591,7 +590,10 @@ mod tests {
         assert_eq!(policy.policy.required.len(), 1);
         // Test version and description fields
         assert_eq!(policy.policy.version, "1.0");
-        assert_eq!(policy.policy.required[0].description, Some("Product Requirements Document".to_string()));
+        assert_eq!(
+            policy.policy.required[0].description,
+            Some("Product Requirements Document".to_string())
+        );
         // Test naming policy fields
         assert!(policy.policy.naming.is_some());
         let naming = policy.policy.naming.as_ref().unwrap();
@@ -772,10 +774,12 @@ mod tests {
 
         let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Fail);
-        assert!(results[0]
-            .sections
-            .iter()
-            .any(|s| s.status == FileStatus::Fail));
+        assert!(
+            results[0]
+                .sections
+                .iter()
+                .any(|s| s.status == FileStatus::Fail)
+        );
     }
 
     #[test]
@@ -1031,10 +1035,12 @@ Extra content to ensure we are over 100 bytes threshold for minimal content chec
         let (_, results) = validate(tmp.path(), &project, None);
         assert_eq!(results[0].status, FileStatus::Pass);
         assert_eq!(results[0].sections.len(), 2);
-        assert!(results[0]
-            .sections
-            .iter()
-            .all(|s| s.status == FileStatus::Pass));
+        assert!(
+            results[0]
+                .sections
+                .iter()
+                .all(|s| s.status == FileStatus::Pass)
+        );
     }
 
     // -- validate: enforce = "strict" vs "relaxed" appears in JSON output --

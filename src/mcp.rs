@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::config::{is_blocked_system_path, is_reserved_dir_name, load_config};
 use crate::telemetry::{FailureClass, ResultSizeBucket, Telemetry, Tool};
@@ -503,21 +503,21 @@ struct ToolCallParams {
 
 fn tool_enum(name: &str) -> Option<Tool> {
     match name {
-        "audit_project"           => Some(Tool::AuditProject),
-        "check_doc_changes"       => Some(Tool::CheckDocChanges),
-        "configure_project"       => Some(Tool::ConfigureProject),
-        "get_doc_file"            => Some(Tool::GetDocFile),
+        "audit_project" => Some(Tool::AuditProject),
+        "check_doc_changes" => Some(Tool::CheckDocChanges),
+        "configure_project" => Some(Tool::ConfigureProject),
+        "get_doc_file" => Some(Tool::GetDocFile),
         "get_project_docs_overview" => Some(Tool::GetProjectDocsOverview),
-        "init_project"            => Some(Tool::InitProject),
-        "lint_project"            => Some(Tool::LintProject),
-        "list_projects"           => Some(Tool::ListProjects),
-        "list_vaults"             => Some(Tool::ListVaults),
-        "promote_document"        => Some(Tool::PromoteDocument),
-        "rebuild_index"           => Some(Tool::RebuildIndex),
-        "search_project_docs"     => Some(Tool::SearchProjectDocs),
-        "search_vault"            => Some(Tool::SearchVault),
-        "validate_docs"           => Some(Tool::ValidateDocs),
-        _                         => None,
+        "init_project" => Some(Tool::InitProject),
+        "lint_project" => Some(Tool::LintProject),
+        "list_projects" => Some(Tool::ListProjects),
+        "list_vaults" => Some(Tool::ListVaults),
+        "promote_document" => Some(Tool::PromoteDocument),
+        "rebuild_index" => Some(Tool::RebuildIndex),
+        "search_project_docs" => Some(Tool::SearchProjectDocs),
+        "search_vault" => Some(Tool::SearchVault),
+        "validate_docs" => Some(Tool::ValidateDocs),
+        _ => None,
     }
 }
 
@@ -566,16 +566,21 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         Ok(v) => {
             let path = PathBuf::from(&v);
             if is_blocked_system_path(&path) {
-                return err!(-32000, "DOCS_ROOT points to a restricted system directory.".into());
+                return err!(
+                    -32000,
+                    "DOCS_ROOT points to a restricted system directory.".into()
+                );
             }
             path
         }
-        Err(_) => match load_config().docs_root() {
-            Some(p) if p.is_dir() => p,
-            _ => {
-                return err!(-32000, "DOCS_ROOT environment variable is not set and config.toml has no docs_root.".into());
+        Err(_) => {
+            match load_config().docs_root() {
+                Some(p) if p.is_dir() => p,
+                _ => {
+                    return err!(-32000, "DOCS_ROOT environment variable is not set and config.toml has no docs_root.".into());
+                }
             }
-        },
+        }
     };
 
     // lint_project and promote_document operate on docs_root directly

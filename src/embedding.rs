@@ -19,8 +19,7 @@ use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 
 /// Model state for graceful degradation
 #[cfg(feature = "alcove-full")]
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum ModelState {
     /// Model not downloaded yet
     #[default]
@@ -201,9 +200,9 @@ impl EmbeddingModelChoice {
             | Self::SnowflakeArcticEmbedMQ => {
                 Some("Represent this sentence for searching relevant passages: ")
             }
-            Self::MultilingualE5Small
-            | Self::MultilingualE5Base
-            | Self::MultilingualE5Large => Some("query: "),
+            Self::MultilingualE5Small | Self::MultilingualE5Base | Self::MultilingualE5Large => {
+                Some("query: ")
+            }
             Self::BGEM3 => None,
         }
     }
@@ -214,9 +213,9 @@ impl EmbeddingModelChoice {
     /// embedding level.  Returns `None` when no prefix is required.
     pub fn doc_prefix(self) -> Option<&'static str> {
         match self {
-            Self::MultilingualE5Small
-            | Self::MultilingualE5Base
-            | Self::MultilingualE5Large => Some("passage: "),
+            Self::MultilingualE5Small | Self::MultilingualE5Base | Self::MultilingualE5Large => {
+                Some("passage: ")
+            }
             _ => None,
         }
     }
@@ -377,10 +376,7 @@ impl EmbeddingService {
 
     /// Get current model state
     pub fn state(&self) -> ModelState {
-        self.state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Get current dimension
@@ -411,14 +407,12 @@ impl EmbeddingService {
     /// elapses.  The spawned thread means the Tokio executor is not starved
     /// during the download — each 100 ms sleep yields back to the runtime.
     pub fn ensure_model(&self) -> Result<(), String> {
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner()).clone();
         match state {
             ModelState::Ready => return Ok(()),
-            ModelState::Disabled => return Err("Embedding is disabled in configuration".to_string()),
+            ModelState::Disabled => {
+                return Err("Embedding is disabled in configuration".to_string());
+            }
             ModelState::Failed(e) => return Err(e),
             // Unloaded = was Ready, then session dropped for idle; model still on disk.
             // Treat identically to Cached so start_download() reloads the ONNX session.
@@ -453,9 +447,7 @@ impl EmbeddingService {
                 ModelState::Downloading { .. } => {
                     let timeout = deadline.saturating_duration_since(Instant::now());
                     if timeout.is_zero() {
-                        return Err(
-                            "Timed out waiting for model download to complete".to_string(),
-                        );
+                        return Err("Timed out waiting for model download to complete".to_string());
                     }
                     let (new_state, timed_out) = self
                         .download_cvar
@@ -463,16 +455,14 @@ impl EmbeddingService {
                         .unwrap_or_else(|e| e.into_inner());
                     state = new_state;
                     if timed_out.timed_out() {
-                        return Err(
-                            "Timed out waiting for model download to complete".to_string(),
-                        );
+                        return Err("Timed out waiting for model download to complete".to_string());
                     }
                 }
                 other => {
                     return Err(format!(
                         "Unexpected model state while waiting for download: {}",
                         other
-                    ))
+                    ));
                 }
             }
         }
@@ -537,8 +527,7 @@ impl EmbeddingService {
                     set_state!(ModelState::Downloading { progress_pct: 90 });
                     // Acquire state lock FIRST, then session lock — same order as
                     // remove_cache() and try_unload_if_idle() — to prevent ABBA deadlock.
-                    let mut state_guard =
-                        state_arc.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut state_guard = state_arc.lock().unwrap_or_else(|e| e.into_inner());
                     *session_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(embedding);
                     *state_guard = ModelState::Ready;
                     drop(state_guard);
@@ -603,15 +592,13 @@ impl EmbeddingService {
         // session is dropped and `Unloaded` state is set; the next call to
         // `ensure_model()` transparently reloads it.
         if self.try_unload_if_idle() {
-            return Err("Model unloaded after idle timeout; will reload on next request".to_string());
+            return Err(
+                "Model unloaded after idle timeout; will reload on next request".to_string(),
+            );
         }
 
         // --- readiness check ---
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner()).clone();
         if state != ModelState::Ready {
             return Err(format!("Model not ready: {}", state));
         }
@@ -641,10 +628,7 @@ impl EmbeddingService {
             .as_mut()
             .ok_or_else(|| "Session not loaded".to_string())?;
 
-        let miss_texts: Vec<String> = miss_indices
-            .iter()
-            .map(|&i| texts[i].to_string())
-            .collect();
+        let miss_texts: Vec<String> = miss_indices.iter().map(|&i| texts[i].to_string()).collect();
         let inferred = session
             .embed(miss_texts.clone(), None)
             .map_err(|e| e.to_string())?;
@@ -724,7 +708,10 @@ mod tests {
             assert_eq!(EmbeddingModelChoice::MultilingualE5Small.dimension(), 384);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Base.dimension(), 768);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Large.dimension(), 1024);
-            assert_eq!(EmbeddingModelChoice::SnowflakeArcticEmbedXS.dimension(), 384);
+            assert_eq!(
+                EmbeddingModelChoice::SnowflakeArcticEmbedXS.dimension(),
+                384
+            );
         }
     }
 
@@ -861,10 +848,7 @@ mod tests {
         });
 
         // The unwrap_or_else pattern must not panic.
-        let recovered = mutex
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
+        let recovered = mutex.lock().unwrap_or_else(|e| e.into_inner()).clone();
         assert_eq!(recovered, ModelState::NotDownloaded);
     }
 
@@ -888,18 +872,12 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             std::thread::sleep(Duration::from_millis(100));
-            let current = state
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone();
+            let current = state.lock().unwrap_or_else(|e| e.into_inner()).clone();
             match current {
                 ModelState::Ready => break,
                 ModelState::Failed(e) => panic!("unexpected failure: {}", e),
                 ModelState::Downloading { .. } => {
-                    assert!(
-                        Instant::now() < deadline,
-                        "timed out waiting for Ready"
-                    );
+                    assert!(Instant::now() < deadline, "timed out waiting for Ready");
                 }
                 other => panic!("unexpected state: {}", other),
             }
@@ -981,8 +959,14 @@ mod tests {
         //  "world" is now the LRU entry — it should be evicted)
         cache.insert("foo".to_string(), vec![5.0, 6.0]);
         // "world" was LRU (oldest insertion order after "hello" was accessed)
-        assert!(cache.get("world").is_none(), "world should have been evicted");
-        assert!(cache.get("hello").is_some(), "hello should still be present");
+        assert!(
+            cache.get("world").is_none(),
+            "world should have been evicted"
+        );
+        assert!(
+            cache.get("hello").is_some(),
+            "hello should still be present"
+        );
         assert!(cache.get("foo").is_some(), "foo should be present");
     }
 
@@ -1028,10 +1012,7 @@ mod tests {
         let mut saw_unloaded = false;
         loop {
             std::thread::sleep(Duration::from_millis(50));
-            let current = state
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone();
+            let current = state.lock().unwrap_or_else(|e| e.into_inner()).clone();
             match current {
                 ModelState::Ready => break,
                 ModelState::Failed(e) => panic!("unexpected failure: {}", e),
@@ -1046,7 +1027,10 @@ mod tests {
                 other => panic!("unexpected state in poll loop: {}", other),
             }
         }
-        assert!(saw_unloaded, "test did not observe Unloaded state — adjust timings");
+        assert!(
+            saw_unloaded,
+            "test did not observe Unloaded state — adjust timings"
+        );
     }
 
     /// B1: try_unload_if_idle must atomically clear both state and session.
@@ -1218,10 +1202,7 @@ mod tests {
         let poll_until = Instant::now() + Duration::from_millis(300);
         while Instant::now() < poll_until {
             std::thread::sleep(Duration::from_millis(50));
-            let current = state
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone();
+            let current = state.lock().unwrap_or_else(|e| e.into_inner()).clone();
             // State must still be Downloading; any other transition is a bug.
             assert!(
                 matches!(current, ModelState::Downloading { .. }),

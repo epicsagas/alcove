@@ -141,9 +141,8 @@ fn is_index_file(path: &Path) -> bool {
 /// remain valid. This prevents TOML `[[table]]` syntax inside code fences
 /// from being parsed as Obsidian-style wikilinks.
 fn strip_code_blocks(content: &str) -> String {
-    let after_fences = fence_re().replace_all(content, |caps: &regex::Captures| {
-        " ".repeat(caps[0].len())
-    });
+    let after_fences =
+        fence_re().replace_all(content, |caps: &regex::Captures| " ".repeat(caps[0].len()));
     inline_re()
         .replace_all(&after_fences, |caps: &regex::Captures| {
             " ".repeat(caps[0].len())
@@ -319,9 +318,7 @@ fn lint_with_year(docs_root: &Path, project_filter: Option<&str>, now_year: i32)
         let prose_for_markers = {
             let no_code = strip_code_blocks(&content);
             wikilink_strip_re()
-                .replace_all(&no_code, |caps: &regex::Captures| {
-                    " ".repeat(caps[0].len())
-                })
+                .replace_all(&no_code, |caps: &regex::Captures| " ".repeat(caps[0].len()))
                 .into_owned()
         };
         for cap in stale_marker_re.captures_iter(&prose_for_markers) {
@@ -340,8 +337,16 @@ fn lint_with_year(docs_root: &Path, project_filter: Option<&str>, now_year: i32)
             let m = cap.get(1).unwrap();
             // Skip false positives: year inside URL path, version string, or date.
             // Check character immediately before/after the match.
-            let before = if m.start() > 0 { content_bytes[m.start() - 1] } else { b' ' };
-            let after = if m.end() < content_bytes.len() { content_bytes[m.end()] } else { b' ' };
+            let before = if m.start() > 0 {
+                content_bytes[m.start() - 1]
+            } else {
+                b' '
+            };
+            let after = if m.end() < content_bytes.len() {
+                content_bytes[m.end()]
+            } else {
+                b' '
+            };
             if before == b'/' || before == b'-' {
                 continue; // URL path segment or date continuation
             }
@@ -350,19 +355,20 @@ fn lint_with_year(docs_root: &Path, project_filter: Option<&str>, now_year: i32)
             }
 
             if let Ok(year) = cap[1].parse::<i32>()
-                && now_year - year >= 2 {
-                    issues.push(LintIssue {
-                        severity: LintSeverity::Info,
-                        kind: "stale-date",
-                        file: rel.clone(),
-                        message: format!(
-                            "Mentions year {} which is {} year(s) old",
-                            year,
-                            now_year - year
-                        ),
-                    });
-                    break; // one issue per file
-                }
+                && now_year - year >= 2
+            {
+                issues.push(LintIssue {
+                    severity: LintSeverity::Info,
+                    kind: "stale-date",
+                    file: rel.clone(),
+                    message: format!(
+                        "Mentions year {} which is {} year(s) old",
+                        year,
+                        now_year - year
+                    ),
+                });
+                break; // one issue per file
+            }
         }
     }
 
@@ -546,7 +552,11 @@ mod tests {
     #[test]
     fn test_stale_marker_wip() {
         let tmp = TempDir::new().unwrap();
-        write(tmp.path(), "proj/note.md", "# WIP document\nContent here.\n");
+        write(
+            tmp.path(),
+            "proj/note.md",
+            "# WIP document\nContent here.\n",
+        );
         let report = lint(tmp.path(), None);
         let stale: Vec<_> = report
             .issues
@@ -560,7 +570,11 @@ mod tests {
     fn test_stale_date() {
         let tmp = TempDir::new().unwrap();
         // Use year that is definitely 2+ years ago from any reasonable current year
-        write(tmp.path(), "proj/note.md", "# Note\nAs of 2018, this was true.\n");
+        write(
+            tmp.path(),
+            "proj/note.md",
+            "# Note\nAs of 2018, this was true.\n",
+        );
         // Inject year directly — no env mutation, safe under parallel test execution
         let report = lint_with_year(tmp.path(), None, 2026);
         let dated: Vec<_> = report
@@ -645,14 +659,21 @@ mod tests {
             .iter()
             .filter(|i| i.kind == "orphan")
             .collect();
-        assert!(orphans.is_empty(), "index.md should not be flagged as orphan");
+        assert!(
+            orphans.is_empty(),
+            "index.md should not be flagged as orphan"
+        );
     }
 
     #[test]
     fn test_project_filter() {
         let tmp = TempDir::new().unwrap();
         write(tmp.path(), "project-a/note.md", "# Note A\nTODO: fix\n");
-        write(tmp.path(), "project-b/note.md", "# Note B\nClean content.\n");
+        write(
+            tmp.path(),
+            "project-b/note.md",
+            "# Note B\nClean content.\n",
+        );
         let report = lint(tmp.path(), Some("project-a"));
         assert_eq!(report.files_scanned, 1);
         let stale: Vec<_> = report
@@ -678,7 +699,11 @@ mod tests {
             .iter()
             .filter(|i| i.kind == "stale-marker")
             .collect();
-        assert_eq!(stale.len(), 2, "expected two stale-marker issues, one per match");
+        assert_eq!(
+            stale.len(),
+            2,
+            "expected two stale-marker issues, one per match"
+        );
         let messages: Vec<&str> = stale.iter().map(|i| i.message.as_str()).collect();
         assert!(messages.iter().any(|m| m.contains("TODO")));
         assert!(messages.iter().any(|m| m.contains("FIXME")));

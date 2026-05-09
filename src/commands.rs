@@ -141,7 +141,6 @@ pub fn cmd_index() -> Result<()> {
     print_index_result(crate::index::build_index(&docs_root)?, false)
 }
 
-
 // ---------------------------------------------------------------------------
 // alcove rebuild
 // ---------------------------------------------------------------------------
@@ -163,8 +162,8 @@ pub fn cmd_rebuild() -> Result<()> {
 
 fn print_index_result(result: serde_json::Value, is_rebuild: bool) -> Result<()> {
     let projects = result["projects"].as_u64().unwrap_or(0);
-    let indexed   = result["indexed"].as_u64().unwrap_or(0);
-    let skipped   = result["skipped"].as_u64().unwrap_or(0);
+    let indexed = result["indexed"].as_u64().unwrap_or(0);
+    let skipped = result["skipped"].as_u64().unwrap_or(0);
     let index_path = result["index_path"].as_str().unwrap_or("unknown");
 
     // Header line
@@ -194,8 +193,8 @@ fn print_index_result(result: serde_json::Value, is_rebuild: bool) -> Result<()>
     match vector_status {
         "ok" => {
             let vectors = result["vectors_indexed"].as_u64().unwrap_or(0);
-            let errors  = result["vector_errors"].as_u64().unwrap_or(0);
-            let model   = result["embedding_model"].as_str().unwrap_or("unknown");
+            let errors = result["vector_errors"].as_u64().unwrap_or(0);
+            let model = result["embedding_model"].as_str().unwrap_or("unknown");
             println!(
                 "  {} {} vectors  {}",
                 style("✓").green(),
@@ -396,10 +395,19 @@ pub fn cmd_doctor(format: &str) -> Result<()> {
     let (cfg_status, cfg_msg) = if cfg_path.exists() {
         match fs::read_to_string(&cfg_path) {
             Ok(content) => match toml::from_str::<toml::Value>(&content) {
-                Ok(_) => ("ok", t!("doctor.config_valid", path = cfg_path.display()).to_string()),
-                Err(e) => ("error", t!("doctor.config_parse_error", error = e).to_string()),
+                Ok(_) => (
+                    "ok",
+                    t!("doctor.config_valid", path = cfg_path.display()).to_string(),
+                ),
+                Err(e) => (
+                    "error",
+                    t!("doctor.config_parse_error", error = e).to_string(),
+                ),
             },
-            Err(e) => ("error", t!("doctor.config_read_error", error = e).to_string()),
+            Err(e) => (
+                "error",
+                t!("doctor.config_read_error", error = e).to_string(),
+            ),
         }
     } else {
         ("warn", t!("doctor.config_not_found").to_string())
@@ -470,10 +478,7 @@ pub fn cmd_doctor(format: &str) -> Result<()> {
             "message": msg,
         }));
     }
-    let registered = agent_details
-        .iter()
-        .filter(|a| a["status"] == "ok")
-        .count();
+    let registered = agent_details.iter().filter(|a| a["status"] == "ok").count();
     let agent_status = if registered > 0 { "ok" } else { "warn" };
     checks.push(serde_json::json!({
         "check": "agents",
@@ -729,7 +734,11 @@ fn cmd_model_list() -> Result<()> {
         .unwrap_or("MultilingualE5Small");
 
     for model in EmbeddingModelChoice::all() {
-        let marker = if model.as_str() == current { " [current]" } else { "" };
+        let marker = if model.as_str() == current {
+            " [current]"
+        } else {
+            ""
+        };
         let desc = match model {
             EmbeddingModelChoice::SnowflakeArcticEmbedXS => "Mobile/low-spec, fastest",
             EmbeddingModelChoice::SnowflakeArcticEmbedXSQ => "Quantized XS, smallest",
@@ -767,9 +776,14 @@ fn cmd_model_download() -> Result<()> {
 
         let cfg = load_config().embedding_config_with_defaults();
         let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-            model: crate::embedding::EmbeddingModelChoice::parse(&cfg.model).unwrap_or_default().as_str().to_string(),
+            model: crate::embedding::EmbeddingModelChoice::parse(&cfg.model)
+                .unwrap_or_default()
+                .as_str()
+                .to_string(),
             auto_download: true,
-            cache_dir: cfg.cache_dir.starts_with('~')
+            cache_dir: cfg
+                .cache_dir
+                .starts_with('~')
                 .then(|| std::env::var("HOME").ok())
                 .flatten()
                 .map(|h| cfg.cache_dir.replacen('~', &h, 1))
@@ -786,11 +800,15 @@ fn cmd_model_download() -> Result<()> {
         println!("This may take a few minutes on first run...");
 
         let pb = indicatif::ProgressBar::new_spinner();
-        pb.set_style(indicatif::ProgressStyle::default_spinner().template("{spinner:.green} {msg}")?);
+        pb.set_style(
+            indicatif::ProgressStyle::default_spinner().template("{spinner:.green} {msg}")?,
+        );
         pb.set_message("Downloading and loading model...");
         pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
-        service.ensure_model().map_err(|e| anyhow::anyhow!("{}", e))?;
+        service
+            .ensure_model()
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         pb.finish_and_clear();
 
@@ -818,11 +836,12 @@ fn cmd_model_download() -> Result<()> {
 fn cmd_model_remove() -> Result<()> {
     let cfg = load_config().embedding_config_with_defaults();
     let cache_dir = std::path::PathBuf::from(
-        cfg.cache_dir.starts_with('~')
+        cfg.cache_dir
+            .starts_with('~')
             .then(|| std::env::var("HOME").ok())
             .flatten()
             .map(|h| cfg.cache_dir.replacen('~', &h, 1))
-            .unwrap_or_else(|| cfg.cache_dir.clone())
+            .unwrap_or_else(|| cfg.cache_dir.clone()),
     );
 
     let model_dir = cache_dir.join(&cfg.model);
@@ -861,8 +880,12 @@ fn cmd_model_set(model_name: &str) -> Result<()> {
     use crate::embedding::EmbeddingModelChoice;
 
     // Validate model name
-    let model = EmbeddingModelChoice::parse(model_name)
-        .ok_or_else(|| anyhow::anyhow!("Unknown model: {}. Run 'alcove model list' to see available models.", model_name))?;
+    let model = EmbeddingModelChoice::parse(model_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Unknown model: {}. Run 'alcove model list' to see available models.",
+            model_name
+        )
+    })?;
 
     // Read current config
     let config_file = config_path();
@@ -878,16 +901,26 @@ fn cmd_model_set(model_name: &str) -> Result<()> {
 
     if content.contains("[embedding]") {
         // Replace existing embedding section
-        let start = content.find("[embedding]").expect("checked above with contains()");
+        let start = content
+            .find("[embedding]")
+            .expect("checked above with contains()");
         let end = content[start..]
             .find("\n[")
             .map(|i| start + i)
             .unwrap_or(content.len());
 
         // Find the actual end of the embedding section (before next section or EOF)
-        let section_end = content[start..].find("\n\n[").map(|i| start + i).unwrap_or(end);
+        let section_end = content[start..]
+            .find("\n\n[")
+            .map(|i| start + i)
+            .unwrap_or(end);
 
-        content = format!("{}{}{}", &content[..start], embedding_section.trim_end(), &content[section_end..]);
+        content = format!(
+            "{}{}{}",
+            &content[..start],
+            embedding_section.trim_end(),
+            &content[section_end..]
+        );
     } else {
         // Add new embedding section
         if !content.ends_with('\n') && !content.is_empty() {
@@ -926,29 +959,21 @@ fn cmd_model_status() -> Result<()> {
         style(&emb_cfg.model).cyan()
     );
 
-    let model_choice = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
-        .unwrap_or_default();
+    let model_choice =
+        crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
 
     println!(
         "{:<20} {}d",
         style("Dimension:").dim(),
         model_choice.dimension()
     );
-    println!(
-        "{:<20} ~{}MB",
-        style("Size:").dim(),
-        model_choice.size_mb()
-    );
+    println!("{:<20} ~{}MB", style("Size:").dim(), model_choice.size_mb());
     println!(
         "{:<20} {}",
         style("Auto-download:").dim(),
         emb_cfg.auto_download
     );
-    println!(
-        "{:<20} {}",
-        style("Cache dir:").dim(),
-        emb_cfg.cache_dir
-    );
+    println!("{:<20} {}", style("Cache dir:").dim(), emb_cfg.cache_dir);
 
     let cache_path = expand_path(&emb_cfg.cache_dir);
     let model_id = model_choice.model_id();
@@ -957,16 +982,10 @@ fn cmd_model_status() -> Result<()> {
 
     println!();
     if model_dir.exists() {
-        println!(
-            "{} Model cached and ready!",
-            style("✓").green()
-        );
+        println!("{} Model cached and ready!", style("✓").green());
         println!("  Location: {}", model_dir.display());
     } else {
-        println!(
-            "{} Model not cached locally.",
-            style("⏳").yellow()
-        );
+        println!("{} Model not cached locally.", style("⏳").yellow());
         println!("  Run 'alcove model download' to prepare for hybrid search.");
     }
 

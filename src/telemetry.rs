@@ -165,10 +165,13 @@ pub fn write_consent(level: ConsentLevel) {
     if let Some(p) = path.parent() {
         let _ = fs::create_dir_all(p);
     }
-    let _ = fs::write(&path, match level {
-        ConsentLevel::On => "on",
-        ConsentLevel::Off => "off",
-    });
+    let _ = fs::write(
+        &path,
+        match level {
+            ConsentLevel::On => "on",
+            ConsentLevel::Off => "off",
+        },
+    );
 }
 
 /// Auto-enable on first run; print one-time opt-out notice.
@@ -246,11 +249,22 @@ fn new_uuid_v4() -> String {
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     format!(
         "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0], bytes[1], bytes[2], bytes[3],
-        bytes[4], bytes[5],
-        bytes[6], bytes[7],
-        bytes[8], bytes[9],
-        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15],
     )
 }
 
@@ -300,12 +314,17 @@ impl Telemetry {
         let payload = if extra.is_empty() {
             format!(
                 r#"{{"event":"{}","distinct_id":"{}","properties":{{{}}}}}"#,
-                event, self.distinct_id, self.base_props()
+                event,
+                self.distinct_id,
+                self.base_props()
             )
         } else {
             format!(
                 r#"{{"event":"{}","distinct_id":"{}","properties":{{{},{}}}}}"#,
-                event, self.distinct_id, self.base_props(), extra
+                event,
+                self.distinct_id,
+                self.base_props(),
+                extra
             )
         };
         posthog_send(&payload);
@@ -336,7 +355,12 @@ impl Telemetry {
         self.track("tool_called", &format!(r#""tool":"{}""#, tool.as_str()));
     }
 
-    pub fn track_tool_completed(&self, tool: Tool, duration_ms: u64, result_size: ResultSizeBucket) {
+    pub fn track_tool_completed(
+        &self,
+        tool: Tool,
+        duration_ms: u64,
+        result_size: ResultSizeBucket,
+    ) {
         self.track(
             "tool_completed",
             &format!(
@@ -380,9 +404,18 @@ fn posthog_send(payload: &str) {
     let body = format!(r#"{{"api_key":"{}","batch":[{}]}}"#, key, payload);
     let url = format!("https://{POSTHOG_HOST}/batch/");
     let _ = std::process::Command::new("curl")
-        .args(["-s", "--max-time", "5", "-X", "POST",
-               "-H", "Content-Type: application/json",
-               "-d", &body, &url])
+        .args([
+            "-s",
+            "--max-time",
+            "5",
+            "-X",
+            "POST",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            &body,
+            &url,
+        ])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -416,12 +449,12 @@ fn sentry_send(message: &str, failure_class: &str, version: &str) {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let key = dsn.split('@').next()
+    let key = dsn
+        .split('@')
+        .next()
         .and_then(|s| s.split("//").nth(1))
         .unwrap_or("");
-    let auth = format!(
-        "Sentry sentry_version=7,sentry_key={key},sentry_client=alcove/{version}"
-    );
+    let auth = format!("Sentry sentry_version=7,sentry_key={key},sentry_client=alcove/{version}");
     let envelope = format!(
         "{{}}\n{{\"type\":\"event\"}}\n{{\
             \"event_id\":\"{event_id}\",\
@@ -434,10 +467,20 @@ fn sentry_send(message: &str, failure_class: &str, version: &str) {
     );
     let url = format!("https://{host}{path}/envelope/");
     let _ = std::process::Command::new("curl")
-        .args(["-s", "--max-time", "5", "-X", "POST",
-               "-H", "Content-Type: application/x-sentry-envelope",
-               "-H", &format!("X-Sentry-Auth: {auth}"),
-               "-d", &envelope, &url])
+        .args([
+            "-s",
+            "--max-time",
+            "5",
+            "-X",
+            "POST",
+            "-H",
+            "Content-Type: application/x-sentry-envelope",
+            "-H",
+            &format!("X-Sentry-Auth: {auth}"),
+            "-d",
+            &envelope,
+            &url,
+        ])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

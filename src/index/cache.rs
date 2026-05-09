@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
 #[cfg(not(test))]
 use std::time::Duration;
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use tantivy::{Index, IndexReader, ReloadPolicy};
@@ -42,7 +42,9 @@ pub enum CacheCategory {
     Vault,
 }
 
-pub(crate) fn reader_cache_for(cat: CacheCategory) -> &'static Mutex<HashMap<PathBuf, CachedReaderEntry>> {
+pub(crate) fn reader_cache_for(
+    cat: CacheCategory,
+) -> &'static Mutex<HashMap<PathBuf, CachedReaderEntry>> {
     match cat {
         CacheCategory::Project => PROJECT_READER_CACHE.get_or_init(|| Mutex::new(HashMap::new())),
         CacheCategory::Vault => VAULT_READER_CACHE.get_or_init(|| Mutex::new(HashMap::new())),
@@ -56,7 +58,11 @@ pub(crate) fn reader_cache_for(cat: CacheCategory) -> &'static Mutex<HashMap<Pat
 /// TTL eviction runs on every call: idle entries where no external Arc clone
 /// is held are dropped.  The cache is also bounded by `memory.max_cached_readers`
 /// (default 1); excess entries are evicted LRU-first.
-pub(crate) fn get_cached_reader(index_dir: &Path, index: &Index, cat: CacheCategory) -> Result<Arc<IndexReader>> {
+pub(crate) fn get_cached_reader(
+    index_dir: &Path,
+    index: &Index,
+    cat: CacheCategory,
+) -> Result<Arc<IndexReader>> {
     // Tests create a unique TempDir per case, so every path is a cache miss.
     // Bypass the global static cache entirely to prevent unbounded accumulation
     // across the test suite.
@@ -83,7 +89,9 @@ pub(crate) fn get_cached_reader(index_dir: &Path, index: &Index, cat: CacheCateg
         let max_readers = mem_cfg.max_cached_readers.clamp(1, 4);
 
         let mut cache = reader_cache_for(cat).lock().unwrap_or_else(|e| {
-            eprintln!("[alcove] reader cache mutex poisoned — clearing stale entries and recovering");
+            eprintln!(
+                "[alcove] reader cache mutex poisoned — clearing stale entries and recovering"
+            );
             let mut guard = e.into_inner();
             guard.clear();
             guard

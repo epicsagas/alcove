@@ -56,9 +56,10 @@ fn score_match(source_path: &Path, content: &str, project_name: &str) -> usize {
 
     // File name contains project name
     if let Some(stem) = source_path.file_stem().and_then(|s| s.to_str())
-        && stem.to_lowercase().contains(&name_lower) {
-            score += 3;
-        }
+        && stem.to_lowercase().contains(&name_lower)
+    {
+        score += 3;
+    }
 
     // Parent directory names in the source path contain project name
     for component in source_path.components() {
@@ -150,13 +151,23 @@ pub fn promote(docs_root: &Path, opts: PromoteOptions) -> Result<PromoteResult> 
         // Note: both /etc (Linux canonical) and /private/etc (macOS canonical via symlink)
         // are listed so this works correctly on both platforms after canonicalize().
         const BLOCKED: &[&str] = &[
-            "/etc", "/proc", "/sys", "/dev",
-            "/bin", "/sbin", "/lib", "/lib64",
-            "/usr/bin", "/usr/sbin", "/usr/lib",
-            "/boot", "/root",
-            "/run", "/var/run",
+            "/etc",
+            "/proc",
+            "/sys",
+            "/dev",
+            "/bin",
+            "/sbin",
+            "/lib",
+            "/lib64",
+            "/usr/bin",
+            "/usr/sbin",
+            "/usr/lib",
+            "/boot",
+            "/root",
+            "/run",
+            "/var/run",
             "/snap",
-            "/private/etc",   // macOS: /etc symlink target
+            "/private/etc", // macOS: /etc symlink target
             // macOS: /private/var/folders is the user TempDir — do NOT block that.
             // Block only sensitive subdirs of /var that contain secrets/state.
             "/private/var/run",
@@ -184,9 +195,7 @@ pub fn promote(docs_root: &Path, opts: PromoteOptions) -> Result<PromoteResult> 
         use std::path::Component;
         let components: Vec<_> = std::path::Path::new(&project).components().collect();
         if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {
-            anyhow::bail!(
-                "Invalid project name: must be a simple name without path separators"
-            );
+            anyhow::bail!("Invalid project name: must be a simple name without path separators");
         }
     }
 
@@ -194,8 +203,12 @@ pub fn promote(docs_root: &Path, opts: PromoteOptions) -> Result<PromoteResult> 
 
     // Create target directory if needed (inbox may not exist yet)
     if !target_dir.exists() {
-        fs::create_dir_all(&target_dir)
-            .with_context(|| format!("Failed to create target directory: {}", target_dir.display()))?;
+        fs::create_dir_all(&target_dir).with_context(|| {
+            format!(
+                "Failed to create target directory: {}",
+                target_dir.display()
+            )
+        })?;
     }
 
     let filename = source
@@ -486,7 +499,10 @@ mod tests {
                 copy: true,
             },
         );
-        assert!(result.is_err(), "should error when destination already exists");
+        assert!(
+            result.is_err(),
+            "should error when destination already exists"
+        );
     }
 
     #[test]
@@ -510,7 +526,10 @@ mod tests {
             },
         );
 
-        assert!(result.is_err(), "source outside safe root should be rejected");
+        assert!(
+            result.is_err(),
+            "source outside safe root should be rejected"
+        );
         let err_msg = result.err().unwrap().to_string();
         assert!(
             err_msg.contains("outside the permitted"),

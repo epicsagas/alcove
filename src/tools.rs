@@ -300,7 +300,9 @@ fn search_dir_for_query(
 /// query(이미 trim된 값)가 비어있거나 limit이 0이면 조기 반환 JSON을 Some으로 반환한다.
 fn validate_search_args(query_trimmed: &str, limit: usize) -> Option<Value> {
     if query_trimmed.is_empty() {
-        return Some(json!({ "query": query_trimmed, "matches": [], "truncated": false, "error": "empty query" }));
+        return Some(
+            json!({ "query": query_trimmed, "matches": [], "truncated": false, "error": "empty query" }),
+        );
     }
     if limit == 0 {
         return Some(json!({ "query": query_trimmed, "matches": [], "truncated": false }));
@@ -353,26 +355,28 @@ pub fn tool_search(
     // Try indexed search first (faster and ranked)
     #[cfg(feature = "alcove-full")]
     {
+        use crate::config::load_config;
         use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
         use crate::index::search_hybrid;
-        use crate::config::load_config;
 
         if crate::index::index_exists(docs_root) {
             // Get embedding config
             let cfg = load_config();
             let emb_cfg = cfg.embedding_config_with_defaults();
-            
+
             // Create embedding service if enabled
             if emb_cfg.enabled {
                 let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
                 let service = EmbeddingService::new(crate::config::EmbeddingConfig {
                     model: model.as_str().to_string(),
                     auto_download: emb_cfg.auto_download,
-                    cache_dir: emb_cfg.cache_dir.starts_with('~')
-                            .then(|| std::env::var("HOME").ok())
-                            .flatten()
-                            .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
-                            .unwrap_or_else(|| emb_cfg.cache_dir.clone()),
+                    cache_dir: emb_cfg
+                        .cache_dir
+                        .starts_with('~')
+                        .then(|| std::env::var("HOME").ok())
+                        .flatten()
+                        .map(|h| emb_cfg.cache_dir.replacen('~', &h, 1))
+                        .unwrap_or_else(|| emb_cfg.cache_dir.clone()),
                     enabled: true,
                     query_cache_size: emb_cfg.query_cache_size,
                 });
@@ -418,7 +422,8 @@ pub fn tool_search(
 
     // Fall back to indexed search (BM25 only) if index exists
     if crate::index::index_exists(docs_root) {
-        let result = crate::index::search_indexed(docs_root, query_trimmed, args.limit, Some(project_name));
+        let result =
+            crate::index::search_indexed(docs_root, query_trimmed, args.limit, Some(project_name));
         if let Ok(json) = result {
             let matches: Vec<Value> = json["matches"]
                 .as_array()
@@ -1163,7 +1168,8 @@ For answers to common questions about this code of conduct, see the FAQ at
 [Mozilla CoC]: https://github.com/mozilla/diversity
 [FAQ]: https://www.contributor-covenant.org/faq
 [translations]: https://www.contributor-covenant.org/translations
-"#.to_string(),
+"#
+        .to_string(),
     )?;
 
     create_file(
@@ -1358,7 +1364,8 @@ For answers to common questions about this code of conduct, see the FAQ at
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-"#.to_string(),
+"#
+        .to_string(),
     )?;
 
     create_file(
@@ -1398,7 +1405,8 @@ What actually happened.
 ## Additional Context
 
 Logs, screenshots, or any other context.
-"#.to_string(),
+"#
+        .to_string(),
     )?;
 
     create_file(
@@ -1426,7 +1434,8 @@ A description of any alternative solutions or features you've considered.
 ## Additional Context
 
 Any other context, screenshots, or references.
-"#.to_string(),
+"#
+        .to_string(),
     )?;
 
     create_file(
@@ -2042,10 +2051,7 @@ pub fn tool_promote_document(docs_root: &Path, args: Value) -> Result<Value> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let copy = args
-        .get("copy")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true); // default: copy (safe)
+    let copy = args.get("copy").and_then(|v| v.as_bool()).unwrap_or(true); // default: copy (safe)
 
     let opts = crate::promote::PromoteOptions {
         source: PathBuf::from(source_str),
@@ -3076,5 +3082,4 @@ mod tests {
         assert_eq!(cfg.diagram_format(), "plantuml");
         assert_eq!(cfg.core_files(), vec!["SPEC.md"]);
     }
-
 }

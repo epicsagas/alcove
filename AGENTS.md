@@ -55,3 +55,15 @@ You are the "Alcove" assistant for private, non-shareable development docs.
   - Respond clearly: "No documents found for project `<name>`."
   - Suggest running `init_project` to create the standard template.
   - Do NOT fall back to reading unrelated folders.
+
+## Version Bump Checklist
+
+When creating a new release tag, update ALL of the following to the same version:
+
+| File | Field | Example |
+|------|-------|---------|
+| `Cargo.toml` | `version = "x.y.z"` | `0.8.6` |
+| `.claude-plugin/plugin.json` | `"version": "x.y.z"` | `0.8.6` |
+| Git tag | `vx.y.z` | `v0.8.6` |
+
+All three must match before tagging.

@@ -22,8 +22,8 @@ use super::schema::register_ngram_tokenizer;
 /// as a literal phrase search.
 pub(crate) fn sanitize_query(query: &str) -> String {
     let special = [
-        '+', '-', '(', ')', '{', '}', '[', ']', '^', '~', '*', '?', '\\', '/', ':', '!',
-        '<', '>', '"',
+        '+', '-', '(', ')', '{', '}', '[', ']', '^', '~', '*', '?', '\\', '/', ':', '!', '<', '>',
+        '"',
     ];
     let mut sanitized = String::with_capacity(query.len());
     for ch in query.chars() {
@@ -53,7 +53,7 @@ pub(crate) fn build_search_query(
     title_field: Field,
     filename_field: Field,
 ) -> Box<dyn tantivy::query::Query> {
-    use tantivy::query::{BoostQuery, BooleanQuery, Occur};
+    use tantivy::query::{BooleanQuery, BoostQuery, Occur};
 
     let mut clauses: Vec<(Occur, Box<dyn tantivy::query::Query>)> = Vec::new();
 
@@ -83,7 +83,10 @@ pub(crate) fn build_search_query(
 // ---------------------------------------------------------------------------
 
 /// Remove results so that no project appears more than `max_per_project` times.
-pub(crate) fn apply_project_diversity(results: &mut Vec<serde_json::Value>, max_per_project: usize) {
+pub(crate) fn apply_project_diversity(
+    results: &mut Vec<serde_json::Value>,
+    max_per_project: usize,
+) {
     let mut project_counts: HashMap<String, usize> = HashMap::new();
     results.retain(|r| {
         let project = r["project"].as_str().unwrap_or("");
@@ -151,11 +154,17 @@ pub(crate) fn search_with_index(
 ) -> Result<JsonValue> {
     let dir = index_dir(docs_root);
     let schema = index.schema();
-    let project_field = schema.get_field("project").context("missing 'project' field")?;
+    let project_field = schema
+        .get_field("project")
+        .context("missing 'project' field")?;
     let file_field = schema.get_field("file").context("missing 'file' field")?;
-    let chunk_id_field = schema.get_field("chunk_id").context("missing 'chunk_id' field")?;
+    let chunk_id_field = schema
+        .get_field("chunk_id")
+        .context("missing 'chunk_id' field")?;
     let body_field = schema.get_field("body").context("missing 'body' field")?;
-    let line_start_field = schema.get_field("line_start").context("missing 'line_start' field")?;
+    let line_start_field = schema
+        .get_field("line_start")
+        .context("missing 'line_start' field")?;
 
     // Resolve optional fields — older indexes may lack them.
     let title_field = schema.get_field("title").ok();
@@ -181,7 +190,10 @@ pub(crate) fn search_with_index(
     // Using 3x instead of 5x reduces wasted doc fetches while still giving
     // enough headroom to deduplicate down to `limit` unique files.
     let top_docs: Vec<(Score, DocAddress)> = searcher
-        .search(&parsed_query, &TopDocs::with_limit(limit * 3).order_by_score())
+        .search(
+            &parsed_query,
+            &TopDocs::with_limit(limit * 3).order_by_score(),
+        )
         .context("Search failed")?;
 
     // Deduplicate: keep only the best-scoring chunk per (project, file) pair.
@@ -284,7 +296,7 @@ pub fn search_hybrid(
     limit: usize,
     project_filter: Option<&str>,
 ) -> Result<JsonValue> {
-    use crate::vector::{reciprocal_rank_fusion, VectorStore};
+    use crate::vector::{VectorStore, reciprocal_rank_fusion};
 
     // 1. Check embedding model state
     let model_state = embedding_service.state();
@@ -303,7 +315,14 @@ pub fn search_hybrid(
     let bm25_json = if sanitized.is_empty() {
         json!({ "matches": [], "truncated": false })
     } else {
-        search_with_index(docs_root, query, &sanitized, limit * 2, project_filter, &index)?
+        search_with_index(
+            docs_root,
+            query,
+            &sanitized,
+            limit * 2,
+            project_filter,
+            &index,
+        )?
     };
 
     // Extract BM25 tuples for RRF — read directly from the JSON values produced
@@ -358,7 +377,11 @@ pub fn search_hybrid(
 
     // 7. Open vector store and search
     let vector_path = docs_root.join(".alcove").join("vectors.db");
-    let store = VectorStore::open(&vector_path, embedding_service.model_name(), embedding_service.dimension());
+    let store = VectorStore::open(
+        &vector_path,
+        embedding_service.model_name(),
+        embedding_service.dimension(),
+    );
 
     let mut vector_error: Option<String> = None;
     let vector_results = match store {
@@ -426,11 +449,21 @@ pub fn search_hybrid(
     let miss_reader = get_cached_reader(&dir, &index, CacheCategory::Project)?;
     let miss_searcher = miss_reader.searcher();
     let miss_schema = index.schema();
-    let miss_project_field = miss_schema.get_field("project").context("missing 'project' field")?;
-    let miss_file_field = miss_schema.get_field("file").context("missing 'file' field")?;
-    let miss_body_field = miss_schema.get_field("body").context("missing 'body' field")?;
-    let miss_line_start_field = miss_schema.get_field("line_start").context("missing 'line_start' field")?;
-    let miss_chunk_id_field = miss_schema.get_field("chunk_id").context("missing 'chunk_id' field")?;
+    let miss_project_field = miss_schema
+        .get_field("project")
+        .context("missing 'project' field")?;
+    let miss_file_field = miss_schema
+        .get_field("file")
+        .context("missing 'file' field")?;
+    let miss_body_field = miss_schema
+        .get_field("body")
+        .context("missing 'body' field")?;
+    let miss_line_start_field = miss_schema
+        .get_field("line_start")
+        .context("missing 'line_start' field")?;
+    let miss_chunk_id_field = miss_schema
+        .get_field("chunk_id")
+        .context("missing 'chunk_id' field")?;
 
     let mut results: Vec<JsonValue> = Vec::new();
 
@@ -551,9 +584,9 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
     // Falls back to BM25-only when vectors are not available.
     #[cfg(feature = "alcove-full")]
     {
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
-        use crate::vector::{reciprocal_rank_fusion, VectorStore};
         use crate::config::vault_embedding_config;
+        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::vector::{VectorStore, reciprocal_rank_fusion};
 
         let emb_cfg = vault_embedding_config(vault_path);
 
@@ -571,7 +604,8 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
                 let vector_path = vault_path.join(".alcove").join("vectors.db");
 
                 // BM25 search with extra candidates for RRF
-                let bm25_json = search_vault_bm25_inner(vault_path, query, &sanitized, limit * 2, &index)?;
+                let bm25_json =
+                    search_vault_bm25_inner(vault_path, query, &sanitized, limit * 2, &index)?;
 
                 // Query embedding with prefix
                 let query_pfx = service.model_choice().query_prefix();
@@ -596,7 +630,11 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
 
                 // Vector search
                 let mut vector_error: Option<String> = None;
-                let vector_results = match VectorStore::open(&vector_path, service.model_name(), service.dimension()) {
+                let vector_results = match VectorStore::open(
+                    &vector_path,
+                    service.model_name(),
+                    service.dimension(),
+                ) {
                     Ok(s) => match s.search(&query_embedding, limit * 2) {
                         Ok(r) => r,
                         Err(e) => {
@@ -614,14 +652,16 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
                 let bm25_results: Vec<(String, String, u64, f32)> = bm25_json["matches"]
                     .as_array()
                     .map(|arr| {
-                        arr.iter().filter_map(|m| {
-                            Some((
-                                m["project"].as_str()?.to_string(),
-                                m["file"].as_str()?.to_string(),
-                                m["chunk_id"].as_u64()?,
-                                m["score"].as_f64()? as f32,
-                            ))
-                        }).collect()
+                        arr.iter()
+                            .filter_map(|m| {
+                                Some((
+                                    m["project"].as_str()?.to_string(),
+                                    m["file"].as_str()?.to_string(),
+                                    m["chunk_id"].as_u64()?,
+                                    m["score"].as_f64()? as f32,
+                                ))
+                            })
+                            .collect()
                     })
                     .unwrap_or_default();
 
@@ -632,7 +672,8 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
 
                 // Build snippet cache from BM25 results
                 type SnippetKey = (String, String, u64);
-                let mut snippet_cache: std::collections::HashMap<SnippetKey, (String, u64)> = std::collections::HashMap::new();
+                let mut snippet_cache: std::collections::HashMap<SnippetKey, (String, u64)> =
+                    std::collections::HashMap::new();
                 if let Some(arr) = bm25_json["matches"].as_array() {
                     for m in arr {
                         if let (Some(proj), Some(file), Some(cid), Some(snip), Some(ls)) = (
@@ -654,47 +695,78 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
                 let miss_reader = get_cached_reader(&dir, &index, CacheCategory::Vault)?;
                 let miss_searcher = miss_reader.searcher();
                 let miss_schema = index.schema();
-                let miss_project_field = miss_schema.get_field("project").context("missing project field")?;
-                let miss_file_field = miss_schema.get_field("file").context("missing file field")?;
-                let miss_body_field = miss_schema.get_field("body").context("missing body field")?;
-                let miss_line_start_field = miss_schema.get_field("line_start").context("missing line_start field")?;
-                let miss_chunk_id_field = miss_schema.get_field("chunk_id").context("missing chunk_id field")?;
+                let miss_project_field = miss_schema
+                    .get_field("project")
+                    .context("missing project field")?;
+                let miss_file_field = miss_schema
+                    .get_field("file")
+                    .context("missing file field")?;
+                let miss_body_field = miss_schema
+                    .get_field("body")
+                    .context("missing body field")?;
+                let miss_line_start_field = miss_schema
+                    .get_field("line_start")
+                    .context("missing line_start field")?;
+                let miss_chunk_id_field = miss_schema
+                    .get_field("chunk_id")
+                    .context("missing chunk_id field")?;
 
                 let mut results: Vec<JsonValue> = Vec::new();
                 for (project, file, chunk_id, rrf_score) in fused.into_iter().take(limit) {
-                    let (snippet, line_start) =
-                        if let Some(cached) = snippet_cache.get(&(project.clone(), file.clone(), chunk_id)) {
-                            cached.clone()
-                        } else {
-                            let combined = tantivy::query::BooleanQuery::new(vec![
-                                (tantivy::query::Occur::Must, Box::new(tantivy::query::TermQuery::new(
+                    let (snippet, line_start) = if let Some(cached) =
+                        snippet_cache.get(&(project.clone(), file.clone(), chunk_id))
+                    {
+                        cached.clone()
+                    } else {
+                        let combined = tantivy::query::BooleanQuery::new(vec![
+                            (
+                                tantivy::query::Occur::Must,
+                                Box::new(tantivy::query::TermQuery::new(
                                     tantivy::Term::from_field_text(miss_project_field, &project),
                                     tantivy::schema::IndexRecordOption::Basic,
-                                )) as Box<dyn tantivy::query::Query>),
-                                (tantivy::query::Occur::Must, Box::new(tantivy::query::TermQuery::new(
+                                ))
+                                    as Box<dyn tantivy::query::Query>,
+                            ),
+                            (
+                                tantivy::query::Occur::Must,
+                                Box::new(tantivy::query::TermQuery::new(
                                     tantivy::Term::from_field_text(miss_file_field, &file),
                                     tantivy::schema::IndexRecordOption::Basic,
-                                ))),
-                                (tantivy::query::Occur::Must, Box::new(tantivy::query::TermQuery::new(
+                                )),
+                            ),
+                            (
+                                tantivy::query::Occur::Must,
+                                Box::new(tantivy::query::TermQuery::new(
                                     tantivy::Term::from_field_u64(miss_chunk_id_field, chunk_id),
                                     tantivy::schema::IndexRecordOption::Basic,
-                                ))),
-                            ]);
-                            if let Ok(top_docs) = miss_searcher.search(&combined, &TopDocs::with_limit(1).order_by_score()) {
-                                if let Some((_s, addr)) = top_docs.first() {
-                                    if let Ok(doc) = miss_searcher.doc::<TantivyDocument>(*addr) {
-                                        let body = doc.get_first(miss_body_field)
-                                            .and_then(|v| schema::Value::as_str(&v))
-                                            .unwrap_or("")
-                                            .to_string();
-                                        let ls = doc.get_first(miss_line_start_field)
-                                            .and_then(|v| schema::Value::as_u64(&v))
-                                            .unwrap_or(0);
-                                        (body, ls)
-                                    } else { (String::new(), 0) }
-                                } else { (String::new(), 0) }
-                            } else { (String::new(), 0) }
-                        };
+                                )),
+                            ),
+                        ]);
+                        if let Ok(top_docs) = miss_searcher
+                            .search(&combined, &TopDocs::with_limit(1).order_by_score())
+                        {
+                            if let Some((_s, addr)) = top_docs.first() {
+                                if let Ok(doc) = miss_searcher.doc::<TantivyDocument>(*addr) {
+                                    let body = doc
+                                        .get_first(miss_body_field)
+                                        .and_then(|v| schema::Value::as_str(&v))
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let ls = doc
+                                        .get_first(miss_line_start_field)
+                                        .and_then(|v| schema::Value::as_u64(&v))
+                                        .unwrap_or(0);
+                                    (body, ls)
+                                } else {
+                                    (String::new(), 0)
+                                }
+                            } else {
+                                (String::new(), 0)
+                            }
+                        } else {
+                            (String::new(), 0)
+                        }
+                    };
 
                     results.push(json!({
                         "project": project,
@@ -740,9 +812,13 @@ pub(crate) fn search_vault_bm25_inner(
 
     let dir = index_dir(vault_path);
     let schema = index.schema();
-    let project_field = schema.get_field("project").context("missing 'project' field")?;
+    let project_field = schema
+        .get_field("project")
+        .context("missing 'project' field")?;
     let file_field = schema.get_field("file").context("missing 'file' field")?;
-    let chunk_id_field = schema.get_field("chunk_id").context("missing 'chunk_id' field")?;
+    let chunk_id_field = schema
+        .get_field("chunk_id")
+        .context("missing 'chunk_id' field")?;
     let body_field = schema.get_field("body").context("missing 'body' field")?;
     let line_start_field = schema
         .get_field("line_start")

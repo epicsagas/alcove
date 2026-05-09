@@ -1,7 +1,9 @@
 use anyhow::Result;
-use tantivy::schema::{Field, IndexRecordOption, Schema, STRING, STORED, TextFieldIndexing, TextOptions, INDEXED};
-use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
 use tantivy::Index;
+use tantivy::schema::{
+    Field, INDEXED, IndexRecordOption, STORED, STRING, Schema, TextFieldIndexing, TextOptions,
+};
+use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
 
 pub(crate) const NGRAM_TOKENIZER: &str = "cjk_ngram";
 
@@ -10,13 +12,13 @@ pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// All Tantivy schema fields in one place.
 pub struct IndexSchema {
-    pub schema:     Schema,
-    pub project:    Field,
-    pub file:       Field,
-    pub filename:   Field,
-    pub title:      Field,
-    pub chunk_id:   Field,
-    pub body:       Field,
+    pub schema: Schema,
+    pub project: Field,
+    pub file: Field,
+    pub filename: Field,
+    pub title: Field,
+    pub chunk_id: Field,
+    pub body: Field,
     pub line_start: Field,
 }
 
@@ -61,9 +63,10 @@ impl IndexSchema {
 }
 
 pub(crate) fn register_ngram_tokenizer(index: &Index) -> Result<()> {
-    let ngram = TextAnalyzer::builder(NgramTokenizer::new(2, 3, false).map_err(|e| {
-        anyhow::anyhow!("Failed to create NgramTokenizer: {}", e)
-    })?)
+    let ngram = TextAnalyzer::builder(
+        NgramTokenizer::new(2, 3, false)
+            .map_err(|e| anyhow::anyhow!("Failed to create NgramTokenizer: {}", e))?,
+    )
     .filter(LowerCaser)
     .build();
     index.tokenizers().register(NGRAM_TOKENIZER, ngram);

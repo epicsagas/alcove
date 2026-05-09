@@ -255,16 +255,16 @@ pub(crate) fn default_ground_truth_path() -> PathBuf {
 }
 
 fn get_docs_root() -> Result<PathBuf> {
-    crate::setup::saved_docs_root().ok_or_else(|| {
-        anyhow::anyhow!("No docs repository found. Run `alcove setup` first.")
-    })
+    crate::setup::saved_docs_root()
+        .ok_or_else(|| anyhow::anyhow!("No docs repository found. Run `alcove setup` first."))
 }
 
 /// Expand tilde in cache_dir and create an EmbeddingService from config.
 #[cfg(feature = "alcove-full")]
-fn create_embedding_service(emb_cfg: &crate::config::EmbeddingConfig) -> crate::embedding::EmbeddingService {
-    let model = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model)
-        .unwrap_or_default();
+fn create_embedding_service(
+    emb_cfg: &crate::config::EmbeddingConfig,
+) -> crate::embedding::EmbeddingService {
+    let model = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
     let cache_dir = if emb_cfg.cache_dir.starts_with('~') {
         std::env::var("HOME")
             .ok()
@@ -273,15 +273,13 @@ fn create_embedding_service(emb_cfg: &crate::config::EmbeddingConfig) -> crate::
     } else {
         emb_cfg.cache_dir.clone()
     };
-    crate::embedding::EmbeddingService::new(
-        crate::config::EmbeddingConfig {
-            model: model.as_str().to_string(),
-            auto_download: emb_cfg.auto_download,
-            cache_dir,
-            enabled: true,
-            query_cache_size: emb_cfg.query_cache_size,
-        },
-    )
+    crate::embedding::EmbeddingService::new(crate::config::EmbeddingConfig {
+        model: model.as_str().to_string(),
+        auto_download: emb_cfg.auto_download,
+        cache_dir,
+        enabled: true,
+        query_cache_size: emb_cfg.query_cache_size,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -346,20 +344,11 @@ fn run_precision_benchmark(
             let service = create_embedding_service(&emb_cfg);
 
             for entry in queries {
-                match crate::index::search_hybrid(
-                    docs_root,
-                    &entry.text,
-                    &service,
-                    limit,
-                    None,
-                ) {
+                match crate::index::search_hybrid(docs_root, &entry.text, &service, limit, None) {
                     Ok(hybrid_result) => {
                         let hybrid_files = extract_retrieved_files(&hybrid_result, "hybrid");
-                        let hybrid_pak = compute_precision_at_k(
-                            &hybrid_files,
-                            &entry.relevant_files,
-                            &k_values,
-                        );
+                        let hybrid_pak =
+                            compute_precision_at_k(&hybrid_files, &entry.relevant_files, &k_values);
                         results.push(PerQueryPrecision {
                             query: entry.text.clone(),
                             precision_at_k: hybrid_pak,
@@ -477,24 +466,13 @@ fn run_latency_benchmark(
 
             for entry in queries {
                 // Warm-up
-                let _ = crate::index::search_hybrid(
-                    docs_root,
-                    &entry.text,
-                    &service,
-                    limit,
-                    None,
-                );
+                let _ = crate::index::search_hybrid(docs_root, &entry.text, &service, limit, None);
 
                 let mut times: Vec<u128> = Vec::with_capacity(iterations);
                 for _ in 0..iterations {
                     let start = Instant::now();
-                    let _ = crate::index::search_hybrid(
-                        docs_root,
-                        &entry.text,
-                        &service,
-                        limit,
-                        None,
-                    );
+                    let _ =
+                        crate::index::search_hybrid(docs_root, &entry.text, &service, limit, None);
                     times.push(start.elapsed().as_micros());
                 }
                 times.sort();
@@ -526,10 +504,7 @@ fn run_latency_benchmark(
 
 fn run_throughput_benchmark(docs_root: &Path) -> Result<ThroughputResults> {
     // Full rebuild
-    eprintln!(
-        "  {} Measuring full rebuild...",
-        style("...").dim()
-    );
+    eprintln!("  {} Measuring full rebuild...", style("...").dim());
     let start = Instant::now();
     crate::index::rebuild_index(docs_root)?;
     let full_rebuild_ms = start.elapsed().as_millis();
@@ -544,10 +519,7 @@ fn run_throughput_benchmark(docs_root: &Path) -> Result<ThroughputResults> {
     let incremental_no_change_ms = start.elapsed().as_millis();
 
     // Stale detection
-    eprintln!(
-        "  {} Measuring stale detection...",
-        style("...").dim()
-    );
+    eprintln!("  {} Measuring stale detection...", style("...").dim());
     let start = Instant::now();
     let _ = crate::index::is_index_stale(docs_root);
     let stale_detection_us = start.elapsed().as_micros();
@@ -603,13 +575,13 @@ pub(crate) fn format_human(results: &BenchResults) -> String {
     ));
 
     if let Some(ref precision) = results.precision {
-        out.push_str(&format!("\n{}\n", style("Search Quality (Precision@K / Recall@K)").bold()));
+        out.push_str(&format!(
+            "\n{}\n",
+            style("Search Quality (Precision@K / Recall@K)").bold()
+        ));
         out.push_str(&format!("{}\n", "-".repeat(70)));
 
-        for (mode, queries) in [
-            ("Grep", &precision.grep),
-            ("Ranked", &precision.ranked),
-        ] {
+        for (mode, queries) in [("Grep", &precision.grep), ("Ranked", &precision.ranked)] {
             out.push_str(&format!("\n  {}:\n", style(mode).cyan()));
             for q in queries {
                 out.push_str(&format!("    \"{}\"\n", q.query));
@@ -639,10 +611,7 @@ pub(crate) fn format_human(results: &BenchResults) -> String {
         out.push_str(&format!("\n{}\n", style("Search Latency").bold()));
         out.push_str(&format!("{}\n", "-".repeat(70)));
 
-        for (mode, entries) in [
-            ("Grep", &latency.grep),
-            ("Ranked", &latency.ranked),
-        ] {
+        for (mode, entries) in [("Grep", &latency.grep), ("Ranked", &latency.ranked)] {
             out.push_str(&format!("\n  {}:\n", style(mode).cyan()));
             for e in entries {
                 out.push_str(&format!(
@@ -714,10 +683,7 @@ pub(crate) fn format_markdown(results: &BenchResults) -> String {
         md.push_str("| Mode | Avg P@5 | Avg P@10 | Avg P@20 |\n");
         md.push_str("|------|---------|----------|----------|\n");
 
-        for (label, queries) in [
-            ("grep", &precision.grep),
-            ("ranked", &precision.ranked),
-        ] {
+        for (label, queries) in [("grep", &precision.grep), ("ranked", &precision.ranked)] {
             let avg_p5 = average_precision_at_k(queries, 5);
             let avg_p10 = average_precision_at_k(queries, 10);
             let avg_p20 = average_precision_at_k(queries, 20);
@@ -744,10 +710,7 @@ pub(crate) fn format_markdown(results: &BenchResults) -> String {
         md.push_str("| Query | Mode | Avg (us) | P50 (us) | P95 (us) | P99 (us) |\n");
         md.push_str("|-------|------|----------|----------|----------|----------|\n");
 
-        for (mode_label, entries) in [
-            ("grep", &latency.grep),
-            ("ranked", &latency.ranked),
-        ] {
+        for (mode_label, entries) in [("grep", &latency.grep), ("ranked", &latency.ranked)] {
             for e in entries {
                 md.push_str(&format!(
                     "| {} | {} | {} | {} | {} | {} |\n",
@@ -771,7 +734,10 @@ pub(crate) fn format_markdown(results: &BenchResults) -> String {
         md.push_str("## 3. Index Build Performance\n\n");
         md.push_str("| Operation | Time |\n");
         md.push_str("|-----------|------|\n");
-        md.push_str(&format!("| Full rebuild | {} ms |\n", throughput.full_rebuild_ms));
+        md.push_str(&format!(
+            "| Full rebuild | {} ms |\n",
+            throughput.full_rebuild_ms
+        ));
         md.push_str(&format!(
             "| Incremental (no change) | {} ms |\n",
             throughput.incremental_no_change_ms
@@ -786,10 +752,7 @@ pub(crate) fn format_markdown(results: &BenchResults) -> String {
     // Search quality tables
     if let Some(ref precision) = results.precision {
         md.push_str("## 4. Search Quality\n\n");
-        for (label, queries) in [
-            ("Grep", &precision.grep),
-            ("Ranked", &precision.ranked),
-        ] {
+        for (label, queries) in [("Grep", &precision.grep), ("Ranked", &precision.ranked)] {
             md.push_str(&format!("### {}\n\n", label));
             md.push_str("| Query | P@5 | R@5 | P@10 | R@10 | P@20 | R@20 |\n");
             md.push_str("|-------|-----|-----|------|------|------|------|\n");
@@ -804,11 +767,7 @@ pub(crate) fn format_markdown(results: &BenchResults) -> String {
                         ]
                     })
                     .collect();
-                md.push_str(&format!(
-                    "| {} | {} |\n",
-                    q.query,
-                    vals.join(" | ")
-                ));
+                md.push_str(&format!("| {} | {} |\n", q.query, vals.join(" | ")));
             }
             md.push('\n');
         }
@@ -827,11 +786,7 @@ pub(crate) fn format_markdown(results: &BenchResults) -> String {
                         ]
                     })
                     .collect();
-                md.push_str(&format!(
-                    "| {} | {} |\n",
-                    q.query,
-                    vals.join(" | ")
-                ));
+                md.push_str(&format!("| {} | {} |\n", q.query, vals.join(" | ")));
             }
             md.push('\n');
         }
@@ -872,8 +827,16 @@ pub(crate) fn format_markdown(results: &BenchResults) -> String {
         };
         md.push_str(&format!(
             "- Ranked search is {:.1}x {} than grep (avg {}us vs {}us)\n",
-            if speed_ratio >= 1.0 { speed_ratio } else { 1.0 / speed_ratio },
-            if avg_ranked < avg_grep { "faster" } else { "slower" },
+            if speed_ratio >= 1.0 {
+                speed_ratio
+            } else {
+                1.0 / speed_ratio
+            },
+            if avg_ranked < avg_grep {
+                "faster"
+            } else {
+                "slower"
+            },
             avg_ranked,
             avg_grep,
         ));
@@ -931,7 +894,10 @@ pub fn cmd_bench(
 
     let ground_truth = load_ground_truth(&queries_path)?;
     if ground_truth.is_empty() {
-        anyhow::bail!("Ground truth file contains no queries: {}", queries_path.display());
+        anyhow::bail!(
+            "Ground truth file contains no queries: {}",
+            queries_path.display()
+        );
     }
 
     eprintln!(
@@ -956,11 +922,12 @@ pub fn cmd_bench(
     let data_stats = collect_data_stats(&docs_root);
 
     let precision = if run_precision {
-        eprintln!(
-            "  {} Running precision benchmarks...",
-            style("...").dim()
-        );
-        Some(run_precision_benchmark(&docs_root, &ground_truth, &config.scope)?)
+        eprintln!("  {} Running precision benchmarks...", style("...").dim());
+        Some(run_precision_benchmark(
+            &docs_root,
+            &ground_truth,
+            &config.scope,
+        )?)
     } else {
         None
     };
@@ -1277,15 +1244,31 @@ relevant_files = ["c.md"]
             PerQueryPrecision {
                 query: "a".to_string(),
                 precision_at_k: vec![
-                    PrecisionAtK { k: 5, precision: 0.6, recall: 0.5 },
-                    PrecisionAtK { k: 10, precision: 0.5, recall: 0.8 },
+                    PrecisionAtK {
+                        k: 5,
+                        precision: 0.6,
+                        recall: 0.5,
+                    },
+                    PrecisionAtK {
+                        k: 10,
+                        precision: 0.5,
+                        recall: 0.8,
+                    },
                 ],
             },
             PerQueryPrecision {
                 query: "b".to_string(),
                 precision_at_k: vec![
-                    PrecisionAtK { k: 5, precision: 0.4, recall: 0.3 },
-                    PrecisionAtK { k: 10, precision: 0.3, recall: 0.6 },
+                    PrecisionAtK {
+                        k: 5,
+                        precision: 0.4,
+                        recall: 0.3,
+                    },
+                    PrecisionAtK {
+                        k: 10,
+                        precision: 0.3,
+                        recall: 0.6,
+                    },
                 ],
             },
         ];
@@ -1312,17 +1295,41 @@ relevant_files = ["c.md"]
                 grep: vec![PerQueryPrecision {
                     query: "architecture".to_string(),
                     precision_at_k: vec![
-                        PrecisionAtK { k: 5, precision: 0.6, recall: 0.5 },
-                        PrecisionAtK { k: 10, precision: 0.5, recall: 0.8 },
-                        PrecisionAtK { k: 20, precision: 0.3, recall: 0.9 },
+                        PrecisionAtK {
+                            k: 5,
+                            precision: 0.6,
+                            recall: 0.5,
+                        },
+                        PrecisionAtK {
+                            k: 10,
+                            precision: 0.5,
+                            recall: 0.8,
+                        },
+                        PrecisionAtK {
+                            k: 20,
+                            precision: 0.3,
+                            recall: 0.9,
+                        },
                     ],
                 }],
                 ranked: vec![PerQueryPrecision {
                     query: "architecture".to_string(),
                     precision_at_k: vec![
-                        PrecisionAtK { k: 5, precision: 0.8, recall: 0.7 },
-                        PrecisionAtK { k: 10, precision: 0.7, recall: 0.9 },
-                        PrecisionAtK { k: 20, precision: 0.5, recall: 1.0 },
+                        PrecisionAtK {
+                            k: 5,
+                            precision: 0.8,
+                            recall: 0.7,
+                        },
+                        PrecisionAtK {
+                            k: 10,
+                            precision: 0.7,
+                            recall: 0.9,
+                        },
+                        PrecisionAtK {
+                            k: 20,
+                            precision: 0.5,
+                            recall: 1.0,
+                        },
                     ],
                 }],
                 hybrid: None,
@@ -1426,7 +1433,10 @@ relevant_files = ["c.md"]
         .unwrap();
 
         let matches = result["matches"].as_array().unwrap();
-        assert!(!matches.is_empty(), "grep should find 'architecture' in fixture docs");
+        assert!(
+            !matches.is_empty(),
+            "grep should find 'architecture' in fixture docs"
+        );
     }
 
     #[test]
@@ -1478,7 +1488,10 @@ relevant_files = ["c.md"]
         let build_result = crate::index::build_index_unlocked(dir.path())
             .expect("build_index should succeed on fixture");
         let indexed = build_result["indexed"].as_u64().unwrap_or(0);
-        assert!(indexed > 0, "index should have indexed files, got: {build_result}");
+        assert!(
+            indexed > 0,
+            "index should have indexed files, got: {build_result}"
+        );
 
         // Run precision benchmark
         let gt = load_ground_truth(&gt_path).unwrap();
@@ -1488,10 +1501,16 @@ relevant_files = ["c.md"]
         let ranked_result =
             crate::index::search_indexed(dir.path(), "architecture", 20, None).unwrap();
         let ranked_files = extract_retrieved_files(&ranked_result, "ranked");
-        assert!(!ranked_files.is_empty(), "ranked search should find results");
+        assert!(
+            !ranked_files.is_empty(),
+            "ranked search should find results"
+        );
 
         // Compute precision
         let pak = compute_precision_at_k(&ranked_files, &gt[0].relevant_files, &[5, 10, 20]);
-        assert!(pak[0].recall > 0.0, "should find ARCHITECTURE.md via ranked search");
+        assert!(
+            pak[0].recall > 0.0,
+            "should find ARCHITECTURE.md via ranked search"
+        );
     }
 }
