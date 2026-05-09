@@ -662,8 +662,8 @@ Alcove pairs naturally with **obsidian-forge**, an Obsidian vault generator and 
 
 ```
 obsidian-forge (vault automation)   →   alcove promote   →   alcove (project docs)
-  graph strengthening, MOC, sync          one command           BM25 + vector search
-  daemon (24/7 background)                                      request-based (stdio JSON-RPC)
+  graph strengthening, MOC, sync        one command          BM25 + vector search
+  daemon (24/7 background)                                   request-based (stdio JSON-RPC)
 ```
 
 ## Contributing
