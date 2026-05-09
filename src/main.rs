@@ -126,34 +126,18 @@ enum Commands {
         #[arg(long)]
         mv: bool,
     },
-    /// Start HTTP RAG server for external access
+    /// Manage background MCP server lifecycle
     #[cfg(feature = "alcove-server")]
-    Serve {
-        /// Host / bind address (default: 127.0.0.1, use 0.0.0.0 for all interfaces)
-        #[arg(long)]
-        host: Option<String>,
-        /// Port to listen on
-        #[arg(long)]
-        port: Option<u16>,
-        /// Bearer token for authentication (optional)
-        #[arg(long)]
-        token: Option<String>,
+    Mcp {
+        #[command(subcommand)]
+        subcmd: ServerCommands,
     },
-    /// Register alcove serve as a macOS login item and start it
+    /// Manage background REST API server lifecycle
     #[cfg(feature = "alcove-server")]
-    Enable,
-    /// Unregister alcove from login items and stop it
-    #[cfg(feature = "alcove-server")]
-    Disable,
-    /// Start the background alcove serve process
-    #[cfg(feature = "alcove-server")]
-    Start,
-    /// Stop the background alcove serve process
-    #[cfg(feature = "alcove-server")]
-    Stop,
-    /// Restart the background alcove serve process
-    #[cfg(feature = "alcove-server")]
-    Restart,
+    Api {
+        #[command(subcommand)]
+        subcmd: ServerCommands,
+    },
     /// Manage knowledge base vaults
     Vault {
         #[command(subcommand)]
@@ -230,6 +214,65 @@ enum ModelCommands {
     },
     /// Show current model status
     Status,
+}
+
+#[derive(Subcommand)]
+#[cfg(feature = "alcove-server")]
+enum ServerCommands {
+    /// Start daemon in background
+    Start {
+        /// Host / bind address
+        #[arg(long)]
+        host: Option<String>,
+        /// Port to listen on
+        #[arg(long)]
+        port: Option<u16>,
+    },
+    /// Stop running daemon
+    Stop,
+    /// Restart daemon
+    Restart {
+        /// Host / bind address
+        #[arg(long)]
+        host: Option<String>,
+        /// Port to listen on
+        #[arg(long)]
+        port: Option<u16>,
+    },
+    /// Show daemon status
+    Status,
+    /// Register as OS login service (macOS: launchd)
+    Enable {
+        /// Start immediately after enabling
+        #[arg(long)]
+        now: bool,
+    },
+    /// Unregister OS login service
+    Disable {
+        /// Stop immediately before disabling
+        #[arg(long)]
+        now: bool,
+    },
+    /// Internal use: run foreground server for background daemon
+    #[command(hide = true)]
+    Serve {
+        /// Host / bind address
+        #[arg(long)]
+        host: Option<String>,
+        /// Port to listen on
+        #[arg(long)]
+        port: Option<u16>,
+        /// Bearer token for authentication (optional)
+        #[arg(long)]
+        token: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+#[cfg(feature = "alcove-server")]
+enum ServiceKind {
+    Mcp,
+    Api,
 }
 
 // ---------------------------------------------------------------------------
@@ -396,15 +439,9 @@ fn main() -> Result<()> {
         #[cfg(feature = "alcove-full")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
         #[cfg(feature = "alcove-server")]
-        Some(Commands::Enable) => launchd::enable(),
+        Some(Commands::Mcp { subcmd }) => handle_server_command(subcmd, ServiceKind::Mcp),
         #[cfg(feature = "alcove-server")]
-        Some(Commands::Disable) => launchd::disable(),
-        #[cfg(feature = "alcove-server")]
-        Some(Commands::Start) => launchd::start(),
-        #[cfg(feature = "alcove-server")]
-        Some(Commands::Stop) => launchd::stop(),
-        #[cfg(feature = "alcove-server")]
-        Some(Commands::Restart) => launchd::restart(),
+        Some(Commands::Api { subcmd }) => handle_server_command(subcmd, ServiceKind::Api),
         Some(Commands::Token) => cli::cmd_token(),
         #[cfg(unix)]
         Some(Commands::Reap) => cli::cmd_reap(),
@@ -421,8 +458,30 @@ fn main() -> Result<()> {
             queries.as_deref(),
             output_file.as_deref(),
         ),
-        #[cfg(feature = "alcove-server")]
-        Some(Commands::Serve { host, port, token }) => {
+    }
+}
+
+#[cfg(feature = "alcove-server")]
+fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()> {
+    match subcmd {
+        ServerCommands::Start { host: _, port: _ } => launchd::start(),
+        ServerCommands::Stop => launchd::stop(),
+        ServerCommands::Restart { host: _, port: _ } => launchd::restart(),
+        ServerCommands::Status => launchd::status(),
+        ServerCommands::Enable { now } => {
+            let res = launchd::enable();
+            if now && res.is_ok() {
+                let _ = launchd::start();
+            }
+            res
+        }
+        ServerCommands::Disable { now } => {
+            if now {
+                let _ = launchd::stop();
+            }
+            launchd::disable()
+        }
+        ServerCommands::Serve { host, port, token } => {
             let cfg = config::load_config();
             let docs_root = cfg.docs_root().ok_or_else(|| {
                 anyhow::anyhow!("docs_root not configured. Run 'alcove setup' first.")
@@ -431,15 +490,21 @@ fn main() -> Result<()> {
             // Resolve host: CLI flag > config.toml > default (127.0.0.1)
             let srv_cfg = cfg.server_config();
             let bind_host = host.as_deref().unwrap_or(&srv_cfg.host);
-            // Resolve port: CLI flag > config.toml > default (57384)
-            let bind_port = port.unwrap_or(srv_cfg.port);
+            // Resolve port: CLI flag > config.toml > kind-specific default
+            let bind_port = port.unwrap_or_else(|| match kind {
+                ServiceKind::Mcp => 57384,
+                ServiceKind::Api => 8080,
+            });
             // Resolve token: CLI flag > config.toml > none
             let resolved_token = token
                 .as_ref()
                 .cloned()
                 .or_else(|| cfg.server.as_ref().and_then(|s| s.token.clone()));
 
-            println!("{}", console::style("Starting Alcove RAG server...").bold());
+            println!(
+                "{}",
+                console::style(format!("Starting Alcove {:?} RAG server...", kind)).bold()
+            );
             println!(
                 "  {} Docs root: {}",
                 console::style("→").dim(),

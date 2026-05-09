@@ -399,6 +399,12 @@ fn lint_with_year(docs_root: &Path, project_filter: Option<&str>, now_year: i32)
 }
 
 /// Like resolve_link but returns the actual PathBuf.
+///
+/// NOTE: Does NOT canonicalize paths. When docs_root is a symlink, WalkDir
+/// produces paths based on the symlink while canonicalize() resolves to the
+/// real path. This mismatch causes false orphan reports because the
+/// `linked_files` HashSet (populated from this function) is compared against
+/// WalkDir paths. Returning un-canonicalized paths keeps both sides consistent.
 fn resolve_to_path(
     link: &str,
     containing_file: &Path,
@@ -408,20 +414,20 @@ fn resolve_to_path(
     if let Some(parent) = containing_file.parent() {
         let candidate = parent.join(link);
         if candidate.exists() {
-            return Some(candidate.canonicalize().ok().unwrap_or(candidate));
+            return Some(candidate);
         }
         let with_md = parent.join(format!("{}.md", link));
         if with_md.exists() {
-            return Some(with_md.canonicalize().ok().unwrap_or(with_md));
+            return Some(with_md);
         }
     }
     let from_root = docs_root.join(link);
     if from_root.exists() {
-        return Some(from_root.canonicalize().ok().unwrap_or(from_root));
+        return Some(from_root);
     }
     let from_root_md = docs_root.join(format!("{}.md", link));
     if from_root_md.exists() {
-        return Some(from_root_md.canonicalize().ok().unwrap_or(from_root_md));
+        return Some(from_root_md);
     }
 
     let link_lower = link.to_lowercase();

@@ -256,6 +256,26 @@ pub fn stop() -> Result<()> {
     Ok(())
 }
 
+pub fn status() -> Result<()> {
+    if is_loaded() {
+        if let Some(pid) = running_pid() {
+            println!(
+                "  {} Alcove is running (PID {})",
+                console::style("✓").green(),
+                console::style(pid).cyan()
+            );
+        } else {
+            println!(
+                "  {} Alcove is registered but not currently running",
+                console::style("⚠").yellow()
+            );
+        }
+    } else {
+        println!("  Alcove is not registered as a login item");
+    }
+    Ok(())
+}
+
 /// Restart the background process.
 pub fn restart() -> Result<()> {
     if running_pid().is_some() {
