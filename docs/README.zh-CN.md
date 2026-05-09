@@ -128,6 +128,48 @@ alcove setup
 
 随时重新运行 `alcove setup` 来更改设置。它会记住您之前的选择。
 
+## 使用方法
+
+### CLI 搜索
+
+直接从终端搜索您的文档。默认情况下，它会搜索**所有项目**（全局范围）。
+
+```bash
+# 基本搜索（全局范围）
+alcove search "authentication"
+
+# 限制搜索到当前项目（通过 CWD 自动检测）
+alcove search "auth flow" --scope project
+
+# 强制使用 grep 模式（精确子串匹配）
+alcove search "TODO" --mode grep
+
+# 强制使用排名模式（BM25/混合）
+alcove search "data model" --mode ranked
+
+# 调整结果限制
+alcove search "deployment" --limit 5
+```
+
+### 编码代理 (MCP)
+
+AI 编码代理通过 **MCP 工具**使用 Alcove。通常您不需要手动调用这些工具；当您询问有关项目的问题时，代理会自动调用它们。
+
+| 目标 | 代理工具 | 描述 |
+|------|----------|----------|
+| **探索** | `get_project_docs_overview` | 列出当前项目中的所有文件以了解结构。 |
+| **搜索** | `search_project_docs` | 搜索特定的关键词或概念。支持 `scope: "global"`。 |
+| **读取** | `get_doc_file` | 读取搜索过程中发现的特定文件内容。 |
+| **审计** | `audit_project` | 检查缺失的文档或代码与文档之间的不一致。 |
+
+**代理交互示例：**
+> **用户：** "我该如何添加一个新的 API 端点？"
+> **代理：** (调用 `search_project_docs(query="add api endpoint")`)
+> **代理：** (通过 `get_doc_file` 读取最相关的文档)
+> **代理：** "根据 `ARCHITECTURE.md`，您需要..."
+
+---
+
 ## 工作原理
 
 ```mermaid

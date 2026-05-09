@@ -185,6 +185,46 @@ The index may not be built yet. Run `alcove index` to build it, then try again.
 **`alcove doctor` reports issues**
 Follow the suggestions printed by `doctor` — it checks binary location, MCP registration, index state, and optional dependencies like `pdftotext`.
 
+## Usage
+
+### CLI Search
+
+Search through your documents directly from the terminal. By default, it searches across **all projects** (global scope).
+
+```bash
+# Basic search (global scope)
+alcove search "authentication"
+
+# Limit search to the current project (auto-detected via CWD)
+alcove search "auth flow" --scope project
+
+# Force grep mode (exact substring match)
+alcove search "TODO" --mode grep
+
+# Force ranked mode (BM25/Hybrid)
+alcove search "data model" --mode ranked
+
+# Adjust result limit
+alcove search "deployment" --limit 5
+```
+
+### Coding Agents (MCP)
+
+AI coding agents use Alcove through **MCP tools**. You don't usually need to call these yourself; the agent will invoke them when you ask questions about your project.
+
+| Goal | Agent Tool | Description |
+|------|------------|-------------|
+| **Explore** | `get_project_docs_overview` | List all files in the current project to understand the structure. |
+| **Search** | `search_project_docs` | Search for specific keywords or concepts. Supports `scope: "global"`. |
+| **Read** | `get_doc_file` | Read the content of a specific file found during search. |
+| **Audit** | `audit_project` | Check for missing docs or inconsistencies between code and docs. |
+
+**Example agent interaction:**
+> **User:** "How do I add a new API endpoint?"
+> **Agent:** (calls `search_project_docs(query="add api endpoint")`)
+> **Agent:** (reads the most relevant doc via `get_doc_file`)
+> **Agent:** "According to `ARCHITECTURE.md`, you need to..."
+
 ---
 
 ## How it works

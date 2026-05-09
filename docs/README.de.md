@@ -128,6 +128,48 @@ Das war's. `setup` führt dich interaktiv durch alles:
 
 Führe `alcove setup` jederzeit erneut aus, um Einstellungen zu ändern. Es merkt sich deine vorherigen Auswahlen.
 
+## Verwendung
+
+### CLI-Suche
+
+Durchsuchen Sie Ihre Dokumente direkt vom Terminal aus. Standardmäßig wird über **alle Projekte** hinweg gesucht (globaler Bereich).
+
+```bash
+# Einfache Suche (globaler Bereich)
+alcove search "authentication"
+
+# Suche auf das aktuelle Projekt beschränken (automatisch erkannt via CWD)
+alcove search "auth flow" --scope project
+
+# Grep-Modus erzwingen (exakte Teilstring-Suche)
+alcove search "TODO" --mode grep
+
+# Ranking-Modus erzwingen (BM25/Hybrid)
+alcove search "data model" --mode ranked
+
+# Ergebnislimit anpassen
+alcove search "deployment" --limit 5
+```
+
+### Codierungs-Agenten (MCP)
+
+KI-Codierungs-Agenten nutzen Alcove über **MCP-Tools**. Normalerweise müssen Sie diese nicht selbst aufrufen; der Agent ruft sie auf, wenn Sie Fragen zu Ihrem Projekt stellen.
+
+| Ziel | Agenten-Tool | Beschreibung |
+|------|--------------|--------------|
+| **Erkunden** | `get_project_docs_overview` | Listet alle Dateien im aktuellen Projekt auf, um die Struktur zu verstehen. |
+| **Suchen** | `search_project_docs` | Sucht nach bestimmten Schlüsselwörtern oder Konzepten. Unterstützt `scope: "global"`. |
+| **Lesen** | `get_doc_file` | Liest den Inhalt einer bestimmten Datei, die bei der Suche gefunden wurde. |
+| **Audit** | `audit_project` | Prüft auf fehlende Dokumente oder Inkonsistenzen zwischen Code und Dokumenten. |
+
+**Beispiel für die Interaktion mit dem Agenten:**
+> **Benutzer:** "Wie füge ich einen neuen API-Endpunkt hinzu?"
+> **Agent:** (ruft `search_project_docs(query="add api endpoint")` auf)
+> **Agent:** (liest das relevanteste Dokument über `get_doc_file`)
+> **Agent:** "Laut `ARCHITECTURE.md` müssen Sie..."
+
+---
+
 ## Funktionsweise
 
 ```mermaid

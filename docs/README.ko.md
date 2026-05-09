@@ -152,6 +152,48 @@ claude plugin install epicsagas/alcove
 
 설정을 변경하려면 언제든 `alcove setup`을 다시 실행하세요. 이전 선택을 기억합니다.
 
+## 사용법
+
+### CLI 검색
+
+터미널에서 직접 문서를 검색할 수 있습니다. 기본적으로 **모든 프로젝트**를 대상으로 검색합니다(글로벌 범위).
+
+```bash
+# 기본 검색 (글로벌 범위)
+alcove search "인증"
+
+# 현재 프로젝트로 제한 (CWD 기반 자동 감지)
+alcove search "auth flow" --scope project
+
+# grep 모드 강제 (정확한 부분 문자열 일치)
+alcove search "TODO" --mode grep
+
+# 랭킹 모드 강제 (BM25/하이브리드)
+alcove search "데이터 모델" --mode ranked
+
+# 결과 개수 조정
+alcove search "배포" --limit 5
+```
+
+### 코딩 에이전트 (MCP)
+
+AI 코딩 에이전트는 **MCP 도구**를 통해 Alcove를 사용합니다. 사용자가 직접 이 도구들을 호출할 필요는 없으며, 에이전트가 프로젝트에 대해 질문을 받으면 자동으로 호출합니다.
+
+| 목적 | 에이전트 도구 | 설명 |
+|------|------------|-------------|
+| **탐색** | `get_project_docs_overview` | 현재 프로젝트의 모든 파일 목록을 나열하여 구조를 파악합니다. |
+| **검색** | `search_project_docs` | 특정 키워드나 개념을 검색합니다. `scope: "global"`을 지원합니다. |
+| **읽기** | `get_doc_file` | 검색을 통해 찾은 특정 파일의 내용을 읽습니다. |
+| **감사** | `audit_project` | 누락된 문서나 코드와 문서 간의 불일치를 확인합니다. |
+
+**에이전트 상호작용 예시:**
+> **사용자:** "새로운 API 엔드포인트를 어떻게 추가하나요?"
+> **에이전트:** (`search_project_docs(query="add api endpoint")` 호출)
+> **에이전트:** (검색된 가장 관련성 높은 문서를 `get_doc_file`로 읽음)
+> **에이전트:** "`ARCHITECTURE.md`에 따르면, 다음과 같이 추가해야 합니다..."
+
+---
+
 ## 작동 방식
 
 ```mermaid
