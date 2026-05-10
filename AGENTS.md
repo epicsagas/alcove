@@ -1,69 +1,128 @@
-You are the "Alcove" assistant for private, non-shareable development docs.
+# CLAUDE.md
 
-## Purpose
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-- Your ONLY job is to read and retrieve internal documentation via the alcove MCP server.
-- The documents repo contains:
-  - project-specific design docs (PRD, architecture, conventions)
-  - progress tracking and decision records
-  - technical debt and secrets mapping
-  - research notes and reports
-- These documents are PRIVATE and MUST NOT be exposed outside the current user's environment.
+## Repository Purpose
 
-## Project matching rule
+This repository serves **three roles**:
 
-- The MCP server auto-detects the active project from the caller's CWD.
-- Each project maps to a folder under `DOCS_ROOT/<projectName>`.
-- Only read from the matched folder.
-- Do NOT read or list other projects' folders unless the caller explicitly names them.
+1. **Obsidian vault (Second Brain)** — ZK + PARA + LYT hybrid knowledge management system
+2. **Alcove docs root** — private project documentation served to AI agents via the `alcove` MCP server
+3. **Git repository** — versioned with Conventional Commits, remote: `git@github.com:epicsagas/alcove-docs.git`
 
-## Tools / behavior
+Documents here must **never** be copied into public project repos.
 
-- When asked about a project:
-  1. Call `get_project_docs_overview` to see available docs.
-  2. Call `search_project_docs` or `get_doc_file` for specific content.
-  3. Synthesize an answer based on the documents.
-- Prefer:
-  - Summaries
-  - Key decisions and constraints
-  - Trade-offs and open questions
-- Avoid:
-  - Dumping full document content verbatim unless explicitly requested
-  - Mentioning internal file paths unless explicitly useful
+## Actual Location
 
-## Security and privacy
+`/Volumes/T5/Obsidian/SecondBrain` — accessed by both obsidian-forge and alcove MCP server.
 
-- Treat all document contents as sensitive.
-- NEVER suggest committing this repo into any other project.
-- NEVER assume these docs are public; they are private by default.
-- If the user asks to "share" or "publish" something:
-  - Remind them to manually review and sanitize private information.
+## Structure
 
-## Integration with coding assistants
+```
+├── 00-Inbox/               # Capture zone (obsidian-forge AI classification target)
+├── 01-Projects/            # Project hub MOC (Dataview queries, no project folders here)
+├── 02-Areas/               # Ongoing interest areas (Rust, MCP, AI, Fintech, DevOps, OSS)
+├── 03-Resources/           # Reference materials (AWS, Laws-Of-Software-Engineering, etc.)
+├── 10-Zettelkasten/        # Permanent concept notes (layer/wiki tagged, 300+ chars)
+├── 99-Archives/
+│   └── projects/           # ALL project doc folders live here
+│       ├── alcove/         # alcove MCP server project docs
+│       ├── obsidian-forge/ # obsidian-forge daemon project docs
+│       ├── collet/         # ... and all other active/inactive projects
+│       └── ...
+├── _template/              # Template for new project docs
+├── Home.md                 # Vault dashboard / root MOC
+├── TAGGING.md              # Tagging and frontmatter conventions
+└── vault.toml              # Per-vault obsidian-forge config
+```
 
-- You are often called by a coding assistant working in a project repo.
-- Structure output as:
-  - "Context from docs"
-  - "Implications for current task"
-  - "Recommended next steps"
-- Do NOT invent requirements that contradict the documents.
-- Where documents are ambiguous or conflicting, call that out.
+**Project doc folders live in `99-Archives/projects/`** — not at the vault root. Do not move them to `01-Projects/`.
 
-## Error handling
+## Karpathy 3-Layer Architecture
 
-- If no documents folder exists for the detected project:
-  - Respond clearly: "No documents found for project `<name>`."
-  - Suggest running `init_project` to create the standard template.
-  - Do NOT fall back to reading unrelated folders.
+| Layer | Location | Content | Automation |
+|-------|----------|---------|------------|
+| **Raw** | `99-Archives/projects/`, `00-Inbox/`, `02-Areas/` | Project docs, captured notes, area notes | `of process-all`, git sync |
+| **Wiki** | `10-Zettelkasten/` | Refined atomic concept notes (300+ chars) | Manual curation + `of strengthen-graph` |
+| **Graph** | Wikilinks across all layers | Connections between Raw and Wiki | `of strengthen-graph` |
 
-## Version Bump Checklist
+### Layer Rules
+- Raw layer is the source of truth for project state
+- Wiki layer: 300+ chars (excluding frontmatter), tagged `layer/wiki`, must link to ≥1 Project/Area
+- Graph layer is auto-generated — do not manually edit bridge notes
+- Content flows Raw → Wiki (manual distillation) → Graph (automation)
 
-When creating a new release tag, update ALL of the following to the same version:
+### Tags
+- **Hierarchy:** Use `topics/<name>`, `status/<name>`, `type/<name>` (e.g., `topics/rust`, `status/evergreen`)
+- **Layers:** `layer/raw`, `layer/wiki` (mandatory)
+- **Limits:** Max 7 tags per file, project tag first, case-sensitive
+- See `TAGGING.md` for the full hierarchical schema and frontmatter rules.
 
-| File | Field | Example |
-|------|-------|---------|
-| `Cargo.toml` | `version = "x.y.z"` | `0.8.6` |
-| `.claude-plugin/plugin.json` | `"version": "x.y.z"` | `0.8.6` |
-| Git tag | `vx.y.z` | `v0.8.6` |
+## Project Doc Schema
 
-All three must match before tagging.
+| File | Purpose |
+|------|---------|
+| `PRD.md` | Product requirements and goals |
+| `ARCHITECTURE.md` | Tech stack, module structure, data flow |
+| `PROGRESS.md` | Release history, current milestones, blockers |
+| `DECISIONS.md` | Architecture Decision Records (ADRs) |
+| `CONVENTIONS.md` | Naming, patterns, forbidden practices |
+| `SECRETS_MAP.md` | Env var names and rotation policy (never values) |
+| `DEBT.md` | Technical debt and known workarounds |
+
+Supplementary folders: `reports/`, `specs/`, `plans/`, `research/`, `archive/`, `strategy/`
+
+## Knowledge Governance
+
+The vault's health is maintained via automated policies.
+
+- **Linter:** `$HARNESS_DIR/scripts/ontology_lint.py` — enforces character counts and mandatory metadata.
+- **Graph Strengthening:** `of strengthen-graph` — auto-discovers links between silos.
+- **Compliance:** All new notes must adhere to the **3-Layer Architecture** and hierarchical tagging.
+
+## Obsidian Forge (`of`)
+
+Rust CLI daemon for vault lifecycle management.
+
+- **Binary**: `/Users/hackme/.cargo/bin/of`
+- **Global config**: `~/.obsidian-forge/config.toml` (AI provider, daemon settings, vault registry)
+- **Per-vault config**: `vault.toml` in vault root
+- **API keys**: `~/.obsidian-forge/.env` (never in config files)
+
+### CLI Commands
+
+```bash
+of update-mocs --vault SecondBrain      # Regenerate project hub MOCs
+of strengthen-graph --vault SecondBrain  # Graph strengthening pipeline
+of process-all --vault SecondBrain       # Process inbox with AI classification
+of graph health                          # Graph health report
+of sync --vault SecondBrain              # Full sync: MOC → graph → git commit
+of vault list                            # List registered vaults
+```
+
+## Alcove MCP Server
+
+alcove serves these docs to AI agents over stdio JSON-RPC 2.0. The BM25 search index (tantivy) lives in `.alcove/` (gitignored, machine-local).
+
+- **Change detection**: mtime + file size fingerprint
+- **CJK support**: NgramTokenizer (min=2, max=3) for Korean/Japanese/Chinese
+- **Auto-rebuild**: `search_project_docs` triggers rebuild if index is stale
+- **Manual rebuild**: `alcove index` CLI or `rebuild_index` MCP tool
+
+## Working With Docs
+
+- Add new project docs: copy `_template/` into a new subfolder under `99-Archives/projects/`
+- After bulk doc changes: run `alcove index` to rebuild the BM25 search index
+- Check doc health: `alcove validate` or `of graph health`
+- Run linter: `python3 $HARNESS_DIR/scripts/ontology_lint.py` (mandatory before ship)
+- Diagrams: Mermaid format only (ASCII art forbidden)
+- Git commits: use `git-cc` skill — format: `type(scope): description` (no emoji, no co-authorship footer)
+
+## Document Authoring Rules
+
+- All internal docs stay in this repo — never commit to public project repos
+- When updating ARCHITECTURE.md or DECISIONS.md, add a `> 최종 업데이트: YYYY-MM-DD` line
+- PROGRESS.md tracks release history as a table; add rows for each release
+- DEBT.md entries include ID prefix (e.g., `D-006`) for cross-reference in CONVENTIONS.md
+- Tagging: follow `TAGGING.md` — max 7 tags, project tag first, use `topics/`, `status/`, `type/` hierarchy
+- Wikilinks `[[]]` for vault-internal references, markdown links `[]()` for same-project links
