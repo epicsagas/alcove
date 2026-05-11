@@ -113,8 +113,9 @@ CLAUDE.md | AGENTS.md            ← agent rules, coding conventions, recurring 
 
 ### Claude Code (recommended)
 
-```bash
-claude plugin install epicsagas/alcove
+```
+/plugin marketplace add epicsagas/plugins
+/plugin install alcove@epicsagas
 ```
 
 Auto-installs the binary and registers the MCP server on next session start.
