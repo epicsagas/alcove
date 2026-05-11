@@ -930,6 +930,20 @@ mod tests {
         }
     }
 
+    /// Creates a temporary directory under `$HOME/.alcove-test-tmp/` so that
+    /// `is_blocked_system_path` does not reject it (which it would for `/tmp`
+    /// on both Linux CI runners and macOS where `/tmp` → `/private/tmp`).
+    fn test_tempdir() -> tempfile::TempDir {
+        let base = dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("/home/runner"))
+            .join(".alcove-test-tmp");
+        std::fs::create_dir_all(&base).unwrap();
+        tempfile::Builder::new()
+            .prefix("alcove-test-")
+            .tempdir_in(&base)
+            .unwrap()
+    }
+
     #[test]
     fn dispatch_initialize() {
         let resp = dispatch(make_req("initialize", json!({}))).unwrap();
@@ -1034,7 +1048,7 @@ mod tests {
         // Unknown tools (other than list_projects / init_project) require
         // project resolution first. With an empty DOCS_ROOT, resolution fails
         // with -32001 before reaching the unknown-tool branch.
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         // SAFETY: test is single-threaded; no other thread reads DOCS_ROOT concurrently.
         unsafe { std::env::set_var("DOCS_ROOT", tmp.path().as_os_str()) };
 
@@ -1171,7 +1185,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_list_projects_with_valid_docs_root() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         // Create a fake project directory inside the temp DOCS_ROOT
         std::fs::create_dir(tmp.path().join("my_project")).unwrap();
         // SAFETY: test is single-threaded; no other thread reads DOCS_ROOT concurrently.
@@ -1202,7 +1216,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_rebuild_index() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         // Create a project with a doc
         let proj = tmp.path().join("indexproj");
         std::fs::create_dir_all(&proj).unwrap();
@@ -1230,7 +1244,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_search_global_grep() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         let p1 = tmp.path().join("alpha");
         std::fs::create_dir_all(&p1).unwrap();
         std::fs::write(p1.join("PRD.md"), "# Alpha PRD\n\nUnique marker xyzzy.").unwrap();
@@ -1265,7 +1279,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_search_ranked_fallback_to_grep() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         let proj = tmp.path().join("falltest");
         std::fs::create_dir_all(&proj).unwrap();
         std::fs::write(proj.join("DOC.md"), "# Test\n\nFallback marker plugh.").unwrap();
@@ -1299,7 +1313,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_search_ranked_with_index() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         let proj = tmp.path().join("ranked");
         std::fs::create_dir_all(&proj).unwrap();
         std::fs::write(
@@ -1360,7 +1374,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_search_auto_uses_ranked_when_index_exists() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         let proj = tmp.path().join("autoproj");
         std::fs::create_dir_all(&proj).unwrap();
         std::fs::write(proj.join("DOC.md"), "# Doc\n\nAuto mode test content here.").unwrap();
@@ -1395,7 +1409,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_search_auto_falls_back_to_grep_no_index() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         let proj = tmp.path().join("grepproj");
         std::fs::create_dir_all(&proj).unwrap();
         std::fs::write(proj.join("DOC.md"), "# Doc\n\nFallback grep marker xyzzy.").unwrap();
@@ -1426,7 +1440,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_search_force_grep_mode() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         let proj = tmp.path().join("forceproj");
         std::fs::create_dir_all(&proj).unwrap();
         std::fs::write(proj.join("DOC.md"), "# Doc\n\nForce grep marker plugh.").unwrap();
@@ -1462,7 +1476,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_check_doc_changes() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         let proj = tmp.path().join("changeproj");
         std::fs::create_dir_all(&proj).unwrap();
         std::fs::write(proj.join("PRD.md"), "# PRD\n\nChange detection test.").unwrap();
@@ -1488,7 +1502,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_check_doc_changes_with_auto_rebuild() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         let proj = tmp.path().join("rebuildproj");
         std::fs::create_dir_all(&proj).unwrap();
         std::fs::write(proj.join("DOC.md"), "# Doc\n\nAuto rebuild test.").unwrap();
@@ -1512,7 +1526,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_search_vault_returns_results() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         // Set ALCOVE_HOME so vaults_root() points to our temp dir
         unsafe { std::env::set_var("ALCOVE_HOME", tmp.path().as_os_str()) };
 
@@ -1529,7 +1543,7 @@ mod tests {
         let _ = crate::index::build_vault_index(&vault_path);
 
         // Also need DOCS_ROOT set for dispatch to proceed past the config check
-        let docs_tmp = tempfile::tempdir().unwrap();
+        let docs_tmp = test_tempdir();
         unsafe { std::env::set_var("DOCS_ROOT", docs_tmp.path().as_os_str()) };
 
         let req = make_req(
@@ -1567,7 +1581,7 @@ mod tests {
     #[test]
     #[serial]
     fn dispatch_list_vaults() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = test_tempdir();
         // Set ALCOVE_HOME so vaults_root() points to our temp dir
         unsafe { std::env::set_var("ALCOVE_HOME", tmp.path().as_os_str()) };
 
@@ -1585,7 +1599,7 @@ mod tests {
         std::fs::write(v2.join("b.md"), "# B").unwrap();
 
         // DOCS_ROOT needed for dispatch
-        let docs_tmp = tempfile::tempdir().unwrap();
+        let docs_tmp = test_tempdir();
         unsafe { std::env::set_var("DOCS_ROOT", docs_tmp.path().as_os_str()) };
 
         let req = make_req(
