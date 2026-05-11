@@ -7,11 +7,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/setup.sh\"",
-            "async": true
+            "command": "command -v alcove >/dev/null 2>&1 || { if command -v brew >/dev/null 2>&1; then brew install epicsagas/tap/alcove; elif command -v cargo-binstall >/dev/null 2>&1; then cargo binstall -y alcove; elif command -v cargo >/dev/null 2>&1; then cargo install alcove; fi; }; alcove setup",
+            "async": false
           }
         ],
-        "description": "Auto-install alcove binary if missing, register MCP server"
+        "description": "Install alcove binary if missing, register MCP server"
       }
     ],
     "SessionEnd": [
