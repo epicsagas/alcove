@@ -112,25 +112,20 @@ CLAUDE.md | AGENTS.md            ← agent rules, coding conventions, recurring 
 ## Quick start
 
 ```bash
-# macOS
-brew install epicsagas/tap/alcove
-
-# Linux / macOS — pre-built binary, no Rust required
+# macOS / Linux — pre-built binary, no Rust required
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 
 # Windows — pre-built binary, no Rust required
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.ps1 | iex"
+irm https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.ps1 | iex
+
+# Homebrew (macOS / Linux)
+brew install epicsagas/tap/alcove
 
 # cargo-binstall — pre-built binary via Rust toolchain
 cargo binstall alcove
 
-# Any platform — build from source
+# cargo install — build from source (requires Rust toolchain)
 cargo install alcove
-
-# Clone and build
-git clone https://github.com/epicsagas/alcove.git
-cd alcove
-make install
 ```
 
 Then run setup:
@@ -651,25 +646,21 @@ The CLI automatically detects your system locale. You can also override it with 
 ALCOVE_LANG=ko alcove setup
 ```
 
-## Update
+## Updating
+
+| Method | Command |
+|--------|---------|
+| Homebrew | `brew upgrade alcove` |
+| curl installer (macOS/Linux) | Re-run the install script above |
+| PowerShell installer (Windows) | Re-run the install command above |
+| cargo binstall | `cargo binstall alcove@latest` |
+| cargo install | `cargo install alcove@latest` |
+| Claude Code Plugin | `claude plugin update epicsagas/alcove` |
+
+Verify the installed version:
 
 ```bash
-# Homebrew
-brew upgrade epicsagas/tap/alcove
-
-# shell / PowerShell installer — re-run to replace with latest
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
-# Windows:
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.ps1 | iex"
-
-# cargo-binstall
-cargo binstall alcove@latest
-
-# From source
-cargo install alcove
-
-# Claude Code Plugin
-claude plugin update epicsagas/alcove
+alcove --version
 ```
 
 ## Uninstall
