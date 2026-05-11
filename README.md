@@ -115,9 +115,13 @@ CLAUDE.md | AGENTS.md            ← agent rules, coding conventions, recurring 
 # macOS
 brew install epicsagas/tap/alcove
 
-# Linux / Windows — pre-built binary (fast, no compilation)
-# Requires Rust: https://rustup.rs
-cargo install cargo-binstall
+# Linux / macOS — pre-built binary, no Rust required
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
+
+# Windows — pre-built binary, no Rust required
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.ps1 | iex"
+
+# cargo-binstall — pre-built binary via Rust toolchain
 cargo binstall alcove
 
 # Any platform — build from source
@@ -134,7 +138,8 @@ Then run setup:
 ```bash
 alcove setup
 
-# Verify everything is working
+# Verify installation and version
+alcove --version
 alcove doctor
 ```
 
@@ -144,6 +149,12 @@ If you use [Claude Code](https://claude.ai/claude-code), you can install Alcove 
 
 ```bash
 claude plugin install epicsagas/alcove
+```
+
+To update the plugin:
+
+```bash
+claude plugin update epicsagas/alcove
 ```
 
 This runs a `SessionStart` hook that:
@@ -646,11 +657,19 @@ ALCOVE_LANG=ko alcove setup
 # Homebrew
 brew upgrade epicsagas/tap/alcove
 
+# shell / PowerShell installer — re-run to replace with latest
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
+# Windows:
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.ps1 | iex"
+
 # cargo-binstall
-cargo binstall alcove
+cargo binstall alcove@latest
 
 # From source
 cargo install alcove
+
+# Claude Code Plugin
+claude plugin update epicsagas/alcove
 ```
 
 ## Uninstall

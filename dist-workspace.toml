@@ -1,0 +1,28 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+cargo-dist-version = "0.31.0"
+ci = "github"
+targets = [
+  "aarch64-apple-darwin",
+  "aarch64-unknown-linux-gnu",
+  "aarch64-pc-windows-msvc",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+installers = ["shell", "powershell", "homebrew"]
+tap = "epicsagas/homebrew-tap"
+create-release = true
+features = ["full"]
+install-path = "CARGO_HOME"
+install-updater = false
+publish-jobs = ["homebrew", "./publish-crates"]
+macos-sign = true
+macos-notarize = true
+
+# NOTE: musl targets omitted — fastembed/ONNX Runtime ships glibc-linked prebuilt
+# binaries and cannot compile on musl. If static-linked Linux builds are needed,
+# use a glibc container with a minimal glibc version (e.g. manylinux).
