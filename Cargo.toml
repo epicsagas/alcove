@@ -18,12 +18,13 @@ name = "alcove"
 path = "src/lib.rs"
 
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.gz"
-bin-dir = "{ name }{ binary-ext }"
-pkg-fmt = "tgz"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.xz"
+pkg-fmt = "txz"
+bin-dir = "{ name }-{ target }/{ bin }"
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
 pkg-fmt = "zip"
+bin-dir = "{ bin }.exe"
 
 [dependencies]
 anyhow = "1"
