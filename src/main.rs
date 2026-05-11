@@ -68,6 +68,11 @@ struct Cli {
 enum Commands {
     /// Interactive setup: docs root, categories, diagram format, agents
     Setup,
+    /// Register MCP and skill for a tool without interactive setup (for hooks/CI)
+    Register {
+        /// Tool name to register (e.g. "claude", "cursor") or "all"
+        tool: String,
+    },
     /// Remove skills, config, and legacy files
     Uninstall,
     /// Validate project docs against policy
@@ -293,6 +298,7 @@ fn main() -> Result<()> {
     match cli.command {
         // setup and telemetry manage consent — skip auto-enable
         Some(Commands::Setup) => return cli::cmd_setup(),
+        Some(Commands::Register { tool }) => return cli::cmd_register(&tool),
         Some(Commands::Telemetry { action }) => return telemetry::run_cli(&action),
         _ => {}
     }
@@ -302,7 +308,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         None => serve(),
-        Some(Commands::Setup) | Some(Commands::Telemetry { .. }) => unreachable!(),
+        Some(Commands::Setup) | Some(Commands::Register { .. }) | Some(Commands::Telemetry { .. }) => unreachable!(),
         Some(Commands::Uninstall) => cli::cmd_uninstall(),
         Some(Commands::Validate { format, exit_code }) => cli::cmd_validate(&format, exit_code),
         Some(Commands::Index) => cli::cmd_index(),

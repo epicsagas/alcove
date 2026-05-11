@@ -66,8 +66,8 @@ async function install() {
 
 async function main() {
   if (hasCommand(BINARY)) {
-    // Already installed — register MCP server
-    spawnSync(BINARY, ["setup"], { stdio: "inherit" });
+    // Already installed — register MCP + skill non-interactively
+    spawnSync(BINARY, ["register", "Claude Code"], { stdio: "inherit" });
     return;
   }
 
@@ -81,7 +81,7 @@ async function main() {
   }
 
   if (hasCommand(BINARY)) {
-    spawnSync(BINARY, ["setup"], { stdio: "inherit" });
+    spawnSync(BINARY, ["register", "Claude Code"], { stdio: "inherit" });
   }
 }
 

@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "alcove"
-version = "0.8.7-dev"
+version = "0.8.7"
 dependencies = [
  "anyhow",
  "axum",

@@ -1081,6 +1081,88 @@ pub fn cmd_promote(source: &std::path::Path, project: Option<&str>, mv: bool) ->
 }
 
 // ---------------------------------------------------------------------------
+// alcove register <tool>  (non-interactive MCP + skill seed)
+// ---------------------------------------------------------------------------
+
+/// Register alcove MCP and skill for a specific tool without launching the
+/// interactive setup wizard.  Designed for use in SessionStart hooks where
+/// there is no TTY.
+///
+/// `tool` must be one of the agent `name` values returned by `agents()`,
+/// matched case-insensitively, or the special value "all".
+pub fn cmd_register(tool: &str) -> Result<()> {
+    use crate::agents::{agents, expand_path, install_skill_to, write_json_mcp};
+
+    // docs_root is required for the MCP env; fall back to the default path when
+    // not yet configured (first install via hook — setup hasn't run yet).
+    let docs_root = saved_docs_root().unwrap_or_else(crate::config::default_docs_root);
+
+    let bin = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("alcove"));
+
+    let all_agents = agents();
+    let targets: Vec<&crate::agents::AgentDef> = if tool.eq_ignore_ascii_case("all") {
+        all_agents.iter().collect()
+    } else {
+        // Match by full name (case-insensitive) OR by the first word of the name
+        // so "claude" matches "Claude Code", "cursor" matches "Cursor", etc.
+        all_agents
+            .iter()
+            .filter(|a| {
+                let name_lc = a.name.to_ascii_lowercase();
+                let tool_lc = tool.to_ascii_lowercase();
+                name_lc == tool_lc
+                    || name_lc.starts_with(&tool_lc)
+                    || name_lc
+                        .split_whitespace()
+                        .next()
+                        .is_some_and(|w| w == tool_lc)
+            })
+            .collect()
+    };
+
+    if targets.is_empty() {
+        let known: Vec<&str> = all_agents.iter().map(|a| a.name).collect();
+        anyhow::bail!(
+            "Unknown tool '{}'. Known tools: {}",
+            tool,
+            known.join(", ")
+        );
+    }
+
+    for agent in targets {
+        match &agent.mcp_config {
+            crate::agents::McpConfig::Json {
+                path,
+                server_key,
+                omit_type,
+            } => {
+                let p = expand_path(path);
+                write_json_mcp(&p, server_key, &bin, &docs_root, None, None, *omit_type)?;
+                println!("  {} MCP registered → {}", style("✓").green(), path);
+            }
+            crate::agents::McpConfig::OpenCode { path } => {
+                let p = expand_path(path);
+                crate::agents::write_opencode_mcp(&p, &bin, &docs_root, None, None)?;
+                println!("  {} MCP registered → {}", style("✓").green(), path);
+            }
+            crate::agents::McpConfig::Codex { path } => {
+                let p = expand_path(path);
+                crate::agents::write_codex_mcp(&p, &bin, &docs_root, None, None)?;
+                println!("  {} MCP registered → {}", style("✓").green(), path);
+            }
+        }
+
+        if let Some(skill_path) = agent.skill_dir {
+            let p = expand_path(skill_path);
+            install_skill_to(&p)?;
+            println!("  {} Skill installed → {}", style("✓").green(), skill_path);
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // alcove reap
 // ---------------------------------------------------------------------------
 
