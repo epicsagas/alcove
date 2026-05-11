@@ -117,7 +117,15 @@ CLAUDE.md | AGENTS.md            ← agent rules, coding conventions, recurring 
 claude plugin install epicsagas/alcove
 ```
 
-Auto-installs the binary and registers the MCP server in one step. Updates with `claude plugin update epicsagas/alcove`.
+Auto-installs the binary and registers the MCP server on next session start.
+
+> **Required**: Run `alcove setup` once after installation to configure your docs root and enable full functionality. The plugin seeds the MCP connection automatically, but Alcove cannot search or index documents until `setup` has been run.
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+Updates with `claude plugin update epicsagas/alcove`.
 
 ### macOS (Apple Silicon only)
 
