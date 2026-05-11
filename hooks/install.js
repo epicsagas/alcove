@@ -6,7 +6,7 @@
 "use strict";
 
 const { spawnSync } = require("child_process");
-const { createWriteStream, chmodSync } = require("fs");
+const { createWriteStream, chmodSync, readFileSync } = require("fs");
 const { join } = require("path");
 const https = require("https");
 const os = require("os");
@@ -20,8 +20,43 @@ function log(msg) {
 }
 
 function hasCommand(cmd) {
-  const r = spawnSync(cmd, ["--version"], { stdio: "ignore", shell: false });
+  const r = spawnSync(cmd, ["--version"], { stdio: "pipe", shell: false });
   return r.status === 0;
+}
+
+function getBinaryVersion() {
+  try {
+    const r = spawnSync(BINARY, ["--version"], { stdio: "pipe", shell: false });
+    if (r.status === 0) {
+      const output = r.stdout.toString().trim();
+      const match = output.match(/(\d+\.\d+\.\d+)/);
+      return match ? match[1] : null;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function getPluginVersion() {
+  try {
+    const manifestPath = join(
+      process.env.CLAUDE_PLUGIN_ROOT || "",
+      ".claude-plugin",
+      "plugin.json"
+    );
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    return manifest.version || null;
+  } catch (_) {}
+  return null;
+}
+
+function semverGt(a, b) {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] > pb[i]) return true;
+    if (pa[i] < pb[i]) return false;
+  }
+  return false;
 }
 
 function downloadFile(url, dest) {
@@ -47,12 +82,9 @@ function downloadFile(url, dest) {
 }
 
 async function install() {
-  const platform = os.platform();
-
-  if (platform === "win32") {
-    // alcove has no Windows target — macOS Apple Silicon only
+  if (os.platform() === "win32") {
     log("alcove is not available for Windows (macOS Apple Silicon only).");
-    log(`Build from source: cargo install alcove`);
+    log("Build from source: cargo install alcove");
     process.exit(0);
   }
 
@@ -64,25 +96,45 @@ async function install() {
   if (r.status !== 0) throw new Error("Shell installer failed");
 }
 
+function seed() {
+  spawnSync(BINARY, ["register", "Claude Code"], { stdio: "inherit" });
+}
+
 async function main() {
-  if (hasCommand(BINARY)) {
-    // Already installed — register MCP + skill non-interactively
-    spawnSync(BINARY, ["register", "Claude Code"], { stdio: "inherit" });
+  const pluginVersion = getPluginVersion();
+
+  // 1. Binary not found — fresh install
+  if (!hasCommand(BINARY)) {
+    log(`${BINARY} not found — installing...`);
+    try {
+      await install();
+    } catch (e) {
+      log(`Install failed: ${e.message}`);
+      log(`Install manually: https://github.com/${REPO}#installation`);
+      process.exit(0);
+    }
+    if (hasCommand(BINARY)) seed();
     return;
   }
 
-  log(`${BINARY} not found — installing...`);
-  try {
-    await install();
-  } catch (e) {
-    log(`Install failed: ${e.message}`);
-    log(`Install manually: https://github.com/${REPO}#installation`);
-    process.exit(0);
+  // 2. Binary exists — check version
+  if (pluginVersion) {
+    const binaryVersion = getBinaryVersion();
+    if (binaryVersion && semverGt(pluginVersion, binaryVersion)) {
+      log(`Updating ${BINARY} ${binaryVersion} → ${pluginVersion}...`);
+      try {
+        await install();
+        const newVersion = getBinaryVersion();
+        if (newVersion) log(`Updated to ${newVersion}`);
+      } catch (e) {
+        log(`Update failed: ${e.message}`);
+        log(`Continuing with ${binaryVersion}`);
+      }
+    }
   }
 
-  if (hasCommand(BINARY)) {
-    spawnSync(BINARY, ["register", "Claude Code"], { stdio: "inherit" });
-  }
+  // 3. Seed MCP + skill registration
+  seed();
 }
 
 main().catch((e) => {
