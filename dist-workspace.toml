@@ -7,12 +7,11 @@ cargo-dist-version = "0.31.0"
 ci = "github"
 targets = [
   "aarch64-apple-darwin",
-  "aarch64-unknown-linux-gnu",
   "x86_64-apple-darwin",
   "x86_64-unknown-linux-gnu",
-  "x86_64-pc-windows-msvc",
 ]
-# aarch64-pc-windows-msvc omitted: ring/clang xwin cross-compile fails on GitHub runners
+# Windows/aarch64-linux omitted: ort-sys/ONNX Runtime prebuilt only supports x86_64-linux + macOS
+# aarch64-pc-windows-msvc: ring/clang xwin failure; x86_64-pc-windows: DirectML.lib missing
 installers = ["shell", "powershell", "homebrew"]
 tap = "epicsagas/homebrew-tap"
 create-release = true
