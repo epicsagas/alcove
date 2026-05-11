@@ -1122,11 +1122,7 @@ pub fn cmd_register(tool: &str) -> Result<()> {
 
     if targets.is_empty() {
         let known: Vec<&str> = all_agents.iter().map(|a| a.name).collect();
-        anyhow::bail!(
-            "Unknown tool '{}'. Known tools: {}",
-            tool,
-            known.join(", ")
-        );
+        anyhow::bail!("Unknown tool '{}'. Known tools: {}", tool, known.join(", "));
     }
 
     for agent in targets {

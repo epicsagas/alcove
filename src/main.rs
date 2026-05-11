@@ -308,7 +308,9 @@ fn main() -> Result<()> {
 
     match cli.command {
         None => serve(),
-        Some(Commands::Setup) | Some(Commands::Register { .. }) | Some(Commands::Telemetry { .. }) => unreachable!(),
+        Some(Commands::Setup)
+        | Some(Commands::Register { .. })
+        | Some(Commands::Telemetry { .. }) => unreachable!(),
         Some(Commands::Uninstall) => cli::cmd_uninstall(),
         Some(Commands::Validate { format, exit_code }) => cli::cmd_validate(&format, exit_code),
         Some(Commands::Index) => cli::cmd_index(),
