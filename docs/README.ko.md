@@ -102,36 +102,52 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 
 ## 빠른 시작
 
+### Claude Code (권장)
+
+```
+/plugin marketplace add epicsagas/plugins
+/plugin install alcove@epicsagas
+```
+
+바이너리를 자동 설치하고 다음 세션 시작 시 MCP 서버를 등록합니다.
+
+> **필수**: 설치 후 `alcove setup`을 한 번 실행하여 문서 루트를 설정하고 전체 기능을 활성화하세요. 플러그인은 MCP 연결을 자동으로 시드하지만, `setup`이 실행되지 않으면 Alcove가 문서를 검색하거나 인덱싱할 수 없습니다.
+
 ```bash
-# macOS
+alcove setup   # 플러그인 설치 후 한 번 실행
+```
+
+`claude plugin update epicsagas/alcove`로 업데이트합니다.
+
+### macOS (Apple Silicon 전용)
+
+```bash
 brew install epicsagas/tap/alcove
-
-# Linux / Windows — 사전 빌드 바이너리 (빠름, 컴파일 불필요)
-cargo install cargo-binstall
-cargo binstall alcove
-
-# 모든 플랫폼 — 소스에서 빌드
-cargo install alcove
-
-# 클론 후 빌드
-git clone https://github.com/epicsagas/alcove.git
-cd alcove
-make install
-
-alcove setup
 ```
 
-### Claude Code 플러그인
-
-[Claude Code](https://claude.ai/claude-code)를 사용한다면, 플러그인으로 설치할 수 있습니다 — 바이너리 설치와 MCP 서버 등록을 한 번에 처리합니다:
+Homebrew가 없으신가요? 설치 스크립트를 사용하세요:
 
 ```bash
-claude plugin install epicsagas/alcove
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-`SessionStart` 훅이 실행되어:
-1. `alcove` 바이너리가 없으면 자동 설치 (brew / cargo-binstall / cargo)
-2. `alcove setup`으로 MCP 서버 등록
+> **참고**: 사전 빌드 바이너리는 ONNX Runtime 사전 빌드 제약으로 인해 **macOS Apple Silicon 전용**으로 제공됩니다. Linux 및 Windows 사용자는 소스에서 빌드해야 합니다.
+
+### Rust 툴체인
+
+```bash
+cargo binstall alcove   # 사전 빌드 바이너리 (빠름)
+cargo install alcove    # 소스에서 빌드
+```
+
+그 후 setup을 실행하세요:
+
+```bash
+alcove setup
+alcove --version
+alcove doctor
+```
 
 **선택적 의존성**
 
@@ -139,9 +155,11 @@ claude plugin install epicsagas/alcove
 |---|---|---|
 | `pdftotext` (poppler) | PDF 전문 텍스트 추출 — PDF 검색에 필요 | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
 
-`pdftotext` 없이도 동작하지만, 일부 PDF는 내장 파서로 추출에 실패할 수 있습니다. `alcove doctor`로 설치 상태를 확인하세요.
+`pdftotext`가 없으면 Alcove는 내장 PDF 파서로 폴백하지만, 일부 파일에서는 실패할 수 있습니다. `alcove doctor`로 설치 상태를 확인하세요.
 
-이것만 하면 됩니다. `setup`이 대화형으로 모든 것을 안내합니다:
+> **참고**: 사전 빌드 바이너리는 Linux(x86\_64), macOS(Apple Silicon 및 Intel), Windows에 제공됩니다.
+
+`setup`은 다음을 대화형으로 안내합니다:
 
 1. 문서가 어디에 있는지
 2. 어떤 문서 카테고리를 추적할지
@@ -604,15 +622,16 @@ ALCOVE_LANG=ko alcove setup
 
 ## 업데이트
 
+| 방법 | 명령어 |
+|------|--------|
+| Homebrew | `brew upgrade alcove` |
+| curl 설치 스크립트 | 위 설치 스크립트를 다시 실행 |
+| cargo binstall | `cargo binstall alcove@latest` |
+| cargo install | `cargo install alcove@latest` |
+| Claude Code 플러그인 | `claude plugin update epicsagas/alcove` |
+
 ```bash
-# Homebrew
-brew upgrade epicsagas/tap/alcove
-
-# cargo-binstall
-cargo binstall alcove
-
-# 소스에서
-cargo install alcove
+alcove --version
 ```
 
 ## 삭제

@@ -100,31 +100,71 @@ Alcove mantiene toda tu documentación privada en **un único repositorio compar
 
 ## Inicio rápido
 
-```bash
-# macOS
-brew install epicsagas/tap/alcove
+### Claude Code (recomendado)
 
-# Linux / Windows — binario precompilado (rápido, sin compilación)
-cargo install cargo-binstall
-cargo binstall alcove
-
-# Cualquier plataforma — compilar desde el código fuente
-cargo install alcove
-
-# Clonar y compilar
-git clone https://github.com/epicsagas/alcove.git
-cd alcove
-make install
-
-alcove setup
+```
+/plugin marketplace add epicsagas/plugins
+/plugin install alcove@epicsagas
 ```
 
-Eso es todo. `setup` te guía a través de todo de forma interactiva:
+Instala automáticamente el binario y registra el servidor MCP en el próximo inicio de sesión.
+
+> **Obligatorio**: Ejecuta `alcove setup` una vez después de la instalación para configurar tu raíz de documentos y habilitar la funcionalidad completa. El plugin siembra la conexión MCP automáticamente, pero Alcove no puede buscar ni indexar documentos hasta que `setup` haya sido ejecutado.
+
+```bash
+alcove setup   # ejecutar una vez después de instalar el plugin
+```
+
+Actualizaciones con `claude plugin update epicsagas/alcove`.
+
+### macOS (solo Apple Silicon)
+
+```bash
+brew install epicsagas/tap/alcove
+```
+
+¿No tienes Homebrew? Usa el script de instalación:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
+```
+
+> **Nota**: Los binarios precompilados están disponibles **solo para macOS Apple Silicon** debido a las restricciones de los binarios precompilados de ONNX Runtime. Los usuarios de Linux y Windows deben compilar desde el código fuente.
+
+### Vía la cadena de herramientas de Rust
+
+```bash
+cargo binstall alcove   # binario precompilado (rápido)
+cargo install alcove    # compilar desde el código fuente
+```
+
+Luego ejecuta setup:
+
+```bash
+alcove setup
+alcove --version
+alcove doctor
+```
+
+**Dependencias opcionales**
+
+| Herramienta | Propósito | Instalación |
+|---|---|---|
+| `pdftotext` (poppler) | Extracción completa de texto PDF — requerida para búsqueda PDF | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+Sin `pdftotext`, Alcove recurre a un parser PDF integrado que puede fallar en algunos archivos. Ejecuta `alcove doctor` para verificar tu instalación.
+
+> **Nota**: Los binarios precompilados están disponibles para Linux (x86\_64), macOS (Apple Silicon e Intel) y Windows.
+
+`setup` te guía interactivamente a través de todo:
 
 1. Dónde viven tus documentos
 2. Qué categorías de documentos rastrear
 3. Formato preferido de diagramas
-4. Qué agentes de IA configurar (MCP + archivos de habilidades)
+4. Modelo de embeddings para búsqueda híbrida
+5. **Servidor HTTP** — host, puerto, token bearer auto-generado, y registro de ítem de inicio
+6. Qué agentes de IA configurar (MCP + archivos de habilidades)
 
 Ejecuta `alcove setup` en cualquier momento para cambiar la configuración. Recuerda tus elecciones anteriores.
 
@@ -446,15 +486,16 @@ ALCOVE_LANG=es alcove setup
 
 ## Actualizar
 
+| Método | Comando |
+|--------|---------|
+| Homebrew | `brew upgrade alcove` |
+| curl installer | Volver a ejecutar el script de instalación arriba |
+| cargo binstall | `cargo binstall alcove@latest` |
+| cargo install | `cargo install alcove@latest` |
+| Claude Code Plugin | `claude plugin update epicsagas/alcove` |
+
 ```bash
-# Homebrew
-brew upgrade epicsagas/tap/alcove
-
-# cargo-binstall
-cargo binstall alcove
-
-# Desde el código fuente
-cargo install alcove
+alcove --version
 ```
 
 ## Desinstalar

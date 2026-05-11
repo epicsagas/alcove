@@ -100,31 +100,71 @@ Alcove conserve tous vos documents privés dans **un seul dépôt partagé**, or
 
 ## Démarrage rapide
 
-```bash
-# macOS
-brew install epicsagas/tap/alcove
+### Claude Code (recommandé)
 
-# Linux / Windows — binaire pré-compilé (rapide, sans compilation)
-cargo install cargo-binstall
-cargo binstall alcove
-
-# Toute plateforme — compiler depuis les sources
-cargo install alcove
-
-# Cloner et compiler
-git clone https://github.com/epicsagas/alcove.git
-cd alcove
-make install
-
-alcove setup
+```
+/plugin marketplace add epicsagas/plugins
+/plugin install alcove@epicsagas
 ```
 
-C'est tout. `setup` vous guide à travers tout de manière interactive :
+Installe automatiquement le binaire et enregistre le serveur MCP au prochain démarrage de session.
+
+> **Obligatoire** : Exécutez `alcove setup` une fois après l'installation pour configurer votre racine de documents et activer toutes les fonctionnalités. Le plugin initialise automatiquement la connexion MCP, mais Alcove ne peut pas rechercher ou indexer les documents tant que `setup` n'a pas été exécuté.
+
+```bash
+alcove setup   # exécuter une fois après l'installation du plugin
+```
+
+Mises à jour avec `claude plugin update epicsagas/alcove`.
+
+### macOS (Apple Silicon uniquement)
+
+```bash
+brew install epicsagas/tap/alcove
+```
+
+Pas de Homebrew ? Utilisez le script d'installation :
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
+```
+
+> **Note** : Les binaires précompilés sont disponibles **uniquement pour macOS Apple Silicon** en raison des contraintes des binaires précompilés d'ONNX Runtime. Les utilisateurs de Linux et Windows doivent compiler depuis le code source.
+
+### Via la chaîne d'outils Rust
+
+```bash
+cargo binstall alcove   # binaire précompilé (rapide)
+cargo install alcove    # compiler depuis le code source
+```
+
+Puis exécutez setup :
+
+```bash
+alcove setup
+alcove --version
+alcove doctor
+```
+
+**Dépendances optionnelles**
+
+| Outil | Objectif | Installation |
+|---|---|---|
+| `pdftotext` (poppler) | Extraction complète de texte PDF — requise pour la recherche PDF | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+Sans `pdftotext`, Alcove se rabat sur un analyseur PDF intégré qui peut échouer sur certains fichiers. Exécutez `alcove doctor` pour vérifier votre installation.
+
+> **Note** : Les binaires précompilés sont disponibles pour Linux (x86\_64), macOS (Apple Silicon et Intel) et Windows.
+
+`setup` vous guide à travers tout de manière interactive :
 
 1. Où se trouvent vos documents
 2. Quelles catégories de documents suivre
 3. Format de diagramme préféré
-4. Quels agents IA configurer (MCP + fichiers de compétences)
+4. Modèle d'embeddings pour la recherche hybride
+5. **Serveur HTTP** — hôte, port, jeton bearer auto-généré, et inscription de l'élément de connexion
+6. Quels agents IA configurer (MCP + fichiers de compétences)
 
 Relancez `alcove setup` à tout moment pour modifier les paramètres. Il se souvient de vos choix précédents.
 
@@ -442,15 +482,16 @@ ALCOVE_LANG=fr alcove setup
 
 ## Mise à jour
 
+| Méthode | Commande |
+|---------|---------|
+| Homebrew | `brew upgrade alcove` |
+| curl installer | Réexécuter le script d'installation ci-dessus |
+| cargo binstall | `cargo binstall alcove@latest` |
+| cargo install | `cargo install alcove@latest` |
+| Claude Code Plugin | `claude plugin update epicsagas/alcove` |
+
 ```bash
-# Homebrew
-brew upgrade epicsagas/tap/alcove
-
-# cargo-binstall
-cargo binstall alcove
-
-# Depuis les sources
-cargo install alcove
+alcove --version
 ```
 
 ## Désinstallation

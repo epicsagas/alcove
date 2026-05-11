@@ -100,31 +100,71 @@ Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织
 
 ## 快速开始
 
-```bash
-# macOS
-brew install epicsagas/tap/alcove
+### Claude Code（推荐）
 
-# Linux / Windows — 预构建二进制（快速，无需编译）
-cargo install cargo-binstall
-cargo binstall alcove
-
-# 任意平台 — 从源码构建
-cargo install alcove
-
-# 克隆并构建
-git clone https://github.com/epicsagas/alcove.git
-cd alcove
-make install
-
-alcove setup
+```
+/plugin marketplace add epicsagas/plugins
+/plugin install alcove@epicsagas
 ```
 
-就这么简单。`setup` 以交互方式引导您完成所有设置：
+自动安装二进制文件并在下次会话启动时注册 MCP 服务器。
+
+> **必需**：安装后运行一次 `alcove setup` 以配置文档根目录并启用完整功能。插件会自动种子 MCP 连接，但在运行 `setup` 之前，Alcove 无法搜索或索引文档。
+
+```bash
+alcove setup   # 插件安装后运行一次
+```
+
+使用 `claude plugin update epicsagas/alcove` 进行更新。
+
+### macOS（仅限 Apple Silicon）
+
+```bash
+brew install epicsagas/tap/alcove
+```
+
+没有 Homebrew？使用安装脚本：
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
+```
+
+> **注意**：由于 ONNX Runtime 预构建限制，预构建二进制文件仅适用于 **macOS Apple Silicon**。Linux 和 Windows 用户必须从源码构建。
+
+### 通过 Rust 工具链
+
+```bash
+cargo binstall alcove   # 预构建二进制（快速）
+cargo install alcove    # 从源码构建
+```
+
+然后运行 setup：
+
+```bash
+alcove setup
+alcove --version
+alcove doctor
+```
+
+**可选依赖**
+
+| 工具 | 用途 | 安装 |
+|---|---|---|
+| `pdftotext` (poppler) | 完整 PDF 文本提取 — PDF 搜索所需 | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+没有 `pdftotext` 时，Alcove 会回退到内置 PDF 解析器，但在某些文件上可能会失败。运行 `alcove doctor` 检查安装状态。
+
+> **注意**：预构建二进制文件适用于 Linux（x86\_64）、macOS（Apple Silicon 和 Intel）以及 Windows。
+
+`setup` 会以交互方式引导您完成所有配置：
 
 1. 文档存放位置
 2. 要跟踪的文档类别
 3. 首选图表格式
-4. 要配置的 AI 代理（MCP + 技能文件）
+4. 混合搜索的嵌入模型
+5. **HTTP 服务器** — 主机、端口、自动生成的 bearer token、登录项注册
+6. 要配置的 AI 代理（MCP + 技能文件）
 
 随时重新运行 `alcove setup` 来更改设置。它会记住您之前的选择。
 
@@ -446,15 +486,16 @@ ALCOVE_LANG=zh-CN alcove setup
 
 ## 更新
 
+| 方式 | 命令 |
+|------|------|
+| Homebrew | `brew upgrade alcove` |
+| curl 安装脚本 | 重新运行上述安装脚本 |
+| cargo binstall | `cargo binstall alcove@latest` |
+| cargo install | `cargo install alcove@latest` |
+| Claude Code 插件 | `claude plugin update epicsagas/alcove` |
+
 ```bash
-# Homebrew
-brew upgrade epicsagas/tap/alcove
-
-# cargo-binstall
-cargo binstall alcove
-
-# 从源码
-cargo install alcove
+alcove --version
 ```
 
 ## 卸载

@@ -100,33 +100,73 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 
 ## クイックスタート
 
-```bash
-# macOS
-brew install epicsagas/tap/alcove
+### Claude Code（推奨）
 
-# Linux / Windows — ビルド済みバイナリ（高速、コンパイル不要）
-cargo install cargo-binstall
-cargo binstall alcove
-
-# 任意のプラットフォーム — ソースからビルド
-cargo install alcove
-
-# クローンしてビルド
-git clone https://github.com/epicsagas/alcove.git
-cd alcove
-make install
-
-alcove setup
+```
+/plugin marketplace add epicsagas/plugins
+/plugin install alcove@epicsagas
 ```
 
-以上です。`setup`がすべてを対話的にガイドします:
+バイナリを自動インストールし、次回セッション開始時にMCPサーバーを登録します。
+
+> **必須**: インストール後に `alcove setup` を一度実行して、ドキュメントルートを設定し、全機能を有効にしてください。プラグインはMCP接続を自動的にシードしますが、`setup` が実行されないとAlcoveはドキュメントを検索・インデックスできません。
+
+```bash
+alcove setup   # プラグインインストール後に一度実行
+```
+
+`claude plugin update epicsagas/alcove` でアップデートします。
+
+### macOS（Apple Silicon のみ）
+
+```bash
+brew install epicsagas/tap/alcove
+```
+
+Homebrewをお持ちでない場合は、インストールスクリプトを使用してください:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
+```
+
+> **注意**: ONNX Runtimeのビルド済みバイナリ制約により、事前ビルドバイナリは**macOS Apple Silicon のみ**提供されています。LinuxおよびWindowsユーザーはソースからビルドする必要があります。
+
+### Rustツールチェーン
+
+```bash
+cargo binstall alcove   # ビルド済みバイナリ（高速）
+cargo install alcove    # ソースからビルド
+```
+
+その後、setupを実行してください:
+
+```bash
+alcove setup
+alcove --version
+alcove doctor
+```
+
+**任意の依存関係**
+
+| ツール | 目的 | インストール |
+|---|---|---|
+| `pdftotext` (poppler) | PDF全文テキスト抽出 — PDF検索に必要 | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+`pdftotext` がない場合、Alcoveは内蔵PDFパーサーにフォールバックしますが、一部のファイルでは失敗する可能性があります。`alcove doctor` でインストール状態を確認してください。
+
+> **注意**: 事前ビルドバイナリはLinux（x86\_64）、macOS（Apple SiliconおよびIntel）、Windowsに提供されています。
+
+`setup`は以下を対話的にガイドします:
 
 1. ドキュメントの保存場所
 2. 追跡するドキュメントカテゴリ
 3. 希望する図表フォーマット
-4. 設定するAIエージェント（MCP + スキルファイル）
+4. ハイブリッド検索用の埋め込みモデル
+5. **HTTPサーバー** — ホスト、ポート、自動生成されたベアラートークン、ログイン項目の登録
+6. 設定するAIエージェント（MCP + スキルファイル）
 
-設定を変更したいときはいつでも`alcove setup`を再実行できます。以前の選択内容を記憶しています。
+設定を変更したいときはいつでも `alcove setup` を再実行できます。以前の選択内容を記憶しています。
 
 ## 使い方
 
@@ -446,15 +486,16 @@ ALCOVE_LANG=ja alcove setup
 
 ## アップデート
 
+| 方法 | コマンド |
+|------|---------|
+| Homebrew | `brew upgrade alcove` |
+| curl インストーラー | 上記のインストールスクリプトを再実行 |
+| cargo binstall | `cargo binstall alcove@latest` |
+| cargo install | `cargo install alcove@latest` |
+| Claude Code プラグイン | `claude plugin update epicsagas/alcove` |
+
 ```bash
-# Homebrew
-brew upgrade epicsagas/tap/alcove
-
-# cargo-binstall
-cargo binstall alcove
-
-# ソースから
-cargo install alcove
+alcove --version
 ```
 
 ## アンインストール
