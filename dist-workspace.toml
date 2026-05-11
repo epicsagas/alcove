@@ -21,7 +21,6 @@ install-path = "CARGO_HOME"
 install-updater = false
 publish-jobs = ["homebrew", "./publish-crates"]
 macos-sign = true
-macos-notarize = true
 
 # NOTE: musl targets omitted — fastembed/ONNX Runtime ships glibc-linked prebuilt
 # binaries and cannot compile on musl. If static-linked Linux builds are needed,
