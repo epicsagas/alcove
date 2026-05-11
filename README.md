@@ -111,50 +111,43 @@ CLAUDE.md | AGENTS.md            ← agent rules, coding conventions, recurring 
 
 ## Quick start
 
+### Claude Code (recommended)
+
 ```bash
-# macOS / Linux — pre-built binary, no Rust required
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
+claude plugin install epicsagas/alcove
+```
 
-# Windows — pre-built binary, no Rust required
-irm https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.ps1 | iex
+Auto-installs the binary and registers the MCP server in one step. Updates with `claude plugin update epicsagas/alcove`.
 
-# Homebrew (macOS / Linux)
+### macOS (Apple Silicon only)
+
+```bash
 brew install epicsagas/tap/alcove
+```
 
-# cargo-binstall — pre-built binary via Rust toolchain
-cargo binstall alcove
+No Homebrew? Use the installer script:
 
-# cargo install — build from source (requires Rust toolchain)
-cargo install alcove
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
+```
+
+> **Note**: Pre-built binaries are available for **macOS Apple Silicon only** due to ONNX Runtime prebuilt constraints. Linux and Windows users must build from source.
+
+### Via Rust toolchain
+
+```bash
+cargo binstall alcove   # pre-built binary (fast)
+cargo install alcove    # build from source
 ```
 
 Then run setup:
 
 ```bash
 alcove setup
-
-# Verify installation and version
 alcove --version
 alcove doctor
 ```
-
-### Claude Code Plugin
-
-If you use [Claude Code](https://claude.ai/claude-code), you can install Alcove as a plugin — it auto-installs the binary and registers the MCP server in one step:
-
-```bash
-claude plugin install epicsagas/alcove
-```
-
-To update the plugin:
-
-```bash
-claude plugin update epicsagas/alcove
-```
-
-This runs a `SessionStart` hook that:
-1. Installs the `alcove` binary if not found (via brew / cargo-binstall / cargo)
-2. Runs `alcove setup` to register the MCP server
 
 **Optional dependencies**
 
@@ -651,13 +644,10 @@ ALCOVE_LANG=ko alcove setup
 | Method | Command |
 |--------|---------|
 | Homebrew | `brew upgrade alcove` |
-| curl installer (macOS/Linux) | Re-run the install script above |
-| PowerShell installer (Windows) | Re-run the install command above |
+| curl installer | Re-run the install script above |
 | cargo binstall | `cargo binstall alcove@latest` |
 | cargo install | `cargo install alcove@latest` |
 | Claude Code Plugin | `claude plugin update epicsagas/alcove` |
-
-Verify the installed version:
 
 ```bash
 alcove --version
