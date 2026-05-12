@@ -13,7 +13,12 @@ targets = [
 #   x86_64-apple-darwin: ❌ no prebuilt available
 #   x86_64-unknown-linux-gnu: ❌ requires glibc 2.38+ (ubuntu-22.04 runner has 2.35)
 #   Windows: ❌ DirectML/ring failures
-installers = ["shell", "powershell", "homebrew"]
+installers = ["homebrew"]
+# shell/powershell installers are hand-written (scripts/install.sh / install.ps1) and uploaded as extra-artifacts
+extra-artifacts = [
+  { path = "scripts/install.sh",  kind = "installer" },
+  { path = "scripts/install.ps1", kind = "installer" },
+]
 tap = "epicsagas/homebrew-tap"
 create-release = true
 features = ["full"]

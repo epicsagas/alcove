@@ -138,7 +138,7 @@ No Homebrew? Use the installer script:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
+  https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
 ```
 
 > **Note**: Pre-built binaries are available for **macOS Apple Silicon only** due to ONNX Runtime prebuilt constraints. Linux and Windows users must build from source.

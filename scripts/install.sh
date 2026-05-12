@@ -1,123 +1,62 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env sh
+# install.sh — one-line installer for alcove
+# Usage: curl --proto '=https' --tlsv1.2 -LsSf \
+#   https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
+set -eu
 
-# ─────────────────────────────────────────────────────────────────────────────
-# alcove — Install from source
-# ─────────────────────────────────────────────────────────────────────────────
-#
-# Usage:
-#   ./install.sh            Build & install binary, then optionally run setup
-#   ./install.sh --no-setup Build & install binary only
-#   ./install.sh uninstall  Remove binary via cargo uninstall
-#
-# After install, use the binary for all configuration:
-#   alcove setup            Interactive setup (docs root, categories, agents)
-#   alcove uninstall        Remove skills, config, and legacy files
-#
-# ─────────────────────────────────────────────────────────────────────────────
+REPO="epicsagas/alcove"
+BINARY="alcove"
+INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/bin}"
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
+# ── Detect OS and architecture ────────────────────────────────────────────────
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+arch="$(uname -m)"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARY_NAME="alcove"
+case "${os}-${arch}" in
+    darwin-arm64|darwin-aarch64) target="aarch64-apple-darwin" ;;
+    darwin-x86_64|darwin-amd64)  target="x86_64-apple-darwin" ;;
+    linux-arm64|linux-aarch64)   target="aarch64-unknown-linux-gnu" ;;
+    linux-x86_64|linux-amd64)    target="x86_64-unknown-linux-gnu" ;;
+    *) echo "Error: unsupported platform ${os}-${arch}" >&2; exit 1 ;;
+esac
 
-info()  { echo -e "  $*"; }
-ok()    { echo -e "  ${GREEN}✓${NC} $*"; }
-warn()  { echo -e "  ${YELLOW}!${NC} $*"; }
-err()   { echo -e "  ${RED}✗${NC} $*" >&2; }
+# ── Resolve latest version ────────────────────────────────────────────────────
+version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+    | grep '"tag_name"' | head -1 | sed 's/.*"v\(.*\)".*/\1/')"
+if [ -z "${version}" ]; then
+    echo "Error: could not determine latest version" >&2
+    exit 1
+fi
 
-install_binary() {
-    if ! command -v cargo &>/dev/null; then
-        err "Rust/cargo not found. Install from https://rustup.rs"
-        exit 1
-    fi
+base_url="https://github.com/${REPO}/releases/download/v${version}"
+archive="${BINARY}-${target}.tar.gz"
+url="${base_url}/${archive}"
+sha_url="${base_url}/${archive}.sha256"
 
-    if [[ "${SKIP_BUILD:-}" == "1" ]] && command -v "$BINARY_NAME" &>/dev/null; then
-        ok "Binary already installed → $(command -v "$BINARY_NAME")"
-        return
-    fi
+# ── Download, verify, and install ────────────────────────────────────────────
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "${tmpdir}"' EXIT
 
-    info "Building and installing $BINARY_NAME..."
-    (cd "$REPO_ROOT" && cargo install --path . 2>&1)
+echo "Installing ${BINARY} v${version} for ${target}..."
 
-    local bin_path
-    bin_path="$(command -v "$BINARY_NAME" 2>/dev/null || echo "$HOME/.cargo/bin/$BINARY_NAME")"
-    ok "Binary → $bin_path"
+curl -fsSL "${url}"     -o "${tmpdir}/${archive}"
+curl -fsSL "${sha_url}" -o "${tmpdir}/${archive}.sha256"
 
-    local cargo_bin="$HOME/.cargo/bin"
-    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$cargo_bin"; then
-        warn "$cargo_bin is not in PATH. Add to your shell profile:"
-        echo "      export PATH=\"$cargo_bin:\$PATH\""
-    fi
+(cd "${tmpdir}" && sha256sum -c "${archive}.sha256" 2>/dev/null \
+    || shasum -a 256 -c "${archive}.sha256") \
+    || { echo "Error: SHA-256 verification failed" >&2; exit 1; }
 
-    # Clean up legacy locations
-    for legacy in "$HOME/.local/bin/docs-bridge-mcp" "$HOME/.local/bin/docs-bridge" "$HOME/.local/bin/alcove"; do
-        if [[ -L "$legacy" || -f "$legacy" ]]; then
-            rm -f "$legacy"
-            ok "Removed legacy: $legacy"
-        fi
-    done
-}
+tar -xzf "${tmpdir}/${archive}" -C "${tmpdir}"
 
-do_uninstall() {
+mkdir -p "${INSTALL_DIR}"
+mv "${tmpdir}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
+chmod +x "${INSTALL_DIR}/${BINARY}"
+
+# ── Verify ────────────────────────────────────────────────────────────────────
+if command -v "${BINARY}" >/dev/null 2>&1; then
+    echo "Installed: $(${BINARY} --version 2>&1 || echo "v${version}")"
+else
     echo ""
-    echo -e "${BOLD}Uninstalling alcove...${NC}"
-    echo ""
-
-    if command -v cargo &>/dev/null; then
-        cargo uninstall "$BINARY_NAME" 2>/dev/null && ok "Removed binary via cargo uninstall" || true
-    fi
-
-    echo ""
-    info "To also remove skills and config: alcove uninstall"
-    echo ""
-}
-
-main() {
-    case "${1:-}" in
-        uninstall)
-            do_uninstall
-            ;;
-        -h|--help)
-            echo "Usage:"
-            echo "  ./install.sh              Build & install, then optionally run setup"
-            echo "  ./install.sh --no-setup   Build & install binary only"
-            echo "  ./install.sh uninstall    Remove binary via cargo uninstall"
-            echo ""
-            echo "After install, use the binary directly:"
-            echo "  alcove setup              Interactive setup"
-            echo "  alcove uninstall          Remove skills & config"
-            ;;
-        --no-setup)
-            echo ""
-            echo -e "${BOLD}── Install Binary ──${NC}"
-            install_binary
-            echo ""
-            ;;
-        *)
-            echo ""
-            echo -e "${BOLD}── Install Binary ──${NC}"
-            install_binary
-            echo ""
-
-            if [[ "${NO_SETUP:-}" != "1" ]]; then
-                read -rp "  Run interactive setup (agents, docs root)? [Y/n] " ans
-                if [[ "${ans:-Y}" != "n" && "${ans:-Y}" != "N" ]]; then
-                    alcove setup
-                else
-                    echo ""
-                    info "Skipped. Run 'alcove setup' later to configure."
-                    echo ""
-                fi
-            fi
-            ;;
-    esac
-}
-
-main "$@"
+    echo "Add ${INSTALL_DIR} to your PATH:"
+    echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+fi
