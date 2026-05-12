@@ -16,8 +16,8 @@ targets = [
 installers = ["homebrew"]
 # shell/powershell installers are hand-written (scripts/install.sh / install.ps1) and uploaded as extra-artifacts
 extra-artifacts = [
-  { path = "scripts/install.sh",  kind = "installer" },
-  { path = "scripts/install.ps1", kind = "installer" },
+  { path = "scripts/install.sh",  kind = "installer", build = false },
+  { path = "scripts/install.ps1", kind = "installer", build = false },
 ]
 tap = "epicsagas/homebrew-tap"
 create-release = true
