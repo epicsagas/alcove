@@ -239,7 +239,7 @@ pub(crate) fn read_file_content(path: &Path) -> Result<String> {
         .unwrap_or("")
         .to_lowercase();
 
-    let readers: Vec<&dyn FileReader> = vec![&PlainTextReader];
+    let mut readers: Vec<&dyn FileReader> = vec![&PlainTextReader];
     #[cfg(all(unix, feature = "pdf"))]
     readers.push(&PdfReader);
     #[cfg(feature = "office")]

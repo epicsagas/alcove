@@ -1,6 +1,7 @@
 pub mod builder;
 pub mod cache;
 pub mod chunker;
+pub(crate) mod frontmatter;
 pub mod lock;
 pub mod reader;
 pub mod schema;

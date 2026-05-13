@@ -373,6 +373,11 @@ pub struct DocConfig {
     /// Memory budget configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<MemoryConfig>,
+    /// Opt-in flag to enable vector embedding for this project.
+    /// Default: `false` — vector indexing is skipped unless explicitly enabled.
+    /// Set `vector_index = true` in `alcove.toml` to enable.
+    #[serde(default)]
+    pub vector_index: bool,
 }
 
 impl DocConfig {
@@ -394,6 +399,9 @@ impl DocConfig {
             embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
             server: self.server.clone().or_else(|| base.server.clone()),
             memory: self.memory.clone().or_else(|| base.memory.clone()),
+            // vector_index: project-level value wins; false does not inherit base
+            // (a project's explicit false should not be overridden by base true)
+            vector_index: self.vector_index,
         }
     }
 
@@ -564,6 +572,7 @@ pub fn load_config() -> &'static DocConfig {
             embedding: None,
             server: None,
             memory: None,
+            vector_index: false,
         }
     })
 }
@@ -1453,5 +1462,85 @@ reader_ttl_secs = 120
         assert!(!is_reserved_dir_name("my-project"));
         assert!(!is_reserved_dir_name("docs"));
         assert!(!is_reserved_dir_name("src"));
+    }
+
+    // -- vector_index opt-in flag --
+
+    #[test]
+    fn vector_index_default_is_false() {
+        let cfg = DocConfig::default();
+        assert!(!cfg.vector_index, "vector_index must default to false");
+    }
+
+    #[test]
+    fn vector_index_toml_true() {
+        let toml = r#"vector_index = true"#;
+        let cfg: DocConfig = toml::from_str(toml).unwrap();
+        assert!(cfg.vector_index);
+    }
+
+    #[test]
+    fn vector_index_toml_false() {
+        let toml = r#"vector_index = false"#;
+        let cfg: DocConfig = toml::from_str(toml).unwrap();
+        assert!(!cfg.vector_index);
+    }
+
+    #[test]
+    fn vector_index_toml_absent_defaults_to_false() {
+        // An alcove.toml with no vector_index key should parse to false.
+        let toml = r#"docs_root = "/tmp/docs""#;
+        let cfg: DocConfig = toml::from_str(toml).unwrap();
+        assert!(!cfg.vector_index);
+    }
+
+    #[test]
+    fn vector_index_overlay_project_true_wins() {
+        let base = DocConfig {
+            vector_index: false,
+            ..DocConfig::default()
+        };
+        let project = DocConfig {
+            vector_index: true,
+            ..DocConfig::default()
+        };
+        let merged = project.overlay(&base);
+        assert!(merged.vector_index);
+    }
+
+    #[test]
+    fn vector_index_overlay_project_false_not_overridden_by_base_true() {
+        // A project that explicitly sets vector_index = false should not inherit
+        // a hypothetical base value of true.
+        let base = DocConfig {
+            vector_index: true,
+            ..DocConfig::default()
+        };
+        let project = DocConfig {
+            vector_index: false,
+            ..DocConfig::default()
+        };
+        let merged = project.overlay(&base);
+        assert!(!merged.vector_index);
+    }
+
+    #[test]
+    fn load_project_config_vector_index_true() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("alcove.toml"), "vector_index = true\n").unwrap();
+        let cfg = load_project_config(tmp.path());
+        assert!(cfg.vector_index);
+    }
+
+    #[test]
+    fn load_project_config_vector_index_absent_is_false() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("alcove.toml"),
+            "[diagram]\nformat = \"mermaid\"\n",
+        )
+        .unwrap();
+        let cfg = load_project_config(tmp.path());
+        assert!(!cfg.vector_index);
     }
 }

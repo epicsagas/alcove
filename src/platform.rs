@@ -10,10 +10,7 @@ use std::path::Path;
 ///
 /// On Unix: creates a symlink (file or directory).
 /// On Windows: creates a file symlink via `std::os::windows::fs::symlink_file`.
-pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
-    original: P,
-    link: Q,
-) -> std::io::Result<()> {
+pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(original, link)
@@ -109,12 +106,7 @@ where
         }
 
         // Open /dev/null for suppression
-        let devnull_fd = unsafe {
-            libc::open(
-                c"/dev/null".as_ptr(),
-                libc::O_WRONLY,
-            )
-        };
+        let devnull_fd = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY) };
         if devnull_fd >= 0 {
             unsafe {
                 libc::dup2(devnull_fd, libc::STDOUT_FILENO);
