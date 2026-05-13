@@ -48,6 +48,8 @@ impl ChunkConfig {
 pub(crate) const CHUNK_SIZE: usize = 1500;
 pub(crate) const CHUNK_OVERLAP: usize = 300;
 pub(crate) const MD_HEADING_MAX_CHARS: usize = 2400;
+
+/// Smaller limits for source-code files — keeps chunks inside function boundaries.
 pub(crate) const CODE_CHUNK_SIZE: usize = 800;
 pub(crate) const CODE_CHUNK_OVERLAP: usize = 150;
 
@@ -96,7 +98,13 @@ pub(crate) struct Chunk {
     pub(crate) line_start: usize,
 }
 
-/// Chunk `content` using default size limits (BM25-only path).
+/// Chunk `content` using sensible size limits for the given file extension.
+///
+/// Markdown files (`md` / `markdown`) are routed through [`chunk_content_md`]
+/// which splits on `##` headings first.  Code files use smaller chunks
+/// (800 chars / 150 overlap) so function bodies are less likely to be split
+/// across chunk boundaries.  All other files use the default prose limits
+/// (1 500 / 300).
 pub(crate) fn chunk_content(content: &str, ext: &str) -> Vec<Chunk> {
     chunk_content_with_config(content, ext, &DEFAULT_CHUNK_CONFIG)
 }
@@ -126,7 +134,7 @@ pub(crate) fn chunk_content_with_config(
 // Markdown heading-aware chunking
 // ---------------------------------------------------------------------------
 
-/// Markdown chunker with default limits (used by tests).
+/// Markdown chunker with default limits (used by tests and BM25 path).
 #[cfg(test)]
 fn chunk_content_md(content: &str) -> Vec<Chunk> {
     chunk_content_md_with_config(content, &DEFAULT_CHUNK_CONFIG)
