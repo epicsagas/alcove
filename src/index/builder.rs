@@ -39,7 +39,7 @@ use super::chunker::{chunk_content, extract_title};
 use super::frontmatter::parse_frontmatter_flags;
 use super::lock::{index_dir, is_locked, meta_path, release_lock, try_acquire_lock};
 use super::reader::read_file_content;
-use super::schema::{IndexSchema, SCHEMA_VERSION, register_ngram_tokenizer};
+use super::schema::{CHUNK_STRATEGY_VERSION, IndexSchema, SCHEMA_VERSION, register_ngram_tokenizer};
 
 // ---------------------------------------------------------------------------
 // Index metadata (for incremental updates)
@@ -50,6 +50,8 @@ pub(crate) struct IndexMeta {
     pub(crate) files: HashMap<String, [u64; 2]>, // path -> [mtime_secs, size]
     #[serde(default)]
     pub(crate) schema_version: u32,
+    #[serde(default)]
+    pub(crate) chunk_strategy_version: u32,
 }
 
 impl IndexMeta {
@@ -389,6 +391,7 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
     // Final metadata save after all indexing steps (Tantivy + Vector) are complete
     meta.files = current_files;
     meta.schema_version = SCHEMA_VERSION;
+    meta.chunk_strategy_version = CHUNK_STRATEGY_VERSION;
     let _ = meta.save(docs_root);
 
     Ok(json!({
@@ -405,9 +408,11 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
     }))
 }
 
-/// Step 1: Apply schema migration — wipe index dir if schema version is outdated.
+/// Step 1: Apply schema migration — wipe index dir if schema or chunking strategy is outdated.
 fn apply_schema_migration(dir: &Path, meta: &mut IndexMeta) -> Result<()> {
-    if meta.schema_version < SCHEMA_VERSION {
+    if meta.schema_version < SCHEMA_VERSION
+        || meta.chunk_strategy_version < CHUNK_STRATEGY_VERSION
+    {
         if dir.exists() {
             let _ = std::fs::remove_dir_all(dir);
             std::fs::create_dir_all(dir)?;
@@ -506,6 +511,7 @@ fn filter_changed_files(
 
         if meta.files.get(&rel_to_root).copied() == Some(fp)
             && meta.schema_version >= SCHEMA_VERSION
+            && meta.chunk_strategy_version >= CHUNK_STRATEGY_VERSION
         {
             skipped_count += 1;
         } else {
