@@ -2,8 +2,8 @@ pub mod config;
 #[cfg(feature = "embed-candle")]
 pub mod embedding;
 pub mod index;
-pub mod platform;
 pub mod lint;
+pub mod platform;
 pub mod policy;
 pub mod promote;
 pub mod vault;

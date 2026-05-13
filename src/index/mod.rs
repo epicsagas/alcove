@@ -777,9 +777,10 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "embed-candle")]
+    #[cfg(all(feature = "embed-candle", feature = "pdf"))]
     #[test]
     fn read_file_content_pdf_does_not_hang() {
+        use crate::index::reader::read_file_content;
         use std::time::{Duration, Instant};
         let tmp = tempfile::TempDir::new().unwrap();
         // Write a minimal valid-looking but actually broken PDF so pdftotext exits fast.

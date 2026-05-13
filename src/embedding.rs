@@ -30,7 +30,9 @@ use hf_hub::{Repo, RepoType};
 pub enum ModelState {
     #[default]
     NotDownloaded,
-    Downloading { progress_pct: u8 },
+    Downloading {
+        progress_pct: u8,
+    },
     Cached,
     Ready,
     Unloaded,
@@ -210,10 +212,7 @@ struct CandleSession {
 #[cfg(feature = "embed-candle")]
 impl CandleSession {
     /// Download model files from HuggingFace Hub and build a BERT session.
-    fn load(
-        model_choice: EmbeddingModelChoice,
-        cache_dir: &std::path::Path,
-    ) -> Result<Self> {
+    fn load(model_choice: EmbeddingModelChoice, cache_dir: &std::path::Path) -> Result<Self> {
         let device = candle_core::Device::Cpu;
         let model_id = model_choice.model_id();
 
@@ -231,10 +230,10 @@ impl CandleSession {
             .get("tokenizer.json")
             .context("Failed to download tokenizer.json")?;
 
-        let config_str = std::fs::read_to_string(&config_path)
-            .context("Failed to read config.json")?;
-        let config: Config = serde_json::from_str(&config_str)
-            .context("Failed to parse config.json")?;
+        let config_str =
+            std::fs::read_to_string(&config_path).context("Failed to read config.json")?;
+        let config: Config =
+            serde_json::from_str(&config_str).context("Failed to parse config.json")?;
 
         let mut tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
@@ -245,13 +244,11 @@ impl CandleSession {
 
         // Try single-shard first, then fall back to multi-shard via index.json
         let vb = match api_repo.get("model.safetensors") {
-            Ok(path) => unsafe {
-                VarBuilder::from_mmaped_safetensors(&[path], DTYPE, &device)?
-            },
+            Ok(path) => unsafe { VarBuilder::from_mmaped_safetensors(&[path], DTYPE, &device)? },
             Err(_) => {
-                let index_path = api_repo
-                    .get("model.safetensors.index.json")
-                    .context("Failed to download model.safetensors or model.safetensors.index.json")?;
+                let index_path = api_repo.get("model.safetensors.index.json").context(
+                    "Failed to download model.safetensors or model.safetensors.index.json",
+                )?;
                 let index_str = std::fs::read_to_string(&index_path)
                     .context("Failed to read model.safetensors.index.json")?;
                 let shard_map: serde_json::Value = serde_json::from_str(&index_str)
@@ -275,14 +272,16 @@ impl CandleSession {
 
                 let mut shard_paths = Vec::new();
                 for name in &file_names {
-                    let p = api_repo.get(name)
+                    let p = api_repo
+                        .get(name)
                         .with_context(|| format!("Failed to download shard {}", name))?;
                     shard_paths.push(p);
                 }
-                anyhow::ensure!(!shard_paths.is_empty(), "No safetensor shards found in index");
-                unsafe {
-                    VarBuilder::from_mmaped_safetensors(&shard_paths, DTYPE, &device)?
-                }
+                anyhow::ensure!(
+                    !shard_paths.is_empty(),
+                    "No safetensor shards found in index"
+                );
+                unsafe { VarBuilder::from_mmaped_safetensors(&shard_paths, DTYPE, &device)? }
             }
         };
         let model = BertModel::load(vb, &config)?;
@@ -294,7 +293,8 @@ impl CandleSession {
     fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let device = candle_core::Device::Cpu;
 
-        let encodings = self.tokenizer
+        let encodings = self
+            .tokenizer
             .encode_batch(texts.to_vec(), true)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
 
@@ -327,9 +327,7 @@ impl CandleSession {
             .broadcast_div(&sum_mask)?;
 
         // L2 normalize
-        let normalized = pooled.broadcast_div(
-            &pooled.sqr()?.sum_keepdim(1)?.sqrt()?,
-        )?;
+        let normalized = pooled.broadcast_div(&pooled.sqr()?.sum_keepdim(1)?.sqrt()?)?;
 
         // Extract to Vec<Vec<f32>>
         let batch_size = normalized.dims()[0];
@@ -371,10 +369,7 @@ struct InternalEmbeddingConfig {
 impl EmbeddingService {
     pub fn new(config: crate::config::EmbeddingConfig) -> Self {
         let model_choice = EmbeddingModelChoice::parse(&config.model).unwrap_or_else(|| {
-            eprintln!(
-                "Warning: Unknown model '{}', using default",
-                config.model
-            );
+            eprintln!("Warning: Unknown model '{}', using default", config.model);
             EmbeddingModelChoice::default()
         });
 
@@ -384,14 +379,13 @@ impl EmbeddingService {
             enabled: config.enabled,
         };
 
-        let initial_state =
-            if internal_config.enabled && Self::is_model_cached(&internal_config) {
-                ModelState::Cached
-            } else if internal_config.enabled {
-                ModelState::NotDownloaded
-            } else {
-                ModelState::Disabled
-            };
+        let initial_state = if internal_config.enabled && Self::is_model_cached(&internal_config) {
+            ModelState::Cached
+        } else if internal_config.enabled {
+            ModelState::NotDownloaded
+        } else {
+            ModelState::Disabled
+        };
 
         Self {
             state: Arc::new(Mutex::new(initial_state)),
@@ -400,9 +394,7 @@ impl EmbeddingService {
             session: Arc::new(Mutex::new(None)),
             previous_dimension: Arc::new(Mutex::new(None)),
             last_embed_at: Arc::new(Mutex::new(Instant::now())),
-            query_cache: Arc::new(Mutex::new(QueryEmbedCache::new(
-                config.query_cache_size,
-            ))),
+            query_cache: Arc::new(Mutex::new(QueryEmbedCache::new(config.query_cache_size))),
         }
     }
 
@@ -414,10 +406,7 @@ impl EmbeddingService {
     }
 
     pub fn state(&self) -> ModelState {
-        self.state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn dimension(&self) -> usize {
@@ -440,11 +429,7 @@ impl EmbeddingService {
     }
 
     pub fn ensure_model(&self) -> Result<(), String> {
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner()).clone();
         match state {
             ModelState::Ready => return Ok(()),
             ModelState::Disabled => {
@@ -458,10 +443,7 @@ impl EmbeddingService {
         }
 
         let deadline = Instant::now() + Duration::from_secs(300);
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         loop {
             match state.clone() {
                 ModelState::Ready => return Ok(()),
@@ -475,9 +457,7 @@ impl EmbeddingService {
                 ModelState::Downloading { .. } => {
                     let timeout = deadline.saturating_duration_since(Instant::now());
                     if timeout.is_zero() {
-                        return Err(
-                            "Timed out waiting for model download to complete".to_string()
-                        );
+                        return Err("Timed out waiting for model download to complete".to_string());
                     }
                     let (new_state, timed_out) = self
                         .download_cvar
@@ -485,9 +465,7 @@ impl EmbeddingService {
                         .unwrap_or_else(|e| e.into_inner());
                     state = new_state;
                     if timed_out.timed_out() {
-                        return Err(
-                            "Timed out waiting for model download to complete".to_string()
-                        );
+                        return Err("Timed out waiting for model download to complete".to_string());
                     }
                 }
                 other => {
@@ -502,10 +480,7 @@ impl EmbeddingService {
 
     fn start_download(&self) {
         {
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             if *state != ModelState::NotDownloaded
                 && *state != ModelState::Cached
                 && *state != ModelState::Unloaded
@@ -544,8 +519,7 @@ impl EmbeddingService {
             match CandleSession::load(model, &cache_dir) {
                 Ok(session) => {
                     set_state!(ModelState::Downloading { progress_pct: 90 });
-                    let mut state_guard =
-                        state_arc.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut state_guard = state_arc.lock().unwrap_or_else(|e| e.into_inner());
                     *session_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(session);
                     *state_guard = ModelState::Ready;
                     drop(state_guard);
@@ -574,17 +548,11 @@ impl EmbeddingService {
             return false;
         }
 
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if *state != ModelState::Ready {
             return false;
         }
-        let mut session = self
-            .session
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
         *session = None;
         *state = ModelState::Unloaded;
         true
@@ -597,11 +565,7 @@ impl EmbeddingService {
             );
         }
 
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner()).clone();
         if state != ModelState::Ready {
             return Err(format!("Model not ready: {}", state));
         }
@@ -609,10 +573,7 @@ impl EmbeddingService {
         let mut results: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
         let mut miss_indices: Vec<usize> = Vec::new();
         {
-            let mut cache = self
-                .query_cache
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
+            let mut cache = self.query_cache.lock().unwrap_or_else(|e| e.into_inner());
             for (i, text) in texts.iter().enumerate() {
                 if let Some(cached) = cache.get(text) {
                     results[i] = Some(cached.clone());
@@ -626,25 +587,18 @@ impl EmbeddingService {
             return Ok(results.into_iter().flatten().collect());
         }
 
-        let mut session = self
-            .session
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
         let session = session
             .as_mut()
             .ok_or_else(|| "Session not loaded".to_string())?;
 
-        let miss_texts: Vec<String> =
-            miss_indices.iter().map(|&i| texts[i].to_string()).collect();
+        let miss_texts: Vec<String> = miss_indices.iter().map(|&i| texts[i].to_string()).collect();
         let inferred = session
             .embed_batch(&miss_texts)
             .map_err(|e| e.to_string())?;
 
         {
-            let mut cache = self
-                .query_cache
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
+            let mut cache = self.query_cache.lock().unwrap_or_else(|e| e.into_inner());
             for (miss_text, vec) in miss_texts.iter().zip(inferred.iter()) {
                 cache.insert(miss_text.clone(), vec.clone());
             }
@@ -653,10 +607,7 @@ impl EmbeddingService {
             results[*slot] = Some(vec);
         }
 
-        *self
-            .last_embed_at
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Instant::now();
+        *self.last_embed_at.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
 
         Ok(results.into_iter().flatten().collect())
     }
@@ -671,14 +622,8 @@ impl EmbeddingService {
                 .map_err(|e| format!("Failed to remove cache: {}", e))?;
         }
 
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let mut session = self
-            .session
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
         *session = None;
         *state = ModelState::NotDownloaded;
 
@@ -784,7 +729,10 @@ mod tests {
         assert_eq!(cache.get("world"), Some(&vec![3.0, 4.0]));
         assert_eq!(cache.get("hello"), Some(&vec![1.0, 2.0]));
         cache.insert("foo".to_string(), vec![5.0, 6.0]);
-        assert!(cache.get("world").is_none(), "world should have been evicted");
+        assert!(
+            cache.get("world").is_none(),
+            "world should have been evicted"
+        );
         assert!(cache.get("hello").is_some());
         assert!(cache.get("foo").is_some());
     }
