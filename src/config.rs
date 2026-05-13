@@ -217,30 +217,30 @@ impl Default for ServerConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Embedding config (alcove-full feature)
+// Embedding config (embed-candle feature)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn default_embedding_model() -> String {
     "MultilingualE5Small".into()
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn default_embedding_auto_download() -> bool {
     true
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn default_embedding_enabled() -> bool {
     true
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn default_embedding_cache_dir() -> String {
     alcove_home().join("models").to_string_lossy().to_string()
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EmbeddingConfig {
     /// Model name (e.g., "MultilingualE5Small", "SnowflakeArcticEmbedXS")
@@ -260,12 +260,12 @@ pub struct EmbeddingConfig {
     pub query_cache_size: usize,
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn default_query_cache_size() -> usize {
     64
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
@@ -278,7 +278,7 @@ impl Default for EmbeddingConfig {
     }
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 impl EmbeddingConfig {
     /// Get the model name as a string
     #[allow(dead_code)]
@@ -362,8 +362,8 @@ pub struct DocConfig {
     /// Example: `extra_extensions = ["yaml", "json"]`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra_extensions: Option<Vec<String>>,
-    /// Embedding configuration for hybrid search (alcove-full feature)
-    #[cfg(feature = "alcove-full")]
+    /// Embedding configuration for hybrid search (embed-candle feature)
+    #[cfg(feature = "embed-candle")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<EmbeddingConfig>,
     /// HTTP server configuration (`alcove serve`).
@@ -390,7 +390,7 @@ impl DocConfig {
                 .extra_extensions
                 .clone()
                 .or_else(|| base.extra_extensions.clone()),
-            #[cfg(feature = "alcove-full")]
+            #[cfg(feature = "embed-candle")]
             embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
             server: self.server.clone().or_else(|| base.server.clone()),
             memory: self.memory.clone().or_else(|| base.memory.clone()),
@@ -487,14 +487,14 @@ impl DocConfig {
     }
 
     /// Get embedding configuration as TOML struct
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     #[allow(dead_code)]
     pub fn embedding_config(&self) -> &Option<EmbeddingConfig> {
         &self.embedding
     }
 
     /// Get embedding configuration with defaults applied
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     pub fn embedding_config_with_defaults(&self) -> EmbeddingConfig {
         self.embedding.clone().unwrap_or_default()
     }
@@ -560,7 +560,7 @@ pub fn load_config() -> &'static DocConfig {
             diagram: None,
             index: None,
             extra_extensions: None,
-            #[cfg(feature = "alcove-full")]
+            #[cfg(feature = "embed-candle")]
             embedding: None,
             server: None,
             memory: None,
@@ -572,7 +572,7 @@ pub fn load_config() -> &'static DocConfig {
 ///
 /// Reads `VAULT_PATH/.alcove/vault.toml` for an `[embedding]` section.
 /// If missing or partially specified, fields fall back to the global config.
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 pub fn vault_embedding_config(vault_path: &Path) -> EmbeddingConfig {
     // Check two locations in priority order:
     //   1. VAULT_PATH/.alcove/vault.toml  (alcove-native, takes precedence)

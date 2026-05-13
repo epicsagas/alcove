@@ -288,7 +288,7 @@ pub(crate) fn search_with_index(
 ///
 /// The Tantivy index is opened **once** and reused across the BM25 phase and
 /// any vector-only cache-miss lookups, eliminating the previous double-open.
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 pub fn search_hybrid(
     docs_root: &Path,
     query: &str,
@@ -582,7 +582,7 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
 
     // --- Hybrid search (BM25 + vector) for vaults ---
     // Falls back to BM25-only when vectors are not available.
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     {
         use crate::config::vault_embedding_config;
         use crate::embedding::{EmbeddingModelChoice, EmbeddingService};

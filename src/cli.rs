@@ -12,7 +12,7 @@ pub use crate::commands::{
     cmd_uninstall, cmd_validate,
 };
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 pub use crate::commands::cmd_model;
 
 #[cfg(unix)]

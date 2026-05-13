@@ -3,13 +3,14 @@ mod bench;
 mod cli;
 mod commands;
 mod config;
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 mod embedding;
 mod index;
 #[cfg(feature = "alcove-server")]
 mod launchd;
 mod lint;
 mod mcp;
+mod platform;
 mod policy;
 mod promote;
 mod setup;
@@ -17,7 +18,7 @@ mod telemetry;
 mod tools;
 mod vault;
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 mod vector;
 
 #[cfg(feature = "alcove-server")]
@@ -109,7 +110,7 @@ enum Commands {
         limit: usize,
     },
     /// Manage embedding models for hybrid search
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     Model {
         #[command(subcommand)]
         subcmd: ModelCommands,
@@ -204,7 +205,7 @@ enum VaultCommands {
 }
 
 #[derive(Subcommand)]
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 enum ModelCommands {
     /// List available embedding models
     List,
@@ -444,7 +445,7 @@ fn main() -> Result<()> {
                 Ok(())
             }
         },
-        #[cfg(feature = "alcove-full")]
+        #[cfg(feature = "embed-candle")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Mcp { subcmd }) => handle_server_command(subcmd, ServiceKind::Mcp),

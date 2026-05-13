@@ -280,7 +280,7 @@ fn print_step_header(step: &Step) {
 // ---------------------------------------------------------------------------
 
 /// Embedding model options for setup wizard
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
     (
         "MultilingualE5Small",
@@ -533,7 +533,7 @@ fn step_diagram(state: &mut SetupState) -> Result<StepResult> {
 fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
     print_step_header(&Step::Embedding);
 
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     {
         // Check current config
         let current_model = state
@@ -659,7 +659,7 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
         }
     }
 
-    #[cfg(not(feature = "alcove-full"))]
+    #[cfg(not(feature = "embed-candle"))]
     {
         // Add back option for non-full feature
         let labels = vec![
@@ -684,7 +684,7 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
         println!();
         println!("  To enable hybrid search later, reinstall with:");
         println!(
-            "  {} cargo install alcove --features alcove-full",
+            "  {} cargo install alcove --features embed-candle",
             style("→").cyan()
         );
         println!();
@@ -1207,7 +1207,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                 .lines()
                 .find_map(|l| l.strip_prefix("model = ").map(|v| v.trim_matches('"')));
             if let Some(model_name) = model {
-                #[cfg(feature = "alcove-full")]
+                #[cfg(feature = "embed-candle")]
                 {
                     let m = crate::embedding::EmbeddingModelChoice::parse(model_name);
                     println!(
@@ -1217,7 +1217,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                         m.map(|m| m.size_mb()).unwrap_or(235)
                     );
                 }
-                #[cfg(not(feature = "alcove-full"))]
+                #[cfg(not(feature = "embed-candle"))]
                 {
                     println!("  Embedding: {} (configured)", model_name);
                 }

@@ -97,11 +97,7 @@ pub fn link_vault(name: &str, target: &Path) -> Result<PathBuf> {
     }
     // Ensure parent directory exists
     fs::create_dir_all(vaults_root()).with_context(|| "Failed to create vaults root directory")?;
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(target, &link_path)
-        .with_context(|| format!("Failed to create symlink: {}", link_path.display()))?;
-    #[cfg(windows)]
-    std::os::windows::fs::symlink_dir(target, &link_path)
+    crate::platform::create_symlink(target, &link_path)
         .with_context(|| format!("Failed to create symlink: {}", link_path.display()))?;
     Ok(link_path)
 }
@@ -306,10 +302,7 @@ mod tests {
         if link_path.exists() || link_path.symlink_metadata().is_ok() {
             anyhow::bail!("Vault '{}' already exists", name);
         }
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(target, &link_path)?;
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_dir(target, &link_path)?;
+        crate::platform::create_symlink(target, &link_path)?;
         Ok(link_path)
     }
 
@@ -382,14 +375,13 @@ mod tests {
         fs::create_dir_all(&ext).unwrap();
         fs::write(ext.join("x.md"), "# X").unwrap();
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&ext, vaults.join("linked")).unwrap();
+        crate::platform::create_symlink(&ext, vaults.join("linked")).unwrap();
 
         let list = list_vaults_in(&vaults).unwrap();
 
         let real = list.iter().find(|v| v.name == "docs").unwrap();
         assert!(!real.is_link);
         assert_eq!(real.doc_count, 2);
-
         #[cfg(unix)]
         {
             let linked = list.iter().find(|v| v.name == "linked").unwrap();
@@ -423,7 +415,7 @@ mod tests {
         fs::write(target.join("keep.md"), "# Keep").unwrap();
 
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&target, vaults.join("linked")).unwrap();
+        crate::platform::create_symlink(&target, vaults.join("linked")).unwrap();
         #[cfg(unix)]
         {
             remove_vault_in(&vaults, "linked").unwrap();

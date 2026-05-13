@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 
 /// Helper to extract text from XML tags (e.g., w:t for Word, a:t for PPT)
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "office")]
 pub(crate) fn extract_xml_text(content: &str, tag_name: &[u8]) -> Result<String> {
     use quick_xml::events::Event;
     use quick_xml::reader::Reader;
@@ -46,66 +46,21 @@ trait FileReader {
 
 // --- PDF ---
 
-#[cfg(all(unix, feature = "alcove-full"))]
+#[cfg(all(unix, feature = "pdf"))]
 struct PdfReader;
 
-#[cfg(all(unix, feature = "alcove-full"))]
+#[cfg(all(unix, feature = "pdf"))]
 impl FileReader for PdfReader {
     fn can_read(&self, ext: &str) -> bool {
         ext == "pdf"
     }
 
     fn read(&self, path: &Path) -> Result<String> {
-        use std::os::unix::io::AsRawFd;
-
-        // pdf_extract prints unicode fallback noise to both stdout and stderr — suppress both.
-        // FdGuard restores original fds on drop, protecting against panics.
-        struct FdGuard {
-            saved_stdout: libc::c_int,
-            saved_stderr: libc::c_int,
-        }
-        impl Drop for FdGuard {
-            fn drop(&mut self) {
-                unsafe {
-                    if self.saved_stdout >= 0 {
-                        libc::dup2(self.saved_stdout, libc::STDOUT_FILENO);
-                        libc::close(self.saved_stdout);
-                    }
-                    if self.saved_stderr >= 0 {
-                        libc::dup2(self.saved_stderr, libc::STDERR_FILENO);
-                        libc::close(self.saved_stderr);
-                    }
-                }
-            }
-        }
-        let devnull = std::fs::File::open("/dev/null")
-            .map_err(|e| anyhow::anyhow!("Failed to open /dev/null: {}", e))?;
-        let devnull_fd = devnull.as_raw_fd();
-        let saved_stdout = unsafe { libc::dup(libc::STDOUT_FILENO) };
-        if saved_stdout < 0 {
-            return Err(anyhow::anyhow!("dup(STDOUT_FILENO) failed"));
-        }
-        let saved_stderr = unsafe { libc::dup(libc::STDERR_FILENO) };
-        if saved_stderr < 0 {
-            unsafe {
-                libc::close(saved_stdout);
-            }
-            return Err(anyhow::anyhow!("dup(STDERR_FILENO) failed"));
-        }
-        let _guard = FdGuard {
-            saved_stdout,
-            saved_stderr,
-        };
-        unsafe {
-            libc::dup2(devnull_fd, libc::STDOUT_FILENO);
-            libc::dup2(devnull_fd, libc::STDERR_FILENO);
-        }
-        let result = pdf_extract::extract_text(path)
-            .map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e));
-        // _guard drops here, restoring stdout/stderr automatically
+        let result = crate::platform::suppress_fds(|| {
+            pdf_extract::extract_text(path)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PDF: {}", e))
+        });
         // Fallback to pdftotext if pdf_extract failed or returned empty content.
-        // Uses spawn + try_wait with a 30-second deadline to prevent DoS via
-        // a malformed PDF that makes pdftotext loop indefinitely.
         match result {
             Ok(text) if !text.trim().is_empty() => Ok(text),
             _ => {
@@ -162,10 +117,10 @@ impl FileReader for PdfReader {
 
 // --- DOCX / PPTX ---
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "office")]
 struct DocxPptxReader;
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "office")]
 impl FileReader for DocxPptxReader {
     fn can_read(&self, ext: &str) -> bool {
         ext == "docx" || ext == "pptx"
@@ -222,10 +177,10 @@ impl FileReader for DocxPptxReader {
 
 // --- XLSX / CSV ---
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "office")]
 struct XlsxCsvReader;
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "office")]
 impl FileReader for XlsxCsvReader {
     fn can_read(&self, ext: &str) -> bool {
         ext == "xlsx" || ext == "csv"
@@ -284,19 +239,15 @@ pub(crate) fn read_file_content(path: &Path) -> Result<String> {
         .unwrap_or("")
         .to_lowercase();
 
-    #[cfg(all(unix, feature = "alcove-full"))]
-    let readers: &[&dyn FileReader] = &[
-        &PdfReader,
-        &DocxPptxReader,
-        &XlsxCsvReader,
-        &PlainTextReader,
-    ];
-
-    #[cfg(all(not(unix), feature = "alcove-full"))]
-    let readers: &[&dyn FileReader] = &[&DocxPptxReader, &XlsxCsvReader, &PlainTextReader];
-
-    #[cfg(not(feature = "alcove-full"))]
-    let readers: &[&dyn FileReader] = &[&PlainTextReader];
+    let mut readers: Vec<&dyn FileReader> = Vec::new();
+    #[cfg(all(unix, feature = "pdf"))]
+    readers.push(&PdfReader);
+    #[cfg(feature = "office")]
+    {
+        readers.push(&DocxPptxReader);
+        readers.push(&XlsxCsvReader);
+    }
+    readers.push(&PlainTextReader);
 
     for reader in readers {
         if reader.can_read(&ext) {

@@ -19,7 +19,7 @@ pub use builder::{
 
 pub use searcher::{search_indexed, search_vault};
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 pub use searcher::search_hybrid;
 
 #[allow(unused_imports)]
@@ -625,7 +625,7 @@ mod tests {
         assert!(!matches.is_empty(), "should find Chinese text '认证'");
     }
 
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     #[test]
     fn search_hybrid_returns_bm25_only_when_embedding_not_ready() {
         use crate::config::EmbeddingConfig;
@@ -649,7 +649,7 @@ mod tests {
 
     // B4: vector store open/search errors must be surfaced in embedding_status,
     // not silently swallowed while still reporting mode = "hybrid-bm25-vector".
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     #[test]
     fn search_hybrid_vector_store_error_reflected_in_embedding_status() {
         use crate::config::EmbeddingConfig;
@@ -779,7 +779,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     #[test]
     fn read_file_content_pdf_does_not_hang() {
         use std::time::{Duration, Instant};
