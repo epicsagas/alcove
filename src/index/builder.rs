@@ -467,15 +467,13 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
                 continue;
             }
             // Skip markdown files whose front matter marks them as draft or deprecated.
-            let is_md = file_path
+            if file_path
                 .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
-            if is_md {
-                if let Ok(content) = std::fs::read_to_string(&file_path) {
-                    if parse_frontmatter_flags(&content).should_skip {
-                        continue;
-                    }
-                }
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+                && std::fs::read_to_string(&file_path)
+                    .is_ok_and(|c| parse_frontmatter_flags(&c).should_skip)
+            {
+                continue;
             }
             let rel_to_project = file_path
                 .strip_prefix(&path)
@@ -949,10 +947,10 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
     {
         let file_path = entry.path().to_path_buf();
         // Skip markdown files whose front matter marks them as draft or deprecated.
-        if let Ok(content) = std::fs::read_to_string(&file_path) {
-            if parse_frontmatter_flags(&content).should_skip {
-                continue;
-            }
+        if std::fs::read_to_string(&file_path)
+            .is_ok_and(|c| parse_frontmatter_flags(&c).should_skip)
+        {
+            continue;
         }
         files.push(file_path);
     }

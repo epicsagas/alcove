@@ -64,16 +64,8 @@ pub(crate) fn parse_frontmatter_flags(content: &str) -> FrontmatterFlags {
             .to_ascii_lowercase();
 
         match key.as_str() {
-            "draft" => {
-                if matches!(value.as_str(), "true" | "yes" | "1") {
-                    should_skip = true;
-                }
-            }
-            "status" => {
-                if value == "deprecated" {
-                    should_skip = true;
-                }
-            }
+            "draft" if matches!(value.as_str(), "true" | "yes" | "1") => should_skip = true,
+            "status" if value == "deprecated" => should_skip = true,
             _ => {}
         }
     }
