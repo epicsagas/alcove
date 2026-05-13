@@ -53,7 +53,7 @@ candle-transformers = { version = "0.10", optional = true }
 candle-nn = { version = "0.10", optional = true }
 candle-core = { version = "0.10", optional = true }
 hf-hub = { version = "0.4", default-features = false, features = ["ureq"], optional = true }
-tokenizers = { version = "0.21", optional = true }
+tokenizers = { version = "0.22", optional = true }
 
 # Storage & indexing
 rusqlite = { version = "0.39", features = ["bundled"], optional = true }
@@ -86,7 +86,7 @@ alcove-server = ["axum", "tokio", "tower-http"]
 full-macos = ["core", "embed-candle", "vector", "pdf", "office", "alcove-server"]
 full-cross = ["core", "embed-candle", "vector", "office", "alcove-server"]
 # Backward compat: full = full-macos on existing macOS ARM builds
-full = ["full-macos"]
+full = ["full-cross"]
 
 [dev-dependencies]
 tempfile = "3.26.0"

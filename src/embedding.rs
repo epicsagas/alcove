@@ -20,7 +20,7 @@ use candle_nn::VarBuilder;
 #[cfg(feature = "embed-candle")]
 use candle_transformers::models::bert::{BertModel, Config, DTYPE};
 #[cfg(feature = "embed-candle")]
-use hf_hub::api::sync::Api;
+use hf_hub::api::sync::ApiBuilder;
 #[cfg(feature = "embed-candle")]
 use hf_hub::{Repo, RepoType};
 
@@ -212,12 +212,15 @@ impl CandleSession {
     /// Download model files from HuggingFace Hub and build a BERT session.
     fn load(
         model_choice: EmbeddingModelChoice,
-        _cache_dir: &std::path::Path,
+        cache_dir: &std::path::Path,
     ) -> Result<Self> {
         let device = candle_core::Device::Cpu;
         let model_id = model_choice.model_id();
 
-        let api = Api::new().context("Failed to create HuggingFace API client")?;
+        let api = ApiBuilder::new()
+            .with_cache_dir(cache_dir.to_path_buf())
+            .build()
+            .context("Failed to create HuggingFace API client")?;
         let repo = Repo::with_revision(model_id.to_string(), RepoType::Model, "main".to_string());
         let api_repo = api.repo(repo);
 
@@ -227,20 +230,60 @@ impl CandleSession {
         let tokenizer_path = api_repo
             .get("tokenizer.json")
             .context("Failed to download tokenizer.json")?;
-        let weights_path = api_repo
-            .get("model.safetensors")
-            .context("Failed to download model.safetensors")?;
 
         let config_str = std::fs::read_to_string(&config_path)
             .context("Failed to read config.json")?;
         let config: Config = serde_json::from_str(&config_str)
             .context("Failed to parse config.json")?;
 
-        let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
+        let mut tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
+        tokenizer.with_padding(Some(tokenizers::PaddingParams {
+            strategy: tokenizers::PaddingStrategy::BatchLongest,
+            ..Default::default()
+        }));
 
-        let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[weights_path], DTYPE, &device)?
+        // Try single-shard first, then fall back to multi-shard via index.json
+        let vb = match api_repo.get("model.safetensors") {
+            Ok(path) => unsafe {
+                VarBuilder::from_mmaped_safetensors(&[path], DTYPE, &device)?
+            },
+            Err(_) => {
+                let index_path = api_repo
+                    .get("model.safetensors.index.json")
+                    .context("Failed to download model.safetensors or model.safetensors.index.json")?;
+                let index_str = std::fs::read_to_string(&index_path)
+                    .context("Failed to read model.safetensors.index.json")?;
+                let shard_map: serde_json::Value = serde_json::from_str(&index_str)
+                    .context("Failed to parse model.safetensors.index.json")?;
+                let file_names = shard_map["weight_map"]["file_map"]
+                    .as_object()
+                    .or_else(|| {
+                        // Some index files use a flat "weight_map" with file values
+                        shard_map["weight_map"].as_object()
+                    })
+                    .map(|map| {
+                        let mut files: Vec<String> = map
+                            .values()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect();
+                        files.sort();
+                        files.dedup();
+                        files
+                    })
+                    .unwrap_or_default();
+
+                let mut shard_paths = Vec::new();
+                for name in &file_names {
+                    let p = api_repo.get(name)
+                        .with_context(|| format!("Failed to download shard {}", name))?;
+                    shard_paths.push(p);
+                }
+                anyhow::ensure!(!shard_paths.is_empty(), "No safetensor shards found in index");
+                unsafe {
+                    VarBuilder::from_mmaped_safetensors(&shard_paths, DTYPE, &device)?
+                }
+            }
         };
         let model = BertModel::load(vb, &config)?;
 
@@ -251,13 +294,7 @@ impl CandleSession {
     fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let device = candle_core::Device::Cpu;
 
-        let mut tokenizer = self.tokenizer.clone();
-        tokenizer.with_padding(Some(tokenizers::PaddingParams {
-            strategy: tokenizers::PaddingStrategy::BatchLongest,
-            ..Default::default()
-        }));
-
-        let encodings = tokenizer
+        let encodings = self.tokenizer
             .encode_batch(texts.to_vec(), true)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
 

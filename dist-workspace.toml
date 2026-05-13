@@ -16,6 +16,7 @@ installers = ["homebrew", "shell", "powershell"]
 tap = "epicsagas/homebrew-tap"
 create-release = true
 features = ["full-macos"]
+features-aarch64-apple-darwin = ["full-macos"]
 features-aarch64-unknown-linux-gnu = ["full-cross"]
 features-x86_64-unknown-linux-gnu = ["full-cross"]
 features-x86_64-pc-windows-msvc = ["full-cross"]

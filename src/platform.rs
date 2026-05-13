@@ -20,7 +20,12 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(
     }
     #[cfg(windows)]
     {
-        std::os::windows::fs::symlink_file(original, link)
+        let orig = original.as_ref();
+        if orig.is_dir() {
+            std::os::windows::fs::symlink_dir(orig, link)
+        } else {
+            std::os::windows::fs::symlink_file(orig, link)
+        }
     }
 }
 
