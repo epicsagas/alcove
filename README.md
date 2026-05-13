@@ -741,8 +741,8 @@ Point your primary docs to the obsidian-forge project directory (directly or via
 Link the other three obsidian-forge categories as independent alcove vaults. This creates symlinks in `~/.alcove/vaults/`:
 ```bash
 # Link obsidian-forge categories
-alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
-alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link areas ~/Obsidian/SecondBrain/02-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/03-Resources
 alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
 ```
 

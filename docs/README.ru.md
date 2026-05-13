@@ -573,8 +573,8 @@ Alcove идеально сочетается с **obsidian-forge**, генера
 Привяжите остальные три категории obsidian-forge как независимые хранилища Alcove. Это создаст символьные ссылки в `~/.alcove/vaults/`:
 ```bash
 # Привязка категорий obsidian-forge
-alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
-alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link areas ~/Obsidian/SecondBrain/02-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/03-Resources
 alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
 ```
 

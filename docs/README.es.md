@@ -577,8 +577,8 @@ Apunta tus documentos principales al directorio de proyectos de obsidian-forge (
 Vincula las otras tres categorías de obsidian-forge como vaults independientes de Alcove. Esto crea enlaces simbólicos en `~/.alcove/vaults/`:
 ```bash
 # Vincular categorías de obsidian-forge
-alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
-alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link areas ~/Obsidian/SecondBrain/02-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/03-Resources
 alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
 ```
 

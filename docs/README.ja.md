@@ -577,8 +577,8 @@ Alcoveは、Obsidianボルトの生成および自動化デーモンである **
 他の3つの obsidian-forge カテゴリを独立した Alcove ボルトとしてリンクします。これにより、`~/.alcove/vaults/` 内にシンボリックリンクが作成されます：
 ```bash
 # obsidian-forge カテゴリをリンク
-alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
-alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link areas ~/Obsidian/SecondBrain/02-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/03-Resources
 alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
 ```
 

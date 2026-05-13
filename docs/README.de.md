@@ -573,8 +573,8 @@ Verweise mit deinen primären Dokumenten auf das obsidian-forge Projektverzeichn
 Verknüpfe die anderen drei obsidian-forge Kategorien als unabhängige Alcove-Vaults. Dies erstellt Symlinks in `~/.alcove/vaults/`:
 ```bash
 # obsidian-forge Kategorien verknüpfen
-alcove vault link areas ~/Obsidian/SecondBrain/00-Areas
-alcove vault link resources ~/Obsidian/SecondBrain/20-Resources
+alcove vault link areas ~/Obsidian/SecondBrain/02-Areas
+alcove vault link resources ~/Obsidian/SecondBrain/03-Resources
 alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
 ```
 
