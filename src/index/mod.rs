@@ -18,7 +18,7 @@ pub use builder::{
     rebuild_vault_index,
 };
 
-pub use searcher::{search_indexed, search_vault};
+pub use searcher::{search_grouped_by_file, search_indexed, search_vault};
 
 #[cfg(feature = "embed-candle")]
 pub use searcher::search_hybrid;
@@ -45,7 +45,7 @@ pub(crate) use chunker::{Chunk, chunk_content, extract_title};
 #[cfg(test)]
 pub(crate) use lock::{index_dir, is_locked, lock_file, release_lock, try_acquire_lock};
 #[cfg(test)]
-pub(crate) use schema::{SCHEMA_VERSION, register_ngram_tokenizer};
+pub(crate) use schema::{CHUNK_STRATEGY_VERSION, SCHEMA_VERSION, register_ngram_tokenizer};
 #[cfg(test)]
 pub(crate) use searcher::{apply_project_diversity, build_search_query, sanitize_query};
 
@@ -787,7 +787,7 @@ mod tests {
         let pdf_path = tmp.path().join("broken.pdf");
         std::fs::write(&pdf_path, b"%PDF-1.4 broken content").unwrap();
         let start = Instant::now();
-        let _ = read_file_content(&pdf_path);
+        let _ = crate::index::reader::read_file_content(&pdf_path);
         assert!(
             start.elapsed() < Duration::from_secs(35),
             "read_file_content must not block longer than the 30s timeout"
@@ -1162,6 +1162,7 @@ mod tests {
         let old_meta = IndexMeta {
             files: HashMap::new(),
             schema_version: 1,
+            chunk_strategy_version: 0,
         };
         assert!(
             old_meta.schema_version < SCHEMA_VERSION,
@@ -1176,6 +1177,7 @@ mod tests {
         let current_meta = IndexMeta {
             files: HashMap::new(),
             schema_version: SCHEMA_VERSION,
+            chunk_strategy_version: CHUNK_STRATEGY_VERSION,
         };
         assert!(
             current_meta.schema_version >= SCHEMA_VERSION,
@@ -1240,5 +1242,75 @@ mod tests {
         assert_eq!(s.chunk_id, s.schema.get_field("chunk_id").unwrap());
         assert_eq!(s.body, s.schema.get_field("body").unwrap());
         assert_eq!(s.line_start, s.schema.get_field("line_start").unwrap());
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for Parent-Child (grouped) search
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn search_grouped_returns_grouped_mode() {
+        let root = shared_indexed_root();
+        let result = search_grouped_by_file(root, "OAuth", 10, None).unwrap();
+        assert_eq!(result["mode"], "grouped", "grouped search must return mode=grouped");
+    }
+
+    #[test]
+    fn search_grouped_each_match_has_sections() {
+        let root = shared_indexed_root();
+        let result = search_grouped_by_file(root, "OAuth", 10, None).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        for m in matches {
+            assert!(
+                m.get("sections").is_some(),
+                "each grouped match must have a 'sections' field"
+            );
+            assert!(
+                m["sections"].is_array(),
+                "'sections' must be an array"
+            );
+        }
+    }
+
+    #[test]
+    fn search_grouped_each_section_has_chunk_id_and_snippet() {
+        let root = shared_indexed_root();
+        let result = search_grouped_by_file(root, "OAuth", 10, None).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        for m in matches {
+            for s in m["sections"].as_array().unwrap() {
+                assert!(s.get("chunk_id").is_some(), "section must have chunk_id");
+                assert!(s.get("snippet").is_some(), "section must have snippet");
+                assert!(s.get("score").is_some(), "section must have score");
+            }
+        }
+    }
+
+    #[test]
+    fn search_grouped_project_filter_works() {
+        let root = shared_indexed_root();
+        let result = search_grouped_by_file(root, "OAuth", 10, Some("backend")).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        for m in matches {
+            assert_eq!(m["project"], "backend", "project filter must be applied");
+        }
+        assert_eq!(result["scope"], "project");
+    }
+
+    #[test]
+    fn search_grouped_no_index_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("proj")).unwrap();
+        fs::write(tmp.path().join("proj/DOC.md"), "# Doc").unwrap();
+        let result = search_grouped_by_file(tmp.path(), "doc", 10, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn search_grouped_empty_query_returns_empty() {
+        let root = shared_indexed_root();
+        let result = search_grouped_by_file(root, "", 10, None).unwrap();
+        let matches = result["matches"].as_array().unwrap();
+        assert!(matches.is_empty(), "empty query must return no matches");
     }
 }
