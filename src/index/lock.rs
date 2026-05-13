@@ -78,14 +78,11 @@ fn is_lock_stale(lock_path: &Path) -> bool {
     }
 
     // Check if PID is still alive
+    if let Ok(content) = std::fs::read_to_string(lock_path)
+        && let Ok(pid) = content.trim().parse::<u32>()
+        && !crate::platform::is_pid_alive(pid)
     {
-        if let Ok(content) = std::fs::read_to_string(lock_path)
-            && let Ok(pid) = content.trim().parse::<u32>()
-        {
-            if !crate::platform::is_pid_alive(pid) {
-                return true; // Process doesn't exist
-            }
-        }
+        return true; // Process doesn't exist
     }
 
     false

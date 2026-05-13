@@ -106,7 +106,7 @@ where
         // Open /dev/null for suppression
         let devnull_fd = unsafe {
             libc::open(
-                b"/dev/null\0".as_ptr() as *const libc::c_char,
+                c"/dev/null".as_ptr(),
                 libc::O_WRONLY,
             )
         };
