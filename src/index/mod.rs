@@ -44,8 +44,6 @@ pub(crate) use chunker::{Chunk, chunk_content, extract_title};
 #[cfg(test)]
 pub(crate) use lock::{index_dir, is_locked, lock_file, release_lock, try_acquire_lock};
 #[cfg(test)]
-pub(crate) use reader::read_file_content;
-#[cfg(test)]
 pub(crate) use schema::{SCHEMA_VERSION, register_ngram_tokenizer};
 #[cfg(test)]
 pub(crate) use searcher::{apply_project_diversity, build_search_query, sanitize_query};

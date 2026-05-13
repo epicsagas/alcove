@@ -801,9 +801,9 @@ fn run_full_vector_indexing(
 }
 
 fn run_vector_indexing(
-    docs_root: &Path,
+    _docs_root: &Path,
     skip_embedding: bool,
-    files_to_index: Vec<ProjectFile>,
+    _files_to_index: Vec<ProjectFile>,
 ) -> Result<(String, u64, u64, String)> {
     if skip_embedding {
         return Ok(("skipped".to_string(), 0, 0, String::new()));
