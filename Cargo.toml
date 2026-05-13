@@ -48,10 +48,19 @@ sys-locale = "0.3.2"
 tantivy = "0.26"
 chrono = { version = "0.4", features = ["clock"] }
 
-# alcove-full feature dependencies (lazy embedding + vector search)
-fastembed = { version = "5", optional = true }
-rusqlite = { version = "0.39", optional = true }
-pdf-extract = { version = "0.10", optional = true }
+# Embedding backends (mutually exclusive in practice)
+candle-transformers = { version = "0.10", optional = true }
+candle-nn = { version = "0.10", optional = true }
+candle-core = { version = "0.10", optional = true }
+hf-hub = { version = "0.4", optional = true }
+tokenizers = { version = "0.21", optional = true }
+
+# Storage & indexing
+rusqlite = { version = "0.39", features = ["bundled"], optional = true }
+hnsw_rs = { version = "0.3", optional = true }
+
+# Document parsers
+pdf-extract = { version = "0.10", optional = true }  # Unix-only
 zip = { version = "8.5", optional = true }
 quick-xml = { version = "0.39", optional = true }
 calamine = { version = "0.34", optional = true }
@@ -59,19 +68,25 @@ calamine = { version = "0.34", optional = true }
 # Lightweight sync HTTP client for MCP proxy mode
 ureq = "3"
 
-# HTTP server dependencies (alcove-server feature)
+# HTTP server dependencies
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 tower-http = { version = "0.6", features = ["cors"], optional = true }
 
-# HNSW vector indexing (alcove-full feature)
-hnsw_rs = { version = "0.3", optional = true }
-
 [features]
-default = ["full"]
-alcove-full = ["fastembed", "rusqlite", "hnsw_rs", "pdf-extract", "zip", "quick-xml", "calamine"]
+default = ["core"]
+core = ["rusqlite", "alcove-server"]
+embed-candle = ["candle-transformers", "candle-nn", "candle-core", "hf-hub", "tokenizers"]
+vector = ["hnsw_rs"]
+pdf = ["pdf-extract"]
+office = ["zip", "quick-xml", "calamine"]
 alcove-server = ["axum", "tokio", "tower-http"]
-full = ["alcove-full", "alcove-server"]
+
+# Preset feature groups
+full-macos = ["core", "embed-candle", "vector", "pdf", "office", "alcove-server"]
+full-cross = ["core", "embed-candle", "vector", "office", "alcove-server"]
+# Backward compat: full = full-macos on existing macOS ARM builds
+full = ["full-macos"]
 
 [dev-dependencies]
 tempfile = "3.26.0"

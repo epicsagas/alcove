@@ -722,10 +722,10 @@ pub fn cmd_uninstall() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Model subcommand (alcove-full feature)
+// Model subcommand (embed-candle feature)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
     use crate::ModelCommands;
 
@@ -738,7 +738,7 @@ pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
     }
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn cmd_model_list() -> Result<()> {
     use crate::embedding::EmbeddingModelChoice;
 
@@ -766,14 +766,9 @@ fn cmd_model_list() -> Result<()> {
             ""
         };
         let desc = match model {
-            EmbeddingModelChoice::SnowflakeArcticEmbedXS => "Mobile/low-spec, fastest",
-            EmbeddingModelChoice::SnowflakeArcticEmbedXSQ => "Quantized XS, smallest",
-            EmbeddingModelChoice::MultilingualE5Small => "Default, balanced (100+ langs)",
-            EmbeddingModelChoice::SnowflakeArcticEmbedS => "Quality/size balance",
-            EmbeddingModelChoice::SnowflakeArcticEmbedSQ => "Quantized S",
+            EmbeddingModelChoice::AllMiniLML6V2 => "Default, fast & lightweight (80MB)",
+            EmbeddingModelChoice::MultilingualE5Small => "Multilingual balanced (100+ langs)",
             EmbeddingModelChoice::MultilingualE5Base => "Large scale docs",
-            EmbeddingModelChoice::SnowflakeArcticEmbedM => "Medium, 768d",
-            EmbeddingModelChoice::SnowflakeArcticEmbedMQ => "Quantized M",
             EmbeddingModelChoice::MultilingualE5Large => "Best quality, heavy",
             EmbeddingModelChoice::BGEM3 => "Dense+Sparse+ColBERT",
         };
@@ -794,9 +789,9 @@ fn cmd_model_list() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn cmd_model_download() -> Result<()> {
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     {
         use crate::embedding::EmbeddingService;
 
@@ -846,19 +841,19 @@ fn cmd_model_download() -> Result<()> {
         println!("Cache location: {}", cfg.cache_dir);
     }
 
-    #[cfg(not(feature = "alcove-full"))]
+    #[cfg(not(feature = "embed-candle"))]
     {
         println!(
-            "{} The 'alcove-full' feature is required for embedding support.",
+            "{} The 'embed-candle' feature is required for embedding support.",
             style("✗").red()
         );
-        println!("Install with: cargo install alcove --features alcove-full");
+        println!("Install with: cargo install alcove --features embed-candle");
     }
 
     Ok(())
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn cmd_model_remove() -> Result<()> {
     let cfg = load_config().embedding_config_with_defaults();
     let cache_dir = std::path::PathBuf::from(
@@ -901,7 +896,7 @@ fn cmd_model_remove() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn cmd_model_set(model_name: &str) -> Result<()> {
     use crate::embedding::EmbeddingModelChoice;
 
@@ -972,7 +967,7 @@ fn cmd_model_set(model_name: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 fn cmd_model_status() -> Result<()> {
     let cfg = load_config();
     let emb_cfg = cfg.embedding_config_with_defaults();
@@ -1209,9 +1204,7 @@ pub fn cmd_reap() -> Result<()> {
             continue;
         }
 
-        unsafe {
-            libc::kill(pid as i32, libc::SIGTERM);
-        }
+        crate::platform::send_terminate(pid);
         reaped += 1;
     }
 

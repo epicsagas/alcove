@@ -1,45 +1,44 @@
-//! Embedding service for hybrid search (alcove-full feature)
+//! Embedding service for hybrid search (embed-candle feature)
 //!
-//! Provides lazy model download, ONNX inference, and vector index management.
-//! Graceful degradation ensures BM25-only search works even when models aren't ready.
+//! Provides lazy model download via HuggingFace Hub, candle-transformers BERT
+//! inference, and LRU query caching. Graceful degradation ensures BM25-only
+//! search works even when models aren't ready.
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 use std::path::PathBuf;
-
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 use std::sync::{Arc, Condvar, Mutex};
-
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "alcove-full")]
-use anyhow::Result;
-#[cfg(feature = "alcove-full")]
-use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
+#[cfg(feature = "embed-candle")]
+use anyhow::{Context, Result};
+#[cfg(feature = "embed-candle")]
+use candle_core::Tensor;
+#[cfg(feature = "embed-candle")]
+use candle_nn::VarBuilder;
+#[cfg(feature = "embed-candle")]
+use candle_transformers::models::bert::{BertModel, Config, DTYPE};
+#[cfg(feature = "embed-candle")]
+use hf_hub::api::sync::Api;
+#[cfg(feature = "embed-candle")]
+use hf_hub::{Repo, RepoType};
 
 /// Model state for graceful degradation
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum ModelState {
-    /// Model not downloaded yet
     #[default]
     NotDownloaded,
-    /// Background download in progress (percentage)
     Downloading { progress_pct: u8 },
-    /// Model cached on disk, ONNX session not yet loaded
     Cached,
-    /// ONNX session loaded, ready for embedding
     Ready,
-    /// Session was loaded but unloaded after idle timeout; model still on disk.
-    /// Behaves like `Cached` — reloads on next `ensure_model()` call.
     Unloaded,
-    /// Embedding is intentionally disabled in configuration (not an error)
     Disabled,
-    /// Download or load failed
     Failed(String),
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 impl std::fmt::Display for ModelState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -54,53 +53,24 @@ impl std::fmt::Display for ModelState {
     }
 }
 
-/// Supported embedding models (Korean + multilingual)
-#[cfg_attr(not(feature = "alcove-full"), allow(dead_code))]
+/// Supported embedding models — all resolve to BERT-family architectures
+/// loadable via candle-transformers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EmbeddingModelChoice {
-    #[default]
     MultilingualE5Small,
+    #[default]
+    AllMiniLML6V2,
     MultilingualE5Base,
     MultilingualE5Large,
-    SnowflakeArcticEmbedXS,
-    SnowflakeArcticEmbedXSQ,
-    SnowflakeArcticEmbedS,
-    SnowflakeArcticEmbedSQ,
-    SnowflakeArcticEmbedM,
-    SnowflakeArcticEmbedMQ,
     BGEM3,
 }
 
-#[cfg_attr(not(feature = "alcove-full"), allow(dead_code))]
 impl EmbeddingModelChoice {
-    /// Get the fastembed model enum variant
-    #[cfg(feature = "alcove-full")]
-    pub fn as_fastembed_model(self) -> EmbeddingModel {
-        match self {
-            Self::MultilingualE5Small => EmbeddingModel::MultilingualE5Small,
-            Self::MultilingualE5Base => EmbeddingModel::MultilingualE5Base,
-            Self::MultilingualE5Large => EmbeddingModel::MultilingualE5Large,
-            Self::SnowflakeArcticEmbedXS => EmbeddingModel::SnowflakeArcticEmbedXS,
-            Self::SnowflakeArcticEmbedXSQ => EmbeddingModel::SnowflakeArcticEmbedXSQ,
-            Self::SnowflakeArcticEmbedS => EmbeddingModel::SnowflakeArcticEmbedS,
-            Self::SnowflakeArcticEmbedSQ => EmbeddingModel::SnowflakeArcticEmbedSQ,
-            Self::SnowflakeArcticEmbedM => EmbeddingModel::SnowflakeArcticEmbedM,
-            Self::SnowflakeArcticEmbedMQ => EmbeddingModel::SnowflakeArcticEmbedMQ,
-            Self::BGEM3 => EmbeddingModel::BGEM3,
-        }
-    }
-
     /// Get embedding dimension for this model
     pub fn dimension(&self) -> usize {
         match self {
-            Self::MultilingualE5Small
-            | Self::SnowflakeArcticEmbedXS
-            | Self::SnowflakeArcticEmbedXSQ
-            | Self::SnowflakeArcticEmbedS
-            | Self::SnowflakeArcticEmbedSQ => 384,
-            Self::MultilingualE5Base
-            | Self::SnowflakeArcticEmbedM
-            | Self::SnowflakeArcticEmbedMQ => 768,
+            Self::AllMiniLML6V2 | Self::MultilingualE5Small => 384,
+            Self::MultilingualE5Base => 768,
             Self::MultilingualE5Large | Self::BGEM3 => 1024,
         }
     }
@@ -108,109 +78,64 @@ impl EmbeddingModelChoice {
     /// Approximate model size in MB
     pub fn size_mb(&self) -> usize {
         match self {
-            Self::SnowflakeArcticEmbedXS => 30,
-            Self::SnowflakeArcticEmbedXSQ => 15,
-            Self::SnowflakeArcticEmbedS => 130,
-            Self::SnowflakeArcticEmbedSQ => 65,
-            Self::MultilingualE5Small => 235, // O4 optimized
-            Self::SnowflakeArcticEmbedM => 400,
-            Self::SnowflakeArcticEmbedMQ => 200,
-            Self::MultilingualE5Base => 555, // O4 optimized
+            Self::AllMiniLML6V2 => 80,
+            Self::MultilingualE5Small => 470,
+            Self::MultilingualE5Base => 1100,
             Self::MultilingualE5Large => 2200,
             Self::BGEM3 => 2300,
         }
     }
 
-    /// Parse from string (for config file)
     pub fn parse(s: &str) -> Option<Self> {
         match s {
+            "AllMiniLML6V2" => Some(Self::AllMiniLML6V2),
             "MultilingualE5Small" => Some(Self::MultilingualE5Small),
             "MultilingualE5Base" => Some(Self::MultilingualE5Base),
             "MultilingualE5Large" => Some(Self::MultilingualE5Large),
-            "SnowflakeArcticEmbedXS" => Some(Self::SnowflakeArcticEmbedXS),
-            "SnowflakeArcticEmbedXSQ" => Some(Self::SnowflakeArcticEmbedXSQ),
-            "SnowflakeArcticEmbedS" => Some(Self::SnowflakeArcticEmbedS),
-            "SnowflakeArcticEmbedSQ" => Some(Self::SnowflakeArcticEmbedSQ),
-            "SnowflakeArcticEmbedM" => Some(Self::SnowflakeArcticEmbedM),
-            "SnowflakeArcticEmbedMQ" => Some(Self::SnowflakeArcticEmbedMQ),
             "BGEM3" => Some(Self::BGEM3),
             _ => None,
         }
     }
 
-    /// Convert to string (for config file)
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::AllMiniLML6V2 => "AllMiniLML6V2",
             Self::MultilingualE5Small => "MultilingualE5Small",
             Self::MultilingualE5Base => "MultilingualE5Base",
             Self::MultilingualE5Large => "MultilingualE5Large",
-            Self::SnowflakeArcticEmbedXS => "SnowflakeArcticEmbedXS",
-            Self::SnowflakeArcticEmbedXSQ => "SnowflakeArcticEmbedXSQ",
-            Self::SnowflakeArcticEmbedS => "SnowflakeArcticEmbedS",
-            Self::SnowflakeArcticEmbedSQ => "SnowflakeArcticEmbedSQ",
-            Self::SnowflakeArcticEmbedM => "SnowflakeArcticEmbedM",
-            Self::SnowflakeArcticEmbedMQ => "SnowflakeArcticEmbedMQ",
             Self::BGEM3 => "BGEM3",
         }
     }
 
-    /// List all available models
     pub fn all() -> &'static [Self] {
         &[
-            Self::SnowflakeArcticEmbedXS,
-            Self::SnowflakeArcticEmbedXSQ,
+            Self::AllMiniLML6V2,
             Self::MultilingualE5Small,
-            Self::SnowflakeArcticEmbedS,
-            Self::SnowflakeArcticEmbedSQ,
             Self::MultilingualE5Base,
-            Self::SnowflakeArcticEmbedM,
-            Self::SnowflakeArcticEmbedMQ,
             Self::MultilingualE5Large,
             Self::BGEM3,
         ]
     }
 
-    /// Get the HuggingFace model ID
     pub fn model_id(self) -> &'static str {
         match self {
+            Self::AllMiniLML6V2 => "sentence-transformers/all-MiniLM-L6-v2",
             Self::MultilingualE5Small => "intfloat/multilingual-e5-small",
             Self::MultilingualE5Base => "intfloat/multilingual-e5-base",
             Self::MultilingualE5Large => "intfloat/multilingual-e5-large",
-            Self::SnowflakeArcticEmbedXS => "Snowflake/snowflake-arctic-embed-xs",
-            Self::SnowflakeArcticEmbedXSQ => "Snowflake/snowflake-arctic-embed-xs",
-            Self::SnowflakeArcticEmbedS => "Snowflake/snowflake-arctic-embed-s",
-            Self::SnowflakeArcticEmbedSQ => "Snowflake/snowflake-arctic-embed-s",
-            Self::SnowflakeArcticEmbedM => "Snowflake/snowflake-arctic-embed-m",
-            Self::SnowflakeArcticEmbedMQ => "Snowflake/snowflake-arctic-embed-m",
             Self::BGEM3 => "BAAI/bge-m3",
         }
     }
 
-    /// Prefix to prepend to queries before embedding.
-    ///
-    /// Some models require a task-specific prefix for retrieval queries to
-    /// produce meaningful similarity scores against document embeddings.
     pub fn query_prefix(self) -> Option<&'static str> {
         match self {
-            Self::SnowflakeArcticEmbedXS
-            | Self::SnowflakeArcticEmbedXSQ
-            | Self::SnowflakeArcticEmbedS
-            | Self::SnowflakeArcticEmbedSQ
-            | Self::SnowflakeArcticEmbedM
-            | Self::SnowflakeArcticEmbedMQ => {
-                Some("Represent this sentence for searching relevant passages: ")
-            }
             Self::MultilingualE5Small | Self::MultilingualE5Base | Self::MultilingualE5Large => {
                 Some("query: ")
             }
-            Self::BGEM3 => None,
+            Self::AllMiniLML6V2 | Self::BGEM3 => None,
         }
     }
 
-    /// Prefix to prepend to documents/passages before embedding.
-    ///
-    /// Some models distinguish between query and passage inputs at the
-    /// embedding level.  Returns `None` when no prefix is required.
     pub fn doc_prefix(self) -> Option<&'static str> {
         match self {
             Self::MultilingualE5Small | Self::MultilingualE5Base | Self::MultilingualE5Large => {
@@ -221,7 +146,6 @@ impl EmbeddingModelChoice {
     }
 }
 
-#[cfg(feature = "alcove-full")]
 impl std::fmt::Display for EmbeddingModelChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", (*self).as_str())
@@ -229,20 +153,15 @@ impl std::fmt::Display for EmbeddingModelChoice {
 }
 
 // ---------------------------------------------------------------------------
-// Inline LRU cache backed by IndexMap for O(1) operations
+// LRU cache backed by IndexMap
 // ---------------------------------------------------------------------------
 
-/// A simple LRU cache backed by `IndexMap` for O(1) lookup, insertion, and
-/// eviction. The front of the map (index 0) is the least-recently-used entry
-/// and the back is the most-recently-used. When `capacity` is 0 the cache is
-/// effectively disabled — every `get` returns `None` and `insert` is a no-op.
 pub struct QueryEmbedCache {
     capacity: usize,
     map: indexmap::IndexMap<String, Vec<f32>>,
 }
 
 impl QueryEmbedCache {
-    /// Create a new cache with the given capacity.
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity,
@@ -250,8 +169,6 @@ impl QueryEmbedCache {
         }
     }
 
-    /// Return a reference to the cached vector for `key`, or `None`.
-    /// Accessing an entry promotes it to the most-recently-used position (back).
     pub fn get(&mut self, key: &str) -> Option<&Vec<f32>> {
         if self.capacity == 0 {
             return None;
@@ -264,62 +181,163 @@ impl QueryEmbedCache {
         }
     }
 
-    /// Insert or update an entry. Evicts the LRU entry when at capacity.
     pub fn insert(&mut self, key: String, value: Vec<f32>) {
         if self.capacity == 0 {
             return;
         }
         if let Some((k, _)) = self.map.shift_remove_entry(&key) {
-            // Re-insert at the back (MRU position) with updated value.
             self.map.insert(k, value);
         } else {
             if self.map.len() >= self.capacity {
-                self.map.shift_remove_index(0); // evict LRU (front)
+                self.map.shift_remove_index(0);
             }
             self.map.insert(key, value);
         }
     }
 }
 
-// Feature-gated implementation
+// ---------------------------------------------------------------------------
+// Candle-based embedding session (the actual inference engine)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "alcove-full")]
+/// Holds a loaded candle BERT model + tokenizer, ready for inference.
+#[cfg(feature = "embed-candle")]
+struct CandleSession {
+    model: BertModel,
+    tokenizer: tokenizers::Tokenizer,
+}
+
+#[cfg(feature = "embed-candle")]
+impl CandleSession {
+    /// Download model files from HuggingFace Hub and build a BERT session.
+    fn load(
+        model_choice: EmbeddingModelChoice,
+        _cache_dir: &std::path::Path,
+    ) -> Result<Self> {
+        let device = candle_core::Device::Cpu;
+        let model_id = model_choice.model_id();
+
+        let api = Api::new().context("Failed to create HuggingFace API client")?;
+        let repo = Repo::with_revision(model_id.to_string(), RepoType::Model, "main".to_string());
+        let api_repo = api.repo(repo);
+
+        let config_path = api_repo
+            .get("config.json")
+            .context("Failed to download config.json")?;
+        let tokenizer_path = api_repo
+            .get("tokenizer.json")
+            .context("Failed to download tokenizer.json")?;
+        let weights_path = api_repo
+            .get("model.safetensors")
+            .context("Failed to download model.safetensors")?;
+
+        let config_str = std::fs::read_to_string(&config_path)
+            .context("Failed to read config.json")?;
+        let config: Config = serde_json::from_str(&config_str)
+            .context("Failed to parse config.json")?;
+
+        let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
+            .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
+
+        let vb = unsafe {
+            VarBuilder::from_mmaped_safetensors(&[weights_path], DTYPE, &device)?
+        };
+        let model = BertModel::load(vb, &config)?;
+
+        Ok(Self { model, tokenizer })
+    }
+
+    /// Embed a batch of texts, returning one Vec<f32> per text.
+    fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        let device = candle_core::Device::Cpu;
+
+        let mut tokenizer = self.tokenizer.clone();
+        tokenizer.with_padding(Some(tokenizers::PaddingParams {
+            strategy: tokenizers::PaddingStrategy::BatchLongest,
+            ..Default::default()
+        }));
+
+        let encodings = tokenizer
+            .encode_batch(texts.to_vec(), true)
+            .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
+
+        let token_ids = Tensor::stack(
+            &encodings
+                .iter()
+                .map(|e| Tensor::new(e.get_ids(), &device))
+                .collect::<candle_core::Result<Vec<_>>>()?,
+            0,
+        )?;
+        let attention_mask = Tensor::stack(
+            &encodings
+                .iter()
+                .map(|e| Tensor::new(e.get_attention_mask(), &device))
+                .collect::<candle_core::Result<Vec<_>>>()?,
+            0,
+        )?;
+        let token_type_ids = token_ids.zeros_like()?;
+
+        // Forward: [batch, seq_len, hidden_size]
+        let embeddings = self
+            .model
+            .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
+
+        // Mean pooling with attention mask
+        let mask_f = attention_mask.to_dtype(DTYPE)?.unsqueeze(2)?;
+        let sum_mask = mask_f.sum(1)?;
+        let pooled = (embeddings.broadcast_mul(&mask_f)?)
+            .sum(1)?
+            .broadcast_div(&sum_mask)?;
+
+        // L2 normalize
+        let normalized = pooled.broadcast_div(
+            &pooled.sqr()?.sum_keepdim(1)?.sqrt()?,
+        )?;
+
+        // Extract to Vec<Vec<f32>>
+        let batch_size = normalized.dims()[0];
+        (0..batch_size)
+            .map(|i| {
+                normalized
+                    .get(i)?
+                    .to_vec1::<f32>()
+                    .map_err(anyhow::Error::from)
+            })
+            .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// EmbeddingService — public API (same interface, candle backend)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "embed-candle")]
 pub struct EmbeddingService {
-    /// Current model state
     state: Arc<Mutex<ModelState>>,
-    /// Condvar paired with `state` — notified when the download thread transitions
-    /// state to `Ready` or `Failed`.  Replaces the 100 ms sleep-polling loop in
-    /// `ensure_model()` so callers wake up immediately on completion.
     download_cvar: Arc<Condvar>,
-    /// Internal configuration with model choice
     internal_config: InternalEmbeddingConfig,
-    /// ONNX session (lazy loaded)
-    session: Arc<Mutex<Option<TextEmbedding>>>,
-    /// Previous model dimension (for detecting changes)
+    session: Arc<Mutex<Option<CandleSession>>>,
     #[allow(dead_code)]
     previous_dimension: Arc<Mutex<Option<usize>>>,
-    /// Timestamp of the last successful `embed()` call — used for idle unload.
     last_embed_at: Arc<Mutex<Instant>>,
-    /// Per-query embedding LRU cache to skip redundant ONNX inference.
     query_cache: Arc<Mutex<QueryEmbedCache>>,
 }
 
-/// Internal embedding configuration (not part of public API)
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 struct InternalEmbeddingConfig {
     model: EmbeddingModelChoice,
     cache_dir: PathBuf,
     enabled: bool,
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "embed-candle")]
 impl EmbeddingService {
-    /// Create a new embedding service
     pub fn new(config: crate::config::EmbeddingConfig) -> Self {
-        // Parse model string to EmbeddingModelChoice
         let model_choice = EmbeddingModelChoice::parse(&config.model).unwrap_or_else(|| {
-            eprintln!("Warning: Unknown model '{}', using default", config.model);
+            eprintln!(
+                "Warning: Unknown model '{}', using default",
+                config.model
+            );
             EmbeddingModelChoice::default()
         });
 
@@ -329,15 +347,14 @@ impl EmbeddingService {
             enabled: config.enabled,
         };
 
-        let initial_state = if internal_config.enabled && Self::is_model_cached(&internal_config) {
-            ModelState::Cached
-        } else if internal_config.enabled {
-            ModelState::NotDownloaded
-        } else {
-            ModelState::Disabled
-        };
-
-        let query_cache_size = config.query_cache_size;
+        let initial_state =
+            if internal_config.enabled && Self::is_model_cached(&internal_config) {
+                ModelState::Cached
+            } else if internal_config.enabled {
+                ModelState::NotDownloaded
+            } else {
+                ModelState::Disabled
+            };
 
         Self {
             state: Arc::new(Mutex::new(initial_state)),
@@ -346,45 +363,30 @@ impl EmbeddingService {
             session: Arc::new(Mutex::new(None)),
             previous_dimension: Arc::new(Mutex::new(None)),
             last_embed_at: Arc::new(Mutex::new(Instant::now())),
-            query_cache: Arc::new(Mutex::new(QueryEmbedCache::new(query_cache_size))),
+            query_cache: Arc::new(Mutex::new(QueryEmbedCache::new(
+                config.query_cache_size,
+            ))),
         }
     }
 
-    /// Returns true if this model choice is a quantized (Q) variant sharing
-    /// the same HuggingFace model ID as its non-quantized counterpart.
-    pub fn is_quantized_variant(model: EmbeddingModelChoice) -> bool {
-        matches!(
-            model,
-            EmbeddingModelChoice::SnowflakeArcticEmbedXSQ
-                | EmbeddingModelChoice::SnowflakeArcticEmbedSQ
-                | EmbeddingModelChoice::SnowflakeArcticEmbedMQ
-        )
-    }
-
-    /// Check if model is cached locally
     fn is_model_cached(config: &InternalEmbeddingConfig) -> bool {
-        // fastembed uses HuggingFace hub cache: models--{user}--{repo}
+        // hf-hub cache: models--{org}--{repo}
         let model_id = config.model.model_id();
-        let mut folder_name = format!("models--{}", model_id.replace('/', "--"));
-        // Q variants share the same HuggingFace model ID as their base variant;
-        // append a suffix so the cache check doesn't produce false positives.
-        if Self::is_quantized_variant(config.model) {
-            folder_name.push_str("-quantized");
-        }
+        let folder_name = format!("models--{}", model_id.replace('/', "--"));
         config.cache_dir.join(folder_name).exists()
     }
 
-    /// Get current model state
     pub fn state(&self) -> ModelState {
-        self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
-    /// Get current dimension
     pub fn dimension(&self) -> usize {
         self.internal_config.model.dimension()
     }
 
-    /// Check if dimension changed since last call
     #[allow(dead_code)]
     pub fn dimension_changed(&self) -> bool {
         let current = self.internal_config.model.dimension();
@@ -400,45 +402,34 @@ impl EmbeddingService {
         }
     }
 
-    /// Ensure model is ready (start background download if needed).
-    ///
-    /// Spawns a background thread for the download and then polls until the
-    /// state transitions to `Ready` or `Failed`, or until the 5-minute timeout
-    /// elapses.  The spawned thread means the Tokio executor is not starved
-    /// during the download — each 100 ms sleep yields back to the runtime.
     pub fn ensure_model(&self) -> Result<(), String> {
-        let state = self.state.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         match state {
             ModelState::Ready => return Ok(()),
             ModelState::Disabled => {
                 return Err("Embedding is disabled in configuration".to_string());
             }
             ModelState::Failed(e) => return Err(e),
-            // Unloaded = was Ready, then session dropped for idle; model still on disk.
-            // Treat identically to Cached so start_download() reloads the ONNX session.
             ModelState::NotDownloaded | ModelState::Cached | ModelState::Unloaded => {
-                // Kick off background download/reload then fall through to the poll loop.
                 self.start_download();
             }
-            ModelState::Downloading { .. } => {
-                // Another thread is already downloading; fall through to poll.
-            }
+            ModelState::Downloading { .. } => {}
         }
 
-        // Wait until Ready or Failed using Condvar — avoids 100 ms sleep-polling.
-        // The download thread calls download_cvar.notify_all() on every terminal
-        // state transition (Ready or Failed) so this wakes up promptly.
         let deadline = Instant::now() + Duration::from_secs(300);
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         loop {
             match state.clone() {
                 ModelState::Ready => return Ok(()),
                 ModelState::Failed(e) => return Err(e),
                 ModelState::Unloaded => {
-                    // An idle-unload raced with our wait: session was dropped between
-                    // the download completing and this iteration reading the state.
-                    // Restart the download (start_download is a no-op if already
-                    // Downloading/Ready) then continue waiting.
                     drop(state);
                     self.start_download();
                     state = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -447,7 +438,9 @@ impl EmbeddingService {
                 ModelState::Downloading { .. } => {
                     let timeout = deadline.saturating_duration_since(Instant::now());
                     if timeout.is_zero() {
-                        return Err("Timed out waiting for model download to complete".to_string());
+                        return Err(
+                            "Timed out waiting for model download to complete".to_string()
+                        );
                     }
                     let (new_state, timed_out) = self
                         .download_cvar
@@ -455,7 +448,9 @@ impl EmbeddingService {
                         .unwrap_or_else(|e| e.into_inner());
                     state = new_state;
                     if timed_out.timed_out() {
-                        return Err("Timed out waiting for model download to complete".to_string());
+                        return Err(
+                            "Timed out waiting for model download to complete".to_string()
+                        );
                     }
                 }
                 other => {
@@ -468,17 +463,12 @@ impl EmbeddingService {
         }
     }
 
-    /// Spawn a background thread to download and load the ONNX model.
-    ///
-    /// Returns immediately after transitioning state to `Downloading`.
-    /// Callers that need to wait for completion should poll via `ensure_model`.
     fn start_download(&self) {
         {
-            // SAFETY: The double-checked locking pattern here is intentional.
-            // `start_download` holds the state lock before checking state and
-            // returns early (no-op) if already Downloading/Ready, so concurrent
-            // callers racing through the NotDownloaded/Unloaded check above are safe.
-            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if *state != ModelState::NotDownloaded
                 && *state != ModelState::Cached
                 && *state != ModelState::Unloaded
@@ -488,7 +478,6 @@ impl EmbeddingService {
             *state = ModelState::Downloading { progress_pct: 0 };
         }
 
-        // Clone the Arcs so they can be moved into the background thread.
         let state_arc = Arc::clone(&self.state);
         let cvar_arc = Arc::clone(&self.download_cvar);
         let session_arc = Arc::clone(&self.session);
@@ -501,7 +490,6 @@ impl EmbeddingService {
                     *state_arc.lock().unwrap_or_else(|e| e.into_inner()) = $s;
                 };
             }
-            // Notify waiters in ensure_model() after every terminal state change.
             macro_rules! set_state_and_notify {
                 ($s:expr) => {{
                     *state_arc.lock().unwrap_or_else(|e| e.into_inner()) = $s;
@@ -514,21 +502,14 @@ impl EmbeddingService {
                 return;
             }
 
-            set_state!(ModelState::Downloading { progress_pct: 10 });
+            set_state!(ModelState::Downloading { progress_pct: 20 });
 
-            let options = TextInitOptions::new(model.as_fastembed_model())
-                .with_cache_dir(cache_dir)
-                .with_show_download_progress(true);
-
-            set_state!(ModelState::Downloading { progress_pct: 50 });
-
-            match TextEmbedding::try_new(options) {
-                Ok(embedding) => {
+            match CandleSession::load(model, &cache_dir) {
+                Ok(session) => {
                     set_state!(ModelState::Downloading { progress_pct: 90 });
-                    // Acquire state lock FIRST, then session lock — same order as
-                    // remove_cache() and try_unload_if_idle() — to prevent ABBA deadlock.
-                    let mut state_guard = state_arc.lock().unwrap_or_else(|e| e.into_inner());
-                    *session_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(embedding);
+                    let mut state_guard =
+                        state_arc.lock().unwrap_or_else(|e| e.into_inner());
+                    *session_arc.lock().unwrap_or_else(|e| e.into_inner()) = Some(session);
                     *state_guard = ModelState::Ready;
                     drop(state_guard);
                     cvar_arc.notify_all();
@@ -540,13 +521,6 @@ impl EmbeddingService {
         });
     }
 
-    /// Drop the ONNX session if the idle timeout has elapsed.
-    ///
-    /// Acquires `state` and `session` locks together inside a single critical
-    /// section (state first, session second — same order as `embed()`) so that
-    /// a concurrent download thread cannot complete and store a new session
-    /// between the two lock acquisitions.  Returns `true` if the session was
-    /// unloaded.
     fn try_unload_if_idle(&self) -> bool {
         let unload_secs = crate::config::load_config()
             .memory_config_with_defaults()
@@ -563,52 +537,45 @@ impl EmbeddingService {
             return false;
         }
 
-        // Acquire state lock first, then session lock — same order as embed() —
-        // to prevent TOCTOU: the session is cleared atomically with the state
-        // transition so no download thread can slip a new session in between.
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if *state != ModelState::Ready {
             return false;
         }
-        // Hold state lock while clearing the session so the transition is atomic.
-        let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
+        let mut session = self
+            .session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *session = None;
         *state = ModelState::Unloaded;
         true
     }
 
-    /// Generate embeddings for texts.
-    ///
-    /// Checks idle timeout before use: if the session has been unused for
-    /// longer than `memory.model_unload_secs`, the ONNX session is dropped
-    /// and `Unloaded` state is returned so the caller can fall back to BM25.
-    /// The session will be transparently reloaded on the next `ensure_model()` call.
     pub fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
-        // --- idle-unload check ---
-        // Drop the ONNX session after prolonged inactivity to reclaim RAM.
-        // We call `try_unload_if_idle()` which acquires locks one-at-a-time
-        // (never nested) so it can never deadlock with the download thread.
-        // In the rare race where a download completes during the unload, the
-        // session is dropped and `Unloaded` state is set; the next call to
-        // `ensure_model()` transparently reloads it.
         if self.try_unload_if_idle() {
             return Err(
                 "Model unloaded after idle timeout; will reload on next request".to_string(),
             );
         }
 
-        // --- readiness check ---
-        let state = self.state.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         if state != ModelState::Ready {
             return Err(format!("Model not ready: {}", state));
         }
 
-        // --- cache lookup (partial-hit support) ---
-        // Collect cache hits; build a miss list with original indices.
         let mut results: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
         let mut miss_indices: Vec<usize> = Vec::new();
         {
-            let mut cache = self.query_cache.lock().unwrap_or_else(|e| e.into_inner());
+            let mut cache = self
+                .query_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             for (i, text) in texts.iter().enumerate() {
                 if let Some(cached) = cache.get(text) {
                     results[i] = Some(cached.clone());
@@ -618,24 +585,29 @@ impl EmbeddingService {
             }
         }
 
-        // If all texts were cached, return immediately without touching the session.
         if miss_indices.is_empty() {
             return Ok(results.into_iter().flatten().collect());
         }
 
-        let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
+        let mut session = self
+            .session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let session = session
             .as_mut()
             .ok_or_else(|| "Session not loaded".to_string())?;
 
-        let miss_texts: Vec<String> = miss_indices.iter().map(|&i| texts[i].to_string()).collect();
+        let miss_texts: Vec<String> =
+            miss_indices.iter().map(|&i| texts[i].to_string()).collect();
         let inferred = session
-            .embed(miss_texts.clone(), None)
+            .embed_batch(&miss_texts)
             .map_err(|e| e.to_string())?;
 
-        // Store newly inferred vectors back into the cache and fill results.
         {
-            let mut cache = self.query_cache.lock().unwrap_or_else(|e| e.into_inner());
+            let mut cache = self
+                .query_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             for (miss_text, vec) in miss_texts.iter().zip(inferred.iter()) {
                 cache.insert(miss_text.clone(), vec.clone());
             }
@@ -644,49 +616,47 @@ impl EmbeddingService {
             results[*slot] = Some(vec);
         }
 
-        // Update last-used timestamp on success.
-        *self.last_embed_at.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
+        *self
+            .last_embed_at
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Instant::now();
 
         Ok(results.into_iter().flatten().collect())
     }
 
-    /// Remove cached model.
-    /// Uses the same HuggingFace hub folder naming as `is_model_cached`.
     #[allow(dead_code)]
     pub fn remove_cache(&self) -> Result<(), String> {
         let model_id = self.internal_config.model.model_id();
-        let mut folder_name = format!("models--{}", model_id.replace('/', "--"));
-        if Self::is_quantized_variant(self.internal_config.model) {
-            folder_name.push_str("-quantized");
-        }
+        let folder_name = format!("models--{}", model_id.replace('/', "--"));
         let model_dir = self.internal_config.cache_dir.join(folder_name);
         if model_dir.exists() {
             std::fs::remove_dir_all(&model_dir)
                 .map_err(|e| format!("Failed to remove cache: {}", e))?;
         }
 
-        // Hold state lock while clearing session — same order as embed() and
-        // try_unload_if_idle() — to prevent a download thread from slipping in.
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut session = self
+            .session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *session = None;
         *state = ModelState::NotDownloaded;
 
         Ok(())
     }
 
-    /// Check if embedding is enabled
     #[allow(dead_code)]
     pub fn is_enabled(&self) -> bool {
         self.internal_config.enabled
     }
 
-    /// Get model name
     pub fn model_name(&self) -> &'static str {
         self.internal_config.model.as_str()
     }
 
-    /// Get the underlying model choice (for prefix access)
     pub fn model_choice(&self) -> EmbeddingModelChoice {
         self.internal_config.model
     }
@@ -698,47 +668,27 @@ impl EmbeddingService {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     use super::*;
 
     #[test]
     fn test_model_choice_dimension() {
-        #[cfg(feature = "alcove-full")]
+        #[cfg(feature = "embed-candle")]
         {
+            assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.dimension(), 384);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Small.dimension(), 384);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Base.dimension(), 768);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Large.dimension(), 1024);
-            assert_eq!(
-                EmbeddingModelChoice::SnowflakeArcticEmbedXS.dimension(),
-                384
-            );
         }
     }
 
-    /// Query and document prefixes must match the investigated values exactly.
     #[test]
     fn test_model_prefixes() {
-        #[cfg(feature = "alcove-full")]
+        #[cfg(feature = "embed-candle")]
         {
-            // Snowflake Arctic models: query prefix only, no doc prefix
-            for m in [
-                EmbeddingModelChoice::SnowflakeArcticEmbedXS,
-                EmbeddingModelChoice::SnowflakeArcticEmbedXSQ,
-                EmbeddingModelChoice::SnowflakeArcticEmbedS,
-                EmbeddingModelChoice::SnowflakeArcticEmbedSQ,
-                EmbeddingModelChoice::SnowflakeArcticEmbedM,
-                EmbeddingModelChoice::SnowflakeArcticEmbedMQ,
-            ] {
-                assert_eq!(
-                    m.query_prefix(),
-                    Some("Represent this sentence for searching relevant passages: "),
-                    "{:?} query prefix mismatch",
-                    m
-                );
-                assert_eq!(m.doc_prefix(), None, "{:?} should have no doc prefix", m);
-            }
+            assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.query_prefix(), None);
+            assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.doc_prefix(), None);
 
-            // E5 models: both query and passage prefix
             for m in [
                 EmbeddingModelChoice::MultilingualE5Small,
                 EmbeddingModelChoice::MultilingualE5Base,
@@ -748,7 +698,6 @@ mod tests {
                 assert_eq!(m.doc_prefix(), Some("passage: "), "{:?} doc prefix", m);
             }
 
-            // BGEM3: no prefixes
             assert_eq!(EmbeddingModelChoice::BGEM3.query_prefix(), None);
             assert_eq!(EmbeddingModelChoice::BGEM3.doc_prefix(), None);
         }
@@ -756,11 +705,11 @@ mod tests {
 
     #[test]
     fn test_model_choice_parse() {
-        #[cfg(feature = "alcove-full")]
+        #[cfg(feature = "embed-candle")]
         {
             assert_eq!(
-                EmbeddingModelChoice::parse("MultilingualE5Small"),
-                Some(EmbeddingModelChoice::MultilingualE5Small)
+                EmbeddingModelChoice::parse("AllMiniLML6V2"),
+                Some(EmbeddingModelChoice::AllMiniLML6V2)
             );
             assert_eq!(EmbeddingModelChoice::parse("InvalidModel"), None);
         }
@@ -768,7 +717,7 @@ mod tests {
 
     #[test]
     fn test_model_state_display() {
-        #[cfg(feature = "alcove-full")]
+        #[cfg(feature = "embed-candle")]
         {
             assert_eq!(format!("{}", ModelState::NotDownloaded), "not_downloaded");
             assert_eq!(
@@ -781,272 +730,60 @@ mod tests {
 
     #[test]
     fn test_model_size() {
-        #[cfg(feature = "alcove-full")]
+        #[cfg(feature = "embed-candle")]
         {
-            assert_eq!(EmbeddingModelChoice::SnowflakeArcticEmbedXSQ.size_mb(), 15);
-            assert_eq!(EmbeddingModelChoice::MultilingualE5Small.size_mb(), 235);
+            assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.size_mb(), 80);
             assert_eq!(EmbeddingModelChoice::BGEM3.size_mb(), 2300);
         }
     }
 
-    /// Fix 3: Q variants must not share a cache folder name with their base variant.
-    #[test]
-    #[cfg(feature = "alcove-full")]
-    fn test_quantized_variants_have_distinct_cache_names() {
-        let pairs = [
-            (
-                EmbeddingModelChoice::SnowflakeArcticEmbedXS,
-                EmbeddingModelChoice::SnowflakeArcticEmbedXSQ,
-            ),
-            (
-                EmbeddingModelChoice::SnowflakeArcticEmbedS,
-                EmbeddingModelChoice::SnowflakeArcticEmbedSQ,
-            ),
-            (
-                EmbeddingModelChoice::SnowflakeArcticEmbedM,
-                EmbeddingModelChoice::SnowflakeArcticEmbedMQ,
-            ),
-        ];
-
-        for (base, quantized) in pairs {
-            // Both variants share the same HuggingFace model_id — that's expected.
-            assert_eq!(
-                base.model_id(),
-                quantized.model_id(),
-                "{} and {} should share the same HuggingFace model ID",
-                base.as_str(),
-                quantized.as_str()
-            );
-
-            // But is_quantized_variant must distinguish them so cache dirs differ.
-            assert!(
-                !EmbeddingService::is_quantized_variant(base),
-                "{} must NOT be identified as a quantized variant",
-                base.as_str()
-            );
-            assert!(
-                EmbeddingService::is_quantized_variant(quantized),
-                "{} must be identified as a quantized variant",
-                quantized.as_str()
-            );
-        }
-    }
-
-    /// Fix 1: Mutex poisoning — poison the lock then verify recovery is graceful.
-    #[test]
-    #[cfg(feature = "alcove-full")]
-    fn test_mutex_poison_recovery() {
-        use std::sync::{Arc, Mutex};
-
-        let mutex: Arc<Mutex<ModelState>> = Arc::new(Mutex::new(ModelState::NotDownloaded));
-
-        // Poison the mutex by panicking while holding it.
-        let mutex_clone = Arc::clone(&mutex);
-        let _ = std::panic::catch_unwind(move || {
-            let _guard = mutex_clone.lock().unwrap();
-            panic!("intentional poison");
-        });
-
-        // The unwrap_or_else pattern must not panic.
-        let recovered = mutex.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        assert_eq!(recovered, ModelState::NotDownloaded);
-    }
-
-    /// Fix 2: when Downloading, polling must unblock once state transitions to Ready.
-    #[test]
-    #[cfg(feature = "alcove-full")]
-    fn test_ensure_model_downloading_transitions_to_ready() {
-        use std::sync::{Arc, Mutex};
-        use std::time::Duration;
-
-        let state: Arc<Mutex<ModelState>> =
-            Arc::new(Mutex::new(ModelState::Downloading { progress_pct: 0 }));
-
-        let state_clone = Arc::clone(&state);
-        // After 150 ms transition to Ready.
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(150));
-            *state_clone.lock().unwrap_or_else(|e| e.into_inner()) = ModelState::Ready;
-        });
-
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            std::thread::sleep(Duration::from_millis(100));
-            let current = state.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            match current {
-                ModelState::Ready => break,
-                ModelState::Failed(e) => panic!("unexpected failure: {}", e),
-                ModelState::Downloading { .. } => {
-                    assert!(Instant::now() < deadline, "timed out waiting for Ready");
-                }
-                other => panic!("unexpected state: {}", other),
-            }
-        }
-    }
-
-    /// Polling sleep inside tokio runtime must use block_in_place, not plain thread::sleep.
-    /// Verify that the polling loop completes inside a tokio multi-thread runtime context
-    /// without starving other tasks.
-    #[test]
-    #[cfg(all(feature = "alcove-full", feature = "alcove-server"))]
-    fn test_ensure_model_polling_does_not_block_tokio_runtime() {
-        use std::sync::{Arc, Mutex};
-
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_time()
-            .build()
-            .unwrap();
-
-        rt.block_on(async {
-            let state: Arc<Mutex<ModelState>> =
-                Arc::new(Mutex::new(ModelState::Downloading { progress_pct: 0 }));
-
-            let state_clone = Arc::clone(&state);
-            // Transition to Ready after 200 ms on a blocking thread so we don't starve
-            // the test runtime.
-            tokio::task::spawn_blocking(move || {
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                *state_clone.lock().unwrap_or_else(|e| e.into_inner()) = ModelState::Ready;
-            });
-
-            // A concurrent task that must be able to run while the poll loop is waiting.
-            let concurrent = tokio::spawn(async {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                42u32
-            });
-
-            // Run the polling logic (mirrors ensure_model's Downloading branch) but
-            // using the non-blocking sleep so the executor can schedule other tasks.
-            let deadline = Instant::now() + std::time::Duration::from_secs(5);
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                let current = state.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                match current {
-                    ModelState::Ready => break,
-                    ModelState::Downloading { .. } => {
-                        assert!(Instant::now() < deadline, "timed out");
-                    }
-                    other => panic!("unexpected state: {}", other),
-                }
-            }
-
-            // The concurrent task must have completed because the poll loop yielded.
-            let val = concurrent.await.expect("concurrent task failed");
-            assert_eq!(val, 42);
-        });
-    }
-
-    /// QueryEmbedCache: basic get/insert and LRU eviction when capacity is exceeded.
     #[test]
     fn test_embedding_cache_hit_skips_inference() {
         let mut cache = super::QueryEmbedCache::new(2);
-
-        // Empty cache returns None
         assert!(cache.get("hello").is_none());
-
-        // Insert and retrieve
         cache.insert("hello".to_string(), vec![1.0, 2.0]);
         assert_eq!(cache.get("hello"), Some(&vec![1.0, 2.0]));
-
-        // Insert second entry
         cache.insert("world".to_string(), vec![3.0, 4.0]);
         assert_eq!(cache.get("world"), Some(&vec![3.0, 4.0]));
         assert_eq!(cache.get("hello"), Some(&vec![1.0, 2.0]));
-
-        // Insert third entry — "hello" was least-recently-used and must be evicted
-        // (after the get above "world" becomes LRU; but we did get("hello") last so
-        //  "world" is now the LRU entry — it should be evicted)
         cache.insert("foo".to_string(), vec![5.0, 6.0]);
-        // "world" was LRU (oldest insertion order after "hello" was accessed)
-        assert!(
-            cache.get("world").is_none(),
-            "world should have been evicted"
-        );
-        assert!(
-            cache.get("hello").is_some(),
-            "hello should still be present"
-        );
-        assert!(cache.get("foo").is_some(), "foo should be present");
+        assert!(cache.get("world").is_none(), "world should have been evicted");
+        assert!(cache.get("hello").is_some());
+        assert!(cache.get("foo").is_some());
     }
 
-    /// LRU eviction: the entry not accessed most recently is evicted first.
     #[test]
     fn test_embedding_cache_lru_order() {
         let mut cache = super::QueryEmbedCache::new(2);
         cache.insert("a".to_string(), vec![1.0]);
         cache.insert("b".to_string(), vec![2.0]);
-
-        // Access "a" so "b" becomes LRU
         let _ = cache.get("a");
-
-        // Insert "c" — "b" should be evicted
         cache.insert("c".to_string(), vec![3.0]);
         assert!(cache.get("b").is_none(), "b should be evicted as LRU");
         assert!(cache.get("a").is_some());
         assert!(cache.get("c").is_some());
     }
 
-    /// B2: poll loop must not return an error when state briefly hits Unloaded.
-    /// Simulates an idle-unload race: Downloading → Ready → Unloaded → Ready.
     #[test]
-    #[cfg(feature = "alcove-full")]
-    fn test_poll_loop_handles_unloaded_state_without_error() {
+    #[cfg(feature = "embed-candle")]
+    fn test_mutex_poison_recovery() {
         use std::sync::{Arc, Mutex};
-        use std::time::Duration;
-
-        let state: Arc<Mutex<ModelState>> =
-            Arc::new(Mutex::new(ModelState::Downloading { progress_pct: 0 }));
-        let state_clone = Arc::clone(&state);
-
-        // Simulate: after 100 ms transition to Unloaded (idle-unload race),
-        // then 100 ms later transition to Ready.
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(100));
-            *state_clone.lock().unwrap_or_else(|e| e.into_inner()) = ModelState::Unloaded;
-            std::thread::sleep(Duration::from_millis(100));
-            *state_clone.lock().unwrap_or_else(|e| e.into_inner()) = ModelState::Ready;
+        let mutex: Arc<Mutex<ModelState>> = Arc::new(Mutex::new(ModelState::NotDownloaded));
+        let mutex_clone = Arc::clone(&mutex);
+        let _ = std::panic::catch_unwind(move || {
+            let _guard = mutex_clone.lock().unwrap();
+            panic!("intentional poison");
         });
-
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let mut saw_unloaded = false;
-        loop {
-            std::thread::sleep(Duration::from_millis(50));
-            let current = state.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            match current {
-                ModelState::Ready => break,
-                ModelState::Failed(e) => panic!("unexpected failure: {}", e),
-                ModelState::Downloading { .. } => {
-                    assert!(Instant::now() < deadline, "timed out in Downloading");
-                }
-                ModelState::Unloaded => {
-                    // This is the state the fixed poll loop must tolerate without error.
-                    saw_unloaded = true;
-                    assert!(Instant::now() < deadline, "timed out in Unloaded");
-                }
-                other => panic!("unexpected state in poll loop: {}", other),
-            }
-        }
-        assert!(
-            saw_unloaded,
-            "test did not observe Unloaded state — adjust timings"
-        );
+        let recovered = mutex.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        assert_eq!(recovered, ModelState::NotDownloaded);
     }
 
-    /// B1: try_unload_if_idle must atomically clear both state and session.
-    /// After unload the session must be None and state must be Unloaded.
     #[test]
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     fn test_try_unload_if_idle_clears_session_atomically() {
         use std::sync::{Arc, Mutex};
-
-        // Construct a minimal EmbeddingService with a pre-loaded session sentinel.
-        // We test the invariant via the public state/session fields by observing
-        // that after try_unload_if_idle runs, both state == Unloaded and session == None.
         let state: Arc<Mutex<ModelState>> = Arc::new(Mutex::new(ModelState::Ready));
         let session: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(Some(42u32)));
-
-        // Replicate the B1-fixed logic inline (atomic: state then session in one block).
         let unloaded = {
             let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
             if *st == ModelState::Ready {
@@ -1058,158 +795,11 @@ mod tests {
                 false
             }
         };
-
         assert!(unloaded);
         assert_eq!(
             *state.lock().unwrap_or_else(|e| e.into_inner()),
             ModelState::Unloaded
         );
         assert!(session.lock().unwrap_or_else(|e| e.into_inner()).is_none());
-    }
-
-    /// remove_cache must atomically clear both state and session.
-    /// After remove_cache the session must be None and state must be NotDownloaded.
-    #[test]
-    #[cfg(feature = "alcove-full")]
-    fn test_remove_cache_clears_state_and_session_atomically() {
-        use std::sync::{Arc, Mutex};
-
-        // Replicate the fixed logic inline: acquire state lock first, then session,
-        // clear session, then set state — all while holding both locks.
-        let state: Arc<Mutex<ModelState>> = Arc::new(Mutex::new(ModelState::Ready));
-        let session: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(Some(99u32)));
-
-        {
-            let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
-            let mut sess = session.lock().unwrap_or_else(|e| e.into_inner());
-            *sess = None;
-            *st = ModelState::NotDownloaded;
-        }
-
-        assert_eq!(
-            *state.lock().unwrap_or_else(|e| e.into_inner()),
-            ModelState::NotDownloaded
-        );
-        assert!(session.lock().unwrap_or_else(|e| e.into_inner()).is_none());
-    }
-
-    /// Condvar: ensure_model-style wait unblocks immediately when state transitions
-    /// to Ready via notify_all — no 100 ms sleep overhead.
-    #[test]
-    #[cfg(feature = "alcove-full")]
-    fn test_condvar_wait_unblocks_on_ready() {
-        use std::sync::{Arc, Condvar, Mutex};
-        use std::time::{Duration, Instant};
-
-        // Pair: (Mutex<ModelState>, Condvar)
-        let pair: Arc<(Mutex<ModelState>, Condvar)> = Arc::new((
-            Mutex::new(ModelState::Downloading { progress_pct: 0 }),
-            Condvar::new(),
-        ));
-
-        let pair_clone = Arc::clone(&pair);
-        // Transition to Ready after a short delay and notify.
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(80));
-            let (lock, cvar) = &*pair_clone;
-            *lock.lock().unwrap() = ModelState::Ready;
-            cvar.notify_all();
-        });
-
-        let start = Instant::now();
-        let (lock, cvar) = &*pair;
-        let mut state = lock.lock().unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while matches!(*state, ModelState::Downloading { .. }) {
-            let timeout = deadline.saturating_duration_since(Instant::now());
-            let (new_state, _) = cvar.wait_timeout(state, timeout).unwrap();
-            state = new_state;
-        }
-        let elapsed = start.elapsed();
-
-        assert!(
-            matches!(*state, ModelState::Ready),
-            "expected Ready, got {}",
-            *state
-        );
-        // Must unblock promptly (well under 200 ms), not after a 100 ms poll cycle.
-        assert!(
-            elapsed < Duration::from_millis(300),
-            "wait took too long: {:?}",
-            elapsed
-        );
-    }
-
-    /// Condvar: EmbeddingService.download_cvar field must exist and notify_all
-    /// must be called after the download thread transitions state to Ready.
-    /// We verify this by observing that a condvar waiter unblocks without
-    /// sleeping a full poll interval.
-    #[test]
-    #[cfg(feature = "alcove-full")]
-    fn test_embedding_service_has_download_cvar_field() {
-        use std::sync::{Arc, Condvar, Mutex};
-        use std::time::{Duration, Instant};
-
-        // This test directly exercises the Arc<(Mutex<ModelState>, Condvar)>
-        // pattern that EmbeddingService.state should use after the refactor.
-        let pair: Arc<(Mutex<ModelState>, Condvar)> = Arc::new((
-            Mutex::new(ModelState::Downloading { progress_pct: 50 }),
-            Condvar::new(),
-        ));
-
-        let pair_clone = Arc::clone(&pair);
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(50));
-            let (lock, cvar) = &*pair_clone;
-            *lock.lock().unwrap() = ModelState::Failed("test error".to_string());
-            cvar.notify_all();
-        });
-
-        let (lock, cvar) = &*pair;
-        let mut state = lock.lock().unwrap();
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while matches!(*state, ModelState::Downloading { .. }) {
-            let timeout = deadline.saturating_duration_since(Instant::now());
-            if timeout.is_zero() {
-                break;
-            }
-            let (new_state, timed_out) = cvar.wait_timeout(state, timeout).unwrap();
-            state = new_state;
-            if timed_out.timed_out() {
-                break;
-            }
-        }
-
-        assert!(
-            matches!(*state, ModelState::Failed(_)),
-            "expected Failed, got {}",
-            *state
-        );
-    }
-
-    /// Fix 2: polling must return a timeout error when state never changes.
-    #[test]
-    #[cfg(feature = "alcove-full")]
-    fn test_ensure_model_downloading_timeout_error() {
-        use std::sync::{Arc, Mutex};
-        use std::time::Duration;
-
-        let state: Arc<Mutex<ModelState>> =
-            Arc::new(Mutex::new(ModelState::Downloading { progress_pct: 0 }));
-
-        // Never transition — simulate a stalled download.
-        // Verify that state remains Downloading throughout the polling window.
-        let poll_until = Instant::now() + Duration::from_millis(300);
-        while Instant::now() < poll_until {
-            std::thread::sleep(Duration::from_millis(50));
-            let current = state.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            // State must still be Downloading; any other transition is a bug.
-            assert!(
-                matches!(current, ModelState::Downloading { .. }),
-                "expected Downloading but got: {}",
-                current
-            );
-        }
-        // If we reached here, the stalled-download detection logic works.
     }
 }

@@ -1,21 +1,21 @@
-//! Vector store using SQLite for persistence (alcove-full feature)
+//! Vector store using SQLite for persistence (vector feature)
 //!
 //! Stores document chunk embeddings as BLOBs and computes cosine similarity in Rust.
 //! This avoids complex FFI dependencies while providing efficient vector search.
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 use std::cmp::Ordering;
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 use std::collections::BinaryHeap;
 use std::path::Path;
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 use anyhow::Result;
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 use rusqlite::{Connection, params};
 
 /// Vector store metadata
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct VectorMeta {
@@ -28,7 +28,7 @@ pub struct VectorMeta {
 }
 
 /// Search result with similarity score
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorResult {
     /// Project name
@@ -46,24 +46,24 @@ pub struct VectorResult {
 /// `BinaryHeap` is a max-heap by default; reversing `Ord` makes it a min-heap
 /// so the *lowest* score sits at the top and can be cheaply evicted once the
 /// heap exceeds the desired limit.
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 #[derive(PartialEq)]
 struct MinScoreEntry {
     score: f32,
     result: VectorResult,
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 impl Eq for MinScoreEntry {}
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 impl PartialOrd for MinScoreEntry {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 impl Ord for MinScoreEntry {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reversed: smallest score at the top (min-heap)
@@ -82,7 +82,7 @@ impl Ord for MinScoreEntry {
 ///
 /// `key = None`       → index built from ALL projects
 /// `key = Some(name)` → index built from that project only
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 struct HnswCacheEntry {
     index: hnsw_rs::prelude::Hnsw<'static, f32, hnsw_rs::prelude::DistCosine>,
     /// Maps HNSW d_id (= SQLite row `id` as usize) → (project, file, chunk_id)
@@ -95,10 +95,10 @@ struct HnswCacheEntry {
 /// When exceeded, the least-recently-used entry is evicted before inserting a new one.
 /// Reduced from 8 → 3 to bound peak memory; each entry can consume 50–300 MB
 /// depending on vector count and dimension.
-#[cfg(all(feature = "alcove-full", not(test)))]
+#[cfg(all(feature = "vector", not(test)))]
 const HNSW_CACHE_MAX_ENTRIES: usize = 3;
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 pub struct VectorStore {
     conn: Connection,
     dimension: usize,
@@ -123,7 +123,7 @@ pub struct VectorStore {
 // TTL eviction helper (module-private)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 fn evict_stale(cache: &mut std::collections::HashMap<Option<String>, HnswCacheEntry>) {
     let ttl = std::time::Duration::from_secs(300); // 5 minutes
     cache.retain(|_, entry| entry.last_accessed.elapsed() < ttl);
@@ -133,7 +133,7 @@ fn evict_stale(cache: &mut std::collections::HashMap<Option<String>, HnswCacheEn
 // VectorStore impl
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 impl VectorStore {
     /// Open or create a vector store at the given path
     pub fn open(path: &Path, model: &str, dimension: usize) -> Result<Self> {
@@ -339,7 +339,7 @@ impl VectorStore {
         };
 
         // Use HNSW for large datasets (>= 5000 vectors)
-        #[cfg(feature = "alcove-full")]
+        #[cfg(feature = "vector")]
         if count >= 5000 {
             return self.search_hnsw(query, limit, project_filter);
         }
@@ -441,7 +441,7 @@ impl VectorStore {
     ///
     /// The index is scoped to `project_filter` and cached under the matching key.
     /// Stale entries (TTL = 5 min) are evicted at the start of each call.
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "vector")]
     fn search_hnsw(
         &self,
         query: &[f32],
@@ -645,7 +645,7 @@ impl VectorStore {
 // ---------------------------------------------------------------------------
 
 /// Compute cosine similarity between two vectors
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
@@ -667,7 +667,7 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// RRF score = bm25_weight / (k + rank_bm25) + vector_weight / (k + rank_vector)
 /// Default k = 60 (commonly used value). BM25 is weighted at 0.6 and vector at 0.4
 /// to give slight preference to the lexical signal.
-#[cfg(feature = "alcove-full")]
+#[cfg(feature = "vector")]
 pub fn reciprocal_rank_fusion(
     bm25_results: &[(String, String, u64, f32)], // (project, file, chunk_id, score)
     vector_results: &[VectorResult],
@@ -742,7 +742,7 @@ mod tests {
     }
 
     /// Fix 1: reopening with a different model must clear all vectors atomically.
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "vector")]
     #[test]
     fn test_open_model_change_clears_vectors() {
         let dir = tempfile::tempdir().unwrap();
@@ -769,7 +769,7 @@ mod tests {
     }
 
     /// Fix 2: search_linear with project_filter must only return matching project rows.
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "vector")]
     #[test]
     fn test_search_linear_project_filter() {
         let dir = tempfile::tempdir().unwrap();
@@ -798,7 +798,7 @@ mod tests {
 
     /// Cache: second search reuses the HNSW index without rebuilding it.
     /// Uses `contains_key` checks on the per-project HashMap.
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "vector")]
     #[test]
     #[ignore = "stress test: builds 5000-vector HNSW graph, run explicitly with -- --ignored"]
     fn test_hnsw_cache_reused_on_second_search() {
@@ -887,7 +887,7 @@ mod tests {
     /// not the global None key or the proj-b key.
     /// Ignored in normal test runs because the HNSW cache is bypassed in test
     /// builds. Run with `cargo test -- --ignored` to verify cache behaviour.
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "vector")]
     #[test]
     #[ignore = "HNSW cache is bypassed in test builds; run with --ignored to verify"]
     fn test_hnsw_cache_per_project() {
@@ -936,7 +936,7 @@ mod tests {
     /// TTL eviction: a manually backdated entry must be evicted on next search.
     /// Ignored in normal test runs because the HNSW cache is bypassed in test
     /// builds. Run with `cargo test -- --ignored` to verify cache behaviour.
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "vector")]
     #[test]
     #[ignore = "HNSW cache is bypassed in test builds; run with --ignored to verify"]
     fn test_hnsw_cache_ttl_eviction() {

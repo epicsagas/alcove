@@ -23,21 +23,56 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Check
-        run: cargo check --all-targets --features full
+        run: cargo check --all-targets --features full-macos
       - name: Clippy
-        run: cargo clippy --features full -- -D warnings
+        run: cargo clippy --features full-macos -- -D warnings
       - name: Format
         run: cargo fmt --all -- --check
 
+  cross-check:
+    name: Cross-Platform Check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Check (${{ matrix.target }})
+        run: cargo check --target ${{ matrix.target }} --features full-cross
+
+  macos-intel-check:
+    name: macOS x86_64 Check
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Check (x86_64-apple-darwin)
+        run: cargo check --target x86_64-apple-darwin --features full-cross
+
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Test
-        run: cargo test
+        run: cargo test --features full-macos -- --test-threads=1
 
   audit:
     name: Security Audit

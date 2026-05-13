@@ -353,7 +353,7 @@ pub fn tool_search(
     let docs_root = project_root.parent().unwrap_or(project_root);
 
     // Try indexed search first (faster and ranked)
-    #[cfg(feature = "alcove-full")]
+    #[cfg(feature = "embed-candle")]
     {
         use crate::config::load_config;
         use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
@@ -2845,7 +2845,7 @@ mod tests {
 
         // Create a symlink inside the project root pointing outside
         let link = project_root.join("escape.md");
-        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        crate::platform::create_symlink(&outside, &link).unwrap();
 
         let args = json!({"relative_path": "escape.md"});
         let result = tool_get_file(&project_root, args);
