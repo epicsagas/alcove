@@ -14,7 +14,7 @@ Documents here must **never** be copied into public project repos.
 
 ## Actual Location
 
-`/Volumes/T5/Obsidian/SecondBrain` — accessed by both obsidian-forge and alcove MCP server.
+`$VAULT_PATH` — accessed by both obsidian-forge and alcove MCP server.
 
 ## Structure
 
@@ -84,7 +84,7 @@ The vault's health is maintained via automated policies.
 
 Rust CLI daemon for vault lifecycle management.
 
-- **Binary**: `/Users/hackme/.cargo/bin/of`
+- **Binary**: `~/.cargo/bin/of`
 - **Global config**: `~/.obsidian-forge/config.toml` (AI provider, daemon settings, vault registry)
 - **Per-vault config**: `vault.toml` in vault root
 - **API keys**: `~/.obsidian-forge/.env` (never in config files)

@@ -148,7 +148,7 @@ Configured model:    MultilingualE5Small
 Dimension:           384d
 Size:                ~235MB
 Auto-download:       true
-Cache dir:           /Users/hackme/Library/Caches/alcove/models
+Cache dir:           ~/Library/Caches/alcove/models
 
 ⏳ Model not cached. Run 'alcove model download' to download.
 ```
