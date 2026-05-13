@@ -1,11 +1,6 @@
 ---
 name: alcove
-description: >
-  Grounds the agent in authoritative internal project documentation stored in a private Alcove docs repository.
-  Covers project design, architecture, requirements, progress tracking, coding conventions,
-  technical debt, secrets mapping, and environment configuration.
-  Also initializes, organizes, audits, validates, lints, and promotes project documentation.
-  Activates whenever the agent needs authoritative project information — regardless of input language.
+description: "Trigger: any need for authoritative project docs — design, architecture, requirements, conventions, tech debt, secrets, env config. Also inits, audits, lints, and promotes docs."
 ---
 
 # Alcove
