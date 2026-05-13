@@ -39,7 +39,9 @@ use super::chunker::{chunk_content, extract_title};
 use super::frontmatter::parse_frontmatter_flags;
 use super::lock::{index_dir, is_locked, meta_path, release_lock, try_acquire_lock};
 use super::reader::read_file_content;
-use super::schema::{CHUNK_STRATEGY_VERSION, IndexSchema, SCHEMA_VERSION, register_ngram_tokenizer};
+use super::schema::{
+    CHUNK_STRATEGY_VERSION, IndexSchema, SCHEMA_VERSION, register_ngram_tokenizer,
+};
 
 // ---------------------------------------------------------------------------
 // Index metadata (for incremental updates)
@@ -410,8 +412,7 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
 
 /// Step 1: Apply schema migration — wipe index dir if schema or chunking strategy is outdated.
 fn apply_schema_migration(dir: &Path, meta: &mut IndexMeta) -> Result<()> {
-    if meta.schema_version < SCHEMA_VERSION
-        || meta.chunk_strategy_version < CHUNK_STRATEGY_VERSION
+    if meta.schema_version < SCHEMA_VERSION || meta.chunk_strategy_version < CHUNK_STRATEGY_VERSION
     {
         if dir.exists() {
             let _ = std::fs::remove_dir_all(dir);

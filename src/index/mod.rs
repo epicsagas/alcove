@@ -1252,7 +1252,10 @@ mod tests {
     fn search_grouped_returns_grouped_mode() {
         let root = shared_indexed_root();
         let result = search_grouped_by_file(root, "OAuth", 10, None).unwrap();
-        assert_eq!(result["mode"], "grouped", "grouped search must return mode=grouped");
+        assert_eq!(
+            result["mode"], "grouped",
+            "grouped search must return mode=grouped"
+        );
     }
 
     #[test]
@@ -1265,10 +1268,7 @@ mod tests {
                 m.get("sections").is_some(),
                 "each grouped match must have a 'sections' field"
             );
-            assert!(
-                m["sections"].is_array(),
-                "'sections' must be an array"
-            );
+            assert!(m["sections"].is_array(), "'sections' must be an array");
         }
     }
 

@@ -322,9 +322,13 @@ pub fn search_grouped_by_file(
     register_ngram_tokenizer(&index)?;
 
     let schema = index.schema();
-    let project_field = schema.get_field("project").context("missing 'project' field")?;
+    let project_field = schema
+        .get_field("project")
+        .context("missing 'project' field")?;
     let file_field = schema.get_field("file").context("missing 'file' field")?;
-    let chunk_id_field = schema.get_field("chunk_id").context("missing 'chunk_id' field")?;
+    let chunk_id_field = schema
+        .get_field("chunk_id")
+        .context("missing 'chunk_id' field")?;
     let body_field = schema.get_field("body").context("missing 'body' field")?;
     let line_start_field = schema
         .get_field("line_start")
