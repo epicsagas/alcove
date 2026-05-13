@@ -68,7 +68,7 @@ pub fn send_terminate(pid: u32) {
 ///
 /// On Unix: saves fd via dup, redirects to /dev/null, restores on drop.
 /// On Windows: no-op (PDF extraction errors are tolerated).
-#[cfg(unix)]
+#[cfg(all(unix, feature = "pdf"))]
 pub fn suppress_fds<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
