@@ -10,6 +10,7 @@ use crate::config::{
     TierClassifier, effective_config, is_doc_file, is_reserved_dir_name, load_config,
     suggest_categorization,
 };
+use crate::transpile::maybe_transpile_result;
 
 // ---------------------------------------------------------------------------
 // Project resolution
@@ -409,12 +410,12 @@ pub fn tool_search(
                         })
                         .unwrap_or_default();
 
-                    return Ok(json!({
+                    return Ok(maybe_transpile_result(json!({
                         "query": args.query,
                         "matches": matches,
                         "truncated": json["truncated"].as_bool().unwrap_or(false),
                         "mode": json["mode"].as_str().unwrap_or("hybrid"),
-                    }));
+                    })));
                 }
             }
         }
@@ -430,12 +431,12 @@ pub fn tool_search(
                 .map(|arr| arr.iter().map(|m| map_bm25_match(m, false)).collect())
                 .unwrap_or_default();
 
-            return Ok(json!({
+            return Ok(maybe_transpile_result(json!({
                 "query": args.query,
                 "matches": matches,
                 "truncated": json["truncated"].as_bool().unwrap_or(false),
                 "mode": "ranked",
-            }));
+            })));
         }
     }
 
@@ -496,7 +497,12 @@ pub fn tool_search(
     }
 
     let truncated = matches.len() >= args.limit;
-    Ok(json!({ "query": args.query, "matches": matches, "truncated": truncated, "mode": "grep" }))
+    Ok(maybe_transpile_result(json!({
+        "query": args.query,
+        "matches": matches,
+        "truncated": truncated,
+        "mode": "grep",
+    })))
 }
 
 /// Global search across all projects in docs_root.
@@ -519,12 +525,12 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
                 .map(|arr| arr.iter().map(|m| map_bm25_match(m, true)).collect())
                 .unwrap_or_default();
 
-            return Ok(json!({
+            return Ok(maybe_transpile_result(json!({
                 "query": args.query,
                 "matches": matches,
                 "truncated": json["truncated"].as_bool().unwrap_or(false),
                 "mode": "ranked",
-            }));
+            })));
         }
     }
 
@@ -590,9 +596,13 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
     }
 
     let truncated = matches.len() >= args.limit;
-    Ok(
-        json!({ "query": args.query, "scope": "global", "matches": matches, "truncated": truncated, "mode": "grep" }),
-    )
+    Ok(maybe_transpile_result(json!({
+        "query": args.query,
+        "scope": "global",
+        "matches": matches,
+        "truncated": truncated,
+        "mode": "grep",
+    })))
 }
 
 // ---------------------------------------------------------------------------

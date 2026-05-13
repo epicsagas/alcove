@@ -16,6 +16,7 @@ mod promote;
 mod setup;
 mod telemetry;
 mod tools;
+mod transpile;
 mod vault;
 
 #[cfg(feature = "vector")]
