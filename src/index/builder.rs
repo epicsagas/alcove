@@ -859,9 +859,9 @@ fn count_vector_skipped_projects(docs_root: &Path) -> u64 {
 }
 
 fn run_vector_indexing(
-    _docs_root: &Path,
+    docs_root: &Path,
     skip_embedding: bool,
-    _files_to_index: Vec<ProjectFile>,
+    files_to_index: Vec<ProjectFile>,
 ) -> Result<(String, u64, u64, String)> {
     if skip_embedding {
         return Ok(("skipped".to_string(), 0, 0, String::new()));
@@ -869,7 +869,10 @@ fn run_vector_indexing(
     #[cfg(feature = "embed-candle")]
     return run_full_vector_indexing(_docs_root, _files_to_index);
     #[cfg(not(feature = "embed-candle"))]
-    Ok(("disabled".to_string(), 0, 0, String::new()))
+    {
+        let _ = (docs_root, files_to_index);
+        Ok(("disabled".to_string(), 0, 0, String::new()))
+    }
 }
 
 // ---------------------------------------------------------------------------

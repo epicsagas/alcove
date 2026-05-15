@@ -6,6 +6,7 @@ pub mod lint;
 pub mod platform;
 pub mod policy;
 pub mod promote;
+pub mod transpile;
 pub mod vault;
 
 #[cfg(feature = "vector")]

@@ -1,6 +1,6 @@
 [package]
 name = "alcove"
-version = "0.8.9"
+version = "0.8.10-dev"
 edition = "2024"
 description = "A quiet place for your project docs. MCP server that gives AI agents scoped access to private documentation."
 license = "Apache-2.0"
@@ -68,6 +68,9 @@ calamine = { version = "0.34", optional = true }
 # Lightweight sync HTTP client for MCP proxy mode
 ureq = "3"
 
+# Token-optimized document transpiler (optional, transpile feature)
+llm-transpile = { git = "https://github.com/epicsagas/llm-transpile", tag = "v0.2.3", optional = true }
+
 # HTTP server dependencies
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
@@ -81,6 +84,7 @@ vector = ["hnsw_rs"]
 pdf = ["pdf-extract"]
 office = ["zip", "quick-xml", "calamine"]
 alcove-server = ["axum", "tokio", "tower-http"]
+transpile = ["dep:llm-transpile"]
 
 # Preset feature groups
 full-macos = ["core", "embed-candle", "vector", "pdf", "office", "alcove-server"]
