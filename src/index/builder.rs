@@ -470,7 +470,7 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
             // Skip markdown files whose front matter marks them as draft or deprecated.
             if file_path
                 .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
                 && std::fs::read_to_string(&file_path)
                     .is_ok_and(|c| parse_frontmatter_flags(&c).should_skip)
             {
@@ -867,7 +867,7 @@ fn run_vector_indexing(
         return Ok(("skipped".to_string(), 0, 0, String::new()));
     }
     #[cfg(feature = "embed-candle")]
-    return run_full_vector_indexing(_docs_root, _files_to_index);
+    return run_full_vector_indexing(docs_root, files_to_index);
     #[cfg(not(feature = "embed-candle"))]
     {
         let _ = (docs_root, files_to_index);
@@ -930,10 +930,10 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
             if !e.file_type().is_file() {
                 return false;
             }
-            // Must be .md
+            // Must be markdown (.md or .markdown)
             if !path
                 .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
             {
                 return false;
             }

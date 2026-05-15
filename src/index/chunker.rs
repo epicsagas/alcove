@@ -1,5 +1,10 @@
 use std::path::Path;
 
+/// Returns true for markdown file extensions (`md`, `markdown`).
+pub(crate) fn is_markdown_ext(ext: &str) -> bool {
+    ext == "md" || ext == "markdown"
+}
+
 // ---------------------------------------------------------------------------
 // Chunking
 // ---------------------------------------------------------------------------
@@ -59,7 +64,7 @@ pub(crate) struct Chunk {
 /// across chunk boundaries.  All other files use the default prose limits
 /// (1 500 / 300).
 pub(crate) fn chunk_content(content: &str, ext: &str) -> Vec<Chunk> {
-    if ext == "md" || ext == "markdown" {
+    if is_markdown_ext(ext) {
         return chunk_content_md(content);
     }
 

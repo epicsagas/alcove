@@ -99,6 +99,18 @@ pub(crate) fn apply_project_diversity(
     });
 }
 
+/// Wait for the index lock to be released. Returns an error if still locked
+/// after `attempts * wait_ms` milliseconds.
+fn wait_for_lock(docs_root: &Path, attempts: usize, wait_ms: u64) -> Result<()> {
+    for _ in 0..attempts {
+        if !is_locked(docs_root) {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+    }
+    anyhow::bail!("Search index is locked after waiting {}ms — try again later", attempts * wait_ms as usize)
+}
+
 // ---------------------------------------------------------------------------
 // Search using index (BM25)
 // ---------------------------------------------------------------------------
@@ -116,12 +128,7 @@ pub fn search_indexed(
         anyhow::bail!("Search index not found. Run index rebuild first.");
     }
 
-    for _ in 0..50 {
-        if !is_locked(docs_root) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    wait_for_lock(docs_root, 50, 100)?;
 
     let sanitized = sanitize_query(query);
     if sanitized.is_empty() {
@@ -300,12 +307,7 @@ pub fn search_grouped_by_file(
         anyhow::bail!("Search index not found. Run index rebuild first.");
     }
 
-    for _ in 0..50 {
-        if !is_locked(docs_root) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    wait_for_lock(docs_root, 50, 100)?;
 
     let sanitized = sanitize_query(query);
     if sanitized.is_empty() {
@@ -321,6 +323,8 @@ pub fn search_grouped_by_file(
     let index = Index::open_in_dir(&dir).context("Failed to open search index")?;
     register_ngram_tokenizer(&index)?;
 
+    // Reuse search_with_index's field resolution and query building via the
+    // same code path, but collect all chunks (no per-file dedup) then group.
     let schema = index.schema();
     let project_field = schema
         .get_field("project")
