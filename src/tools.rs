@@ -421,6 +421,19 @@ pub fn tool_search(
         }
     }
 
+    // Grouped mode: section-level search → file-level results with matched sections
+    if args.mode.as_deref() == Some("grouped")
+        && crate::index::index_exists(docs_root)
+        && let Ok(json) = crate::index::search_grouped_by_file(
+            docs_root,
+            query_trimmed,
+            args.limit,
+            Some(project_name),
+        )
+    {
+        return Ok(json);
+    }
+
     // Fall back to indexed search (BM25 only) if index exists
     if crate::index::index_exists(docs_root) {
         let result =
@@ -513,6 +526,15 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
     let query_trimmed = args.query.trim();
     if let Some(early) = validate_search_args(query_trimmed, args.limit) {
         return Ok(early);
+    }
+
+    // Grouped mode: section-level search → file-level results with matched sections
+    if args.mode.as_deref() == Some("grouped")
+        && crate::index::index_exists(docs_root)
+        && let Ok(json) =
+            crate::index::search_grouped_by_file(docs_root, query_trimmed, args.limit, None)
+    {
+        return Ok(json);
     }
 
     // Try indexed search first (faster and ranked), unless grep is forced.

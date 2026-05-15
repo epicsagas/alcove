@@ -36,9 +36,12 @@ use crate::config::{effective_config, is_reserved_dir_name};
 
 use super::cache::{CacheCategory, invalidate_reader_cache};
 use super::chunker::{chunk_content, extract_title};
+use super::frontmatter::parse_frontmatter_flags;
 use super::lock::{index_dir, is_locked, meta_path, release_lock, try_acquire_lock};
 use super::reader::read_file_content;
-use super::schema::{IndexSchema, SCHEMA_VERSION, register_ngram_tokenizer};
+use super::schema::{
+    CHUNK_STRATEGY_VERSION, IndexSchema, SCHEMA_VERSION, register_ngram_tokenizer,
+};
 
 // ---------------------------------------------------------------------------
 // Index metadata (for incremental updates)
@@ -49,6 +52,8 @@ pub(crate) struct IndexMeta {
     pub(crate) files: HashMap<String, [u64; 2]>, // path -> [mtime_secs, size]
     #[serde(default)]
     pub(crate) schema_version: u32,
+    #[serde(default)]
+    pub(crate) chunk_strategy_version: u32,
 }
 
 impl IndexMeta {
@@ -379,12 +384,16 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
         needs_full_rebuild,
     )?;
 
+    // Count projects that opted out of vector indexing (vector_index = false).
+    let vector_skipped_projects = count_vector_skipped_projects(docs_root);
+
     let (vector_status, vectors_indexed, vector_errors, embedding_model) =
         run_vector_indexing(docs_root, skip_embedding, files_to_index)?;
 
     // Final metadata save after all indexing steps (Tantivy + Vector) are complete
     meta.files = current_files;
     meta.schema_version = SCHEMA_VERSION;
+    meta.chunk_strategy_version = CHUNK_STRATEGY_VERSION;
     let _ = meta.save(docs_root);
 
     Ok(json!({
@@ -397,12 +406,14 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
         "vectors_indexed": vectors_indexed,
         "vector_errors": vector_errors,
         "embedding_model": embedding_model,
+        "vector_skipped_projects": vector_skipped_projects,
     }))
 }
 
-/// Step 1: Apply schema migration — wipe index dir if schema version is outdated.
+/// Step 1: Apply schema migration — wipe index dir if schema or chunking strategy is outdated.
 fn apply_schema_migration(dir: &Path, meta: &mut IndexMeta) -> Result<()> {
-    if meta.schema_version < SCHEMA_VERSION {
+    if meta.schema_version < SCHEMA_VERSION || meta.chunk_strategy_version < CHUNK_STRATEGY_VERSION
+    {
         if dir.exists() {
             let _ = std::fs::remove_dir_all(dir);
             std::fs::create_dir_all(dir)?;
@@ -456,6 +467,15 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
             {
                 continue;
             }
+            // Skip markdown files whose front matter marks them as draft or deprecated.
+            if file_path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+                && std::fs::read_to_string(&file_path)
+                    .is_ok_and(|c| parse_frontmatter_flags(&c).should_skip)
+            {
+                continue;
+            }
             let rel_to_project = file_path
                 .strip_prefix(&path)
                 .unwrap_or(&file_path)
@@ -490,6 +510,7 @@ fn filter_changed_files(
 
         if meta.files.get(&rel_to_root).copied() == Some(fp)
             && meta.schema_version >= SCHEMA_VERSION
+            && meta.chunk_strategy_version >= CHUNK_STRATEGY_VERSION
         {
             skipped_count += 1;
         } else {
@@ -720,7 +741,7 @@ fn run_full_vector_indexing(
     docs_root: &Path,
     files_to_index: Vec<ProjectFile>,
 ) -> Result<(String, u64, u64, String)> {
-    use crate::config::load_config;
+    use crate::config::{effective_config, load_config};
     use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
     use crate::vector::VectorStore;
 
@@ -760,9 +781,19 @@ fn run_full_vector_indexing(
     };
 
     if !files_to_index.is_empty() {
+        // Filter: skip projects where vector_index = false (default).
+        // Only projects with explicit `vector_index = true` in alcove.toml are embedded.
+        // Also skip files already present in the vector store (incremental indexing).
         let to_embed: Vec<ProjectFile> = files_to_index
             .into_iter()
-            .filter(|(proj, rel, _)| !matches!(store.has_file(proj, rel), Ok(true)))
+            .filter(|(proj, rel, _)| {
+                let proj_path = docs_root.join(proj);
+                let proj_cfg = effective_config(&proj_path);
+                if !proj_cfg.vector_index {
+                    return false;
+                }
+                !matches!(store.has_file(proj, rel), Ok(true))
+            })
             .collect();
         let vpb = ProgressBar::new(to_embed.len() as u64);
         vpb.set_style(
@@ -800,6 +831,33 @@ fn run_full_vector_indexing(
     ))
 }
 
+/// Count how many project directories under `docs_root` have `vector_index = false`.
+/// Projects with `vector_index = true` will be embedded; those without are skipped.
+fn count_vector_skipped_projects(docs_root: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(docs_root) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|e| {
+            let path = e.path();
+            if !path.is_dir() {
+                return false;
+            }
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            if is_reserved_dir_name(&name) {
+                return false;
+            }
+            // A project is "skipped" when vector_index is false (the default).
+            !effective_config(&path).vector_index
+        })
+        .count() as u64
+}
+
 fn run_vector_indexing(
     docs_root: &Path,
     skip_embedding: bool,
@@ -809,7 +867,7 @@ fn run_vector_indexing(
         return Ok(("skipped".to_string(), 0, 0, String::new()));
     }
     #[cfg(feature = "embed-candle")]
-    return run_full_vector_indexing(docs_root, files_to_index);
+    return run_full_vector_indexing(_docs_root, _files_to_index);
     #[cfg(not(feature = "embed-candle"))]
     {
         let _ = (docs_root, files_to_index);
@@ -891,7 +949,14 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
             true
         })
     {
-        files.push(entry.path().to_path_buf());
+        let file_path = entry.path().to_path_buf();
+        // Skip markdown files whose front matter marks them as draft or deprecated.
+        if std::fs::read_to_string(&file_path)
+            .is_ok_and(|c| parse_frontmatter_flags(&c).should_skip)
+        {
+            continue;
+        }
+        files.push(file_path);
     }
 
     let file_count = files.len() as u64;

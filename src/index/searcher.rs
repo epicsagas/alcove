@@ -280,6 +280,182 @@ pub(crate) fn search_with_index(
 }
 
 // ---------------------------------------------------------------------------
+// Parent-Child Search (section → file grouping)
+// ---------------------------------------------------------------------------
+
+/// Search and group matching sections by file (parent-child pattern).
+///
+/// Returns file-level results where each entry includes all matching sections
+/// (chunks) within that file, ranked by the best section score. This lets
+/// callers navigate directly to the relevant section while still knowing
+/// which file it belongs to.
+pub fn search_grouped_by_file(
+    docs_root: &Path,
+    query: &str,
+    limit: usize,
+    project_filter: Option<&str>,
+) -> Result<JsonValue> {
+    let dir = index_dir(docs_root);
+    if !dir.exists() {
+        anyhow::bail!("Search index not found. Run index rebuild first.");
+    }
+
+    for _ in 0..50 {
+        if !is_locked(docs_root) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    let sanitized = sanitize_query(query);
+    if sanitized.is_empty() {
+        return Ok(json!({
+            "query": query,
+            "scope": if project_filter.is_some() { "project" } else { "global" },
+            "mode": "grouped",
+            "matches": [],
+            "truncated": false,
+        }));
+    }
+
+    let index = Index::open_in_dir(&dir).context("Failed to open search index")?;
+    register_ngram_tokenizer(&index)?;
+
+    let schema = index.schema();
+    let project_field = schema
+        .get_field("project")
+        .context("missing 'project' field")?;
+    let file_field = schema.get_field("file").context("missing 'file' field")?;
+    let chunk_id_field = schema
+        .get_field("chunk_id")
+        .context("missing 'chunk_id' field")?;
+    let body_field = schema.get_field("body").context("missing 'body' field")?;
+    let line_start_field = schema
+        .get_field("line_start")
+        .context("missing 'line_start' field")?;
+    let title_field = schema.get_field("title").ok();
+    let filename_field = schema.get_field("filename").ok();
+
+    let reader = get_cached_reader(&dir, &index, CacheCategory::Project)?;
+    let searcher = reader.searcher();
+
+    let parsed_query: Box<dyn tantivy::query::Query> =
+        if let (Some(tf), Some(ff)) = (title_field, filename_field) {
+            build_search_query(&sanitized, &index, body_field, tf, ff)
+        } else {
+            let body_parser = QueryParser::for_index(&index, vec![body_field]);
+            body_parser
+                .parse_query(&sanitized)
+                .context("Failed to parse search query")?
+        };
+
+    // Fetch more candidates to fill limit files after grouping.
+    let candidate_limit = (limit * 5).max(50);
+    let top_docs: Vec<(Score, DocAddress)> = searcher
+        .search(
+            &parsed_query,
+            &TopDocs::with_limit(candidate_limit).order_by_score(),
+        )
+        .context("Search failed")?;
+
+    // Group chunks by (project, file). Each file accumulates its matching sections.
+    let mut file_map: HashMap<(String, String), (f32, Vec<serde_json::Value>)> = HashMap::new();
+
+    for (score, doc_address) in top_docs {
+        let doc: TantivyDocument = searcher.doc(doc_address)?;
+
+        let project = doc
+            .get_first(project_field)
+            .and_then(|v| schema::Value::as_str(&v))
+            .unwrap_or("")
+            .to_string();
+
+        if let Some(filter) = project_filter
+            && project != filter
+        {
+            continue;
+        }
+
+        let file = doc
+            .get_first(file_field)
+            .and_then(|v| schema::Value::as_str(&v))
+            .unwrap_or("")
+            .to_string();
+
+        let chunk_id = doc
+            .get_first(chunk_id_field)
+            .and_then(|v| schema::Value::as_u64(&v))
+            .unwrap_or(0);
+
+        let line_start = doc
+            .get_first(line_start_field)
+            .and_then(|v| schema::Value::as_u64(&v))
+            .unwrap_or(0);
+
+        let body = doc
+            .get_first(body_field)
+            .and_then(|v| schema::Value::as_str(&v))
+            .unwrap_or("")
+            .to_string();
+
+        let section = json!({
+            "chunk_id": chunk_id,
+            "line_start": line_start,
+            "snippet": body,
+            "score": (score * 1000.0).round() / 1000.0,
+        });
+
+        let key = (project.clone(), file.clone());
+        let entry = file_map.entry(key).or_insert((0.0_f32, Vec::new()));
+        // Track best score for this file.
+        if score > entry.0 {
+            entry.0 = score;
+        }
+        entry.1.push(section);
+    }
+
+    // Convert to sorted result list (best file score first).
+    let mut results: Vec<serde_json::Value> = file_map
+        .into_iter()
+        .map(|((project, file), (best_score, mut sections))| {
+            // Sort sections within each file by score descending.
+            sections.sort_by(|a, b| {
+                let sa = a["score"].as_f64().unwrap_or(0.0);
+                let sb = b["score"].as_f64().unwrap_or(0.0);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            json!({
+                "project": project,
+                "file": file,
+                "score": (best_score * 1000.0).round() / 1000.0,
+                "sections": sections,
+            })
+        })
+        .collect();
+
+    results.sort_by(|a, b| {
+        let sa = a["score"].as_f64().unwrap_or(0.0);
+        let sb = b["score"].as_f64().unwrap_or(0.0);
+        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Project diversity: limit same-project results when no filter is set.
+    if project_filter.is_none() {
+        apply_project_diversity(&mut results, 2);
+    }
+    results.truncate(limit);
+
+    let truncated = results.len() >= limit;
+    Ok(json!({
+        "query": query,
+        "scope": if project_filter.is_some() { "project" } else { "global" },
+        "mode": "grouped",
+        "matches": results,
+        "truncated": truncated,
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Hybrid Search (BM25 + Vector)
 // ---------------------------------------------------------------------------
 

@@ -8,7 +8,12 @@ use tantivy::tokenizer::{LowerCaser, NgramTokenizer, TextAnalyzer};
 pub(crate) const NGRAM_TOKENIZER: &str = "cjk_ngram";
 
 /// Current schema version. Increment when fields change to force a full rebuild.
-pub(crate) const SCHEMA_VERSION: u32 = 2;
+pub(crate) const SCHEMA_VERSION: u32 = 3;
+
+/// Current chunking strategy version. Increment when the chunking algorithm changes
+/// to force a full rebuild and prevent stale char-based chunks from mixing with
+/// heading-based chunks in the same index.
+pub(crate) const CHUNK_STRATEGY_VERSION: u32 = 1;
 
 /// All Tantivy schema fields in one place.
 pub struct IndexSchema {
