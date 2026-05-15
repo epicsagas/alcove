@@ -346,7 +346,7 @@ mod tests {
     /// Total character count is approximately `total_chars` (rounded up to the
     /// nearest line boundary).
     fn make_lines(total_chars: usize, line_len: usize) -> String {
-        let n_lines = (total_chars + line_len - 1) / line_len;
+        let n_lines = total_chars.div_ceil(line_len);
         (0..n_lines)
             .map(|_| "x".repeat(line_len))
             .collect::<Vec<_>>()

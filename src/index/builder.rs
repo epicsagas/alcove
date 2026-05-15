@@ -468,11 +468,10 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
                 continue;
             }
             // Skip markdown files whose front matter marks them as draft or deprecated.
-            if file_path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
-                && std::fs::read_to_string(&file_path)
-                    .is_ok_and(|c| parse_frontmatter_flags(&c).should_skip)
+            if file_path.extension().is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
+            }) && std::fs::read_to_string(&file_path)
+                .is_ok_and(|c| parse_frontmatter_flags(&c).should_skip)
             {
                 continue;
             }
@@ -931,10 +930,9 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                 return false;
             }
             // Must be markdown (.md or .markdown)
-            if !path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
-            {
+            if !path.extension().is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
+            }) {
                 return false;
             }
             // Must not have underscore prefix filename

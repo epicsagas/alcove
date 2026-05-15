@@ -108,7 +108,10 @@ fn wait_for_lock(docs_root: &Path, attempts: usize, wait_ms: u64) -> Result<()> 
         }
         std::thread::sleep(std::time::Duration::from_millis(wait_ms));
     }
-    anyhow::bail!("Search index is locked after waiting {}ms — try again later", attempts * wait_ms as usize)
+    anyhow::bail!(
+        "Search index is locked after waiting {}ms — try again later",
+        attempts * wait_ms as usize
+    )
 }
 
 // ---------------------------------------------------------------------------
