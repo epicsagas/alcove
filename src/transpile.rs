@@ -33,6 +33,9 @@ use llm_transpile::{FidelityLevel, InputFormat, transpile};
 
 use serde_json::Value;
 
+#[cfg(feature = "transpile")]
+use serde_json::json;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -81,7 +84,7 @@ fn run_transpile(mut result: Value) -> Value {
     };
 
     // Build a single markdown document from all snippets for batch compression
-    let mut combined = String::new();
+    let combined;
     let original_tokens_approx: usize;
 
     {
@@ -196,7 +199,10 @@ mod tests {
         for val in ["1", "yes", "YES", "True"] {
             // SAFETY: serialized by #[serial]; no concurrent env access
             unsafe { std::env::set_var("ALCOVE_TRANSPILE", val) };
-            assert!(transpile_enabled(), "should be enabled for ALCOVE_TRANSPILE={val}");
+            assert!(
+                transpile_enabled(),
+                "should be enabled for ALCOVE_TRANSPILE={val}"
+            );
         }
         unsafe { std::env::remove_var("ALCOVE_TRANSPILE") };
     }

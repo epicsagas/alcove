@@ -69,7 +69,7 @@ calamine = { version = "0.34", optional = true }
 ureq = "3"
 
 # Token-optimized document transpiler (optional, transpile feature)
-llm-transpile = { path = "../llm-transpile", optional = true }
+llm-transpile = { git = "https://github.com/epicsagas/llm-transpile", tag = "v0.2.3", optional = true }
 
 # HTTP server dependencies
 axum = { version = "0.8", optional = true }
