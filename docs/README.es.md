@@ -31,19 +31,21 @@ Guarda PRDs, decisiones de arquitectura, mapas de secretos y runbooks internos e
 
 ## El problema
 
-Tienes dos malas opciones.
+Tu agente de IA empieza cada sesión desde cero.
 
-**Opción A: Poner documentos en `CLAUDE.md` / `AGENTS.md`**
-Cada archivo se inyecta en la ventana de contexto en cada ejecución.
-Funciona para convenciones cortas. Se rompe con documentación real del proyecto.
-10 archivos de arquitectura = inflación de contexto = respuestas más lentas, costosas e imprecisas.
+No conoce tu arquitectura. Ignora las restricciones de decisiones que ya tomaste. Te pide explicar las mismas cosas en cada sesión.
 
-**Opción B: No poner documentos**
-Tu agente inventa requisitos que ya documentaste.
-Ignora restricciones de decisiones que ya tomaste.
-Te pide que expliques las mismas cosas en cada sesión.
+La ventana de contexto es el cuello de botella. Cada token cuesta dinero y atención. Cargar 10 documentos de arquitectura en el contexto desperdicia más de 50K tokens en cada ejecución — y la propia documentación de Anthropic advierte que los archivos de configuración sobrecargados hacen que los agentes *ignoren tus instrucciones reales*.
 
-Ninguna opción escala. Multiplícalo por 5 proyectos y 3 agentes, cada uno configurado diferente. Cada vez que cambias, pierdes el contexto.
+Así que tienes tres malas opciones:
+
+**Meter todo en la configuración del agente** — cada archivo se carga en el contexto en cada ejecución. 10 documentos = inflación de contexto = respuestas más lentas, costosas e imprecisas.
+
+**Copiar y pegar en cada chat** — funciona una vez, no escala más allá de una sesión.
+
+**No molestarse** — tu agente inventa requisitos que ya documentaste, ignora restricciones de decisiones que ya tomaste, y vuelves a explicar la misma arquitectura cada lunes por la mañana.
+
+Multiplícalo por 5 proyectos y 3 agentes. Cada vez que cambias, pierdes el contexto.
 
 ## Cómo Alcove resuelve esto
 

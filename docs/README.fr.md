@@ -31,19 +31,21 @@ Gardez les PRDs, décisions d'architecture, cartes de secrets et runbooks intern
 
 ## Le problème
 
-Vous avez deux mauvaises options.
+Votre agent IA commence chaque session à zéro.
 
-**Option A : Mettre les docs dans `CLAUDE.md` / `AGENTS.md`**
-Chaque fichier est injecté dans la fenêtre de contexte à chaque exécution.
-Fonctionne pour les conventions courtes. Se brise avec la vraie documentation de projet.
-10 fichiers d'architecture = gonflement de contexte = réponses plus lentes, plus coûteuses, moins précises.
+Il ne connaît pas votre architecture. Il ignore les contraintes des décisions que vous avez déjà prises. Il vous demande d'expliquer les mêmes choses à chaque session.
 
-**Option B : Ne pas mettre les docs**
-Votre agent invente des exigences que vous avez déjà documentées.
-Il ignore les contraintes des décisions que vous avez déjà prises.
-Il vous demande d'expliquer les mêmes choses à chaque session.
+La fenêtre de contexte est le goulot d'étranglement. Chaque token coûte de l'argent et de l'attention. Charger 10 documents d'architecture dans le contexte gaspille plus de 50K tokens à chaque exécution — et la propre documentation d'Anthropic avertit que les fichiers de configuration surchargés font que les agents *ignorent vos instructions réelles*.
 
-Aucune option ne passe à l'échelle. Multipliez par 5 projets et 3 agents, chacun configuré différemment. Chaque fois que vous changez, vous perdez le contexte.
+Vous avez donc trois mauvaises options :
+
+**Tout fourrer dans la config de l'agent** — chaque fichier est chargé dans le contexte à chaque exécution. 10 documents = gonflement de contexte = réponses plus lentes, plus coûteuses, moins précises.
+
+**Copier-coller dans chaque chat** — fonctionne une fois, ne passe pas à l'échelle au-delà d'une session.
+
+**Ne pas s'en soucier** — votre agent invente des exigences que vous avez déjà documentées, ignore les contraintes des décisions que vous avez déjà prises, et vous réexpliquez la même architecture chaque lundi matin.
+
+Multipliez par 5 projets et 3 agents. À chaque changement, vous perdez le contexte.
 
 ## Comment Alcove résout ce problème
 

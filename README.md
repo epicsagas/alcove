@@ -50,19 +50,21 @@ Alcove is an MCP server that gives AI coding agents on-demand access to your pri
 
 ## The problem
 
-You have two bad options.
+Your AI agent starts every session from zero.
 
-**Option A: Put docs in `CLAUDE.md` / `AGENTS.md`**
-Every file gets injected into the context window on every run.
-Works for short conventions. Breaks down with real project docs.
-10 architecture files = context bloat = slower, more expensive, less accurate responses.
+It doesn't know your architecture. It ignores constraints from decisions you already made. It asks you to explain the same things every session.
 
-**Option B: Don't put docs in**
-Your agent invents requirements you already documented.
-It ignores constraints from decisions you already made.
-It asks you to explain the same things every session.
+The context window is the bottleneck. Every token costs money and attention. Loading 10 architecture docs into context wastes 50K+ tokens on every run — and Anthropic's own docs warn that bloated config files make agents *ignore your actual instructions*.
 
-Neither option scales. Now multiply it across 5 projects and 3 agents, each configured differently. Every time you switch, you lose context.
+So you have three bad options:
+
+**Stuff everything into agent config** — every file loads into context on every run. 10 docs = context bloat = slower, more expensive, less accurate responses.
+
+**Copy-paste into every chat** — works once, doesn't scale past one session.
+
+**Don't bother** — your agent invents requirements you already documented, ignores constraints from decisions you already made, and you re-explain the same architecture every Monday morning.
+
+Now multiply it across 5 projects and 3 agents. Every time you switch, you lose context.
 
 ## How Alcove solves this
 
@@ -88,12 +90,14 @@ Alcove doesn't inject your docs. **Agents search for what they need, when they n
 
 ## Why Alcove
 
-**`CLAUDE.md` / `AGENTS.md`** is for agent behavior — recurring corrections, coding conventions, session instructions. Keep it under 200 lines.
+Alcove gives your agents a memory that survives between sessions.
 
-**Alcove** is for project knowledge — architecture, decisions, runbooks, PRDs. Agents search for what they need; nothing is pre-loaded into context.
+Agents don't load your docs into context. **They search for what they need, when they need it.** Architecture docs, design decisions, runbooks, constraints — all in one place, searchable, never in your public repo.
+
+Agent config is for agent behavior. Alcove is for project knowledge.
 
 ```
-CLAUDE.md | AGENTS.md            ← agent rules, coding conventions, recurring corrections
+Agent config files                ← agent rules, coding conventions, recurring corrections
 ~/.alcove/docs/my-app/
   ARCHITECTURE.md                ← tech stack, data model, system design
   DECISIONS.md                   ← why X was chosen over Y
@@ -101,9 +105,9 @@ CLAUDE.md | AGENTS.md            ← agent rules, coding conventions, recurring 
   ...                            ← agent searches here when it needs context
 ```
 
-| Without Alcove | With Alcove |
-|----------------|-------------|
-| Docs in `CLAUDE.md` bloat context on every run | BM25 search — agents pull only what they need |
+| Without a doc layer | With Alcove |
+|---------------------|-------------|
+| Docs in agent config bloat context on every run | BM25 search — agents pull only what they need |
 | Internal docs scattered across Notion, Google Docs, local files | One doc-repo, structured by project |
 | Each AI agent configured separately for doc access | One setup, all agents share the same access |
 | Switching projects means re-explaining context | CWD auto-detection, instant project switch |

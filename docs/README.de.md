@@ -31,19 +31,21 @@ Speichere PRDs, Architekturentscheidungen, Secret-Maps und interne Runbooks an e
 
 ## Das Problem
 
-Du hast zwei schlechte Optionen.
+Dein KI-Agent startet jede Session von null.
 
-**Option A: Docs in `CLAUDE.md` / `AGENTS.md` packen**
-Bei jeder Ausführung wird jede Datei in das Kontextfenster injiziert.
-Funktioniert für kurze Konventionen. Bricht bei echten Projektdokumenten zusammen.
-10 Architekturdateien = Kontext-Aufblähung = langsamere, teurere, ungenauere Antworten.
+Er kennt deine Architektur nicht. Ignoriert Einschränkungen aus bereits getroffenen Entscheidungen. Bittet dich jede Session, dieselben Dinge zu erklären.
 
-**Option B: Keine Docs einfügen**
-Dein Agent erfindet Anforderungen, die du bereits dokumentiert hast.
-Er ignoriert Einschränkungen aus Entscheidungen, die du bereits getroffen hast.
-Er bittet dich jede Session, dieselben Dinge zu erklären.
+Das Kontextfenster ist der Flaschenhals. Jeder Token kostet Geld und Aufmerksamkeit. 10 Architektur-Dokumente in den Kontext zu laden verschwendet 50K+ Tokens bei jeder Ausführung — und Anthropic's eigene Docs warnen, dass aufgeblähte Config-Dateien Agenten dazu bringen, *deine tatsächlichen Anweisungen zu ignorieren*.
 
-Keine Option skaliert. Multipliziere das mit 5 Projekten und 3 Agenten, jeder unterschiedlich konfiguriert. Jedes Mal wenn du wechselst, verlierst du den Kontext.
+Du hast also drei schlechte Optionen:
+
+**Alles in die Agent-Konfiguration stopfen** — jede Datei wird bei jeder Ausführung in den Kontext geladen. 10 Docs = Kontext-Aufblähung = langsamere, teurere, ungenauere Antworten.
+
+**In jeden Chat kopieren** — funktioniert einmal, skaliert nicht über eine Session hinaus.
+
+**Einfach lassen** — dein Agent erfindet Anforderungen, die du bereits dokumentiert hast, ignoriert Einschränkungen aus bereits getroffenen Entscheidungen, und du erklärst dieselbe Architektur jeden Montagmorgen neu.
+
+Multipliziere das mit 5 Projekten und 3 Agenten. Jedes Mal wenn du wechselst, verlierst du den Kontext.
 
 ## Wie Alcove das löst
 
