@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "alcove": {
+      "command": "alcove",
+      "args": [],
+      "env": {}
+    }
+  }
+}

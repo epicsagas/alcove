@@ -163,7 +163,7 @@ pub(crate) fn expand_path(p: &str) -> PathBuf {
 // Skill file
 // ---------------------------------------------------------------------------
 
-const SKILL_CONTENT: &str = include_str!("../skill/SKILL.md");
+const SKILL_CONTENT: &str = include_str!("../skills/alcove/SKILL.md");
 
 pub(crate) fn install_skill_to(dir: &Path) -> Result<()> {
     fs::create_dir_all(dir)?;
