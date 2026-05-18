@@ -36,6 +36,8 @@ description: "Trigger: any need for authoritative project docs — design, archi
 - User asks to **check what changed** in docs since the last index build
 - User asks to **lint docs** — find broken links, orphan files, stale WIP/DRAFT markers, or outdated date claims
 - User wants to **bring in a note from Obsidian or another vault** into the doc-repo
+- User asks about **code structure, module layout, public API, or type hierarchy**
+- Agent needs to understand **how source files are organized** before making changes
 - **The answer may exist in project docs** — check alcove before answering, not after
 
 ## How It Works
@@ -80,6 +82,7 @@ MCP server `alcove` via stdio. Auto-detects active project by matching CWD path 
 | `promote_document` | Copy or move a file from an external vault into the alcove doc-repo |
 | `configure_project` | Create/update `alcove.toml` in CWD. Preserves unmentioned fields |
 | `init_project` | Initialize docs from template. Auto-rebuilds index |
+| `index_code_structure` | Parse source code with tree-sitter, generate `CODE_INDEX.md`. Auto-rebuilds search index |
 
 ### `audit_project` returns
 - File status per doc: `populated`, `missing`, `template-unfilled`, `minimal`
@@ -94,6 +97,10 @@ MCP server `alcove` via stdio. Auto-detects active project by matching CWD path 
 - `project_name` (required) — alcove folder name
 - `diagram_format` (optional) — `"mermaid"` | `"plantuml"`
 - `core_files` / `team_files` / `public_files` (optional) — override file lists
+
+### `index_code_structure` params
+- `source_path` (required) — absolute path to the source directory (e.g. `/projects/my-app/src`)
+- Auto-generates `CODE_INDEX.md` in the project's docs folder and refreshes the search index
 
 ### `init_project` args
 - `project_name` (required)
@@ -245,7 +252,9 @@ promote_document(source_path: "~/brain/auth-notes.md", mv: true)  # move instead
 ```
 
 ### Before writing code
-Always check `CONVENTIONS.md` first to ensure generated code follows project-specific rules (naming, error handling, import order, forbidden patterns).
+1. Check `CONVENTIONS.md` for project-specific rules (naming, error handling, import order, forbidden patterns).
+2. If `CODE_INDEX.md` exists, read it for a compact overview of modules, public types, and function signatures — avoids reading dozens of source files.
+3. If `CODE_INDEX.md` is missing or stale, call `index_code_structure(source_path: "<project>/src")` to generate it.
 
 ### After a development session
 
