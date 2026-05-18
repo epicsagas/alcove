@@ -1,6 +1,6 @@
 ---
 name: alcove
-description: "Trigger: project docs needed — architecture, conventions, decisions, debt, secrets, progress, code structure. Also: init, audit, lint, promote, validate, index."
+description: "Trigger: questions about project architecture, conventions, decisions, code structure, tech debt, env config, progress, or doc health. Also: init project, audit docs, lint, validate, promote note, rebuild index, index code structure."
 ---
 
 # Alcove
