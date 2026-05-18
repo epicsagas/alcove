@@ -284,6 +284,7 @@ Alcoveはドキュメントを以下のように分類します:
 | `check_doc_changes` | 前回のインデックスビルド以降に追加・変更・削除されたドキュメントを検出 |
 | `lint_project` | セマンティックLint — 壊れたリンク、孤立ファイル、古いマーカー、古い日付表現 |
 | `promote_document` | 外部ボルトのファイルをalcove doc-repoにコピーまたは移動 |
+| `index_code_structure` | tree-sitterでソースコードを解析し、プロジェクトごとに`CODE_INDEX.md`を生成（`code-index`フィーチャーが必要） |
 
 ## CLI
 
@@ -297,6 +298,7 @@ alcove promote      外部ボルトのノートをdoc-repoに取り込む
 alcove index        検索インデックスの増分更新（変更されたファイルのみ）
 alcove rebuild      検索インデックスをゼロから再構築（スキーマ変更後に使用）
 alcove search       ターミナルからドキュメントを検索
+alcove index-code   ソースコードからコード構造インデックスを生成（code-indexフィーチャーが必要）
 alcove token        チーム共有用のベアラートークンを表示
 alcove uninstall    スキル、設定、レガシーファイルを削除
 

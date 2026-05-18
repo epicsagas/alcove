@@ -286,6 +286,7 @@ Alcove는 문서를 다음과 같이 분류합니다:
 | `check_doc_changes` | 마지막 인덱스 빌드 이후 추가·수정·삭제된 문서 감지 |
 | `lint_project` | 시맨틱 린트 — 깨진 링크, 고아 파일, 오래된 마커, 오래된 날짜 표현 |
 | `promote_document` | 외부 볼트의 파일을 alcove doc-repo에 복사 또는 이동 |
+| `index_code_structure` | tree-sitter로 소스코드를 파싱하여 프로젝트별 `CODE_INDEX.md` 생성 (`code-index` 피처 필요) |
 
 ## CLI
 
@@ -299,6 +300,7 @@ alcove promote      외부 볼트의 노트를 doc-repo에 가져오기
 alcove index        검색 인덱스 업데이트 (증분 — 변경된 파일만)
 alcove rebuild      검색 인덱스 전체 재구축 (스키마 변경 후 사용)
 alcove search       터미널에서 문서 검색
+alcove index-code   소스코드에서 코드 구조 인덱스 생성 (code-index 피처 필요)
 alcove token        팀 공유용 베어러 토큰 출력
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
 

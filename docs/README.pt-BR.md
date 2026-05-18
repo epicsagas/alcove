@@ -284,6 +284,7 @@ A ferramenta `audit` escaneia o repositório de documentos e o diretório local 
 | `check_doc_changes` | Detecta documentos adicionados, modificados ou excluídos desde a última indexação |
 | `lint_project` | Lint semântico — links quebrados, órfãos, marcadores obsoletos e datas antigas |
 | `promote_document` | Copiar ou mover um arquivo de um vault externo para o alcove doc-repo |
+| `index_code_structure` | Analisa o código-fonte com tree-sitter e gera `CODE_INDEX.md` por projeto (requer o recurso `code-index`) |
 
 ## CLI
 
@@ -297,6 +298,7 @@ alcove promote      Importar notas de um vault externo para o doc-repo
 alcove index        Atualizar o índice de busca (incremental — apenas arquivos alterados)
 alcove rebuild      Reconstruir o índice de busca do zero (usar após mudanças de esquema)
 alcove search       Busca documentos pelo terminal
+alcove index-code   Gera índice de estrutura de código do fonte (requer recurso code-index)
 alcove token        Exibir o token de acesso para compartilhamento em equipe
 alcove uninstall    Remove habilidades, configuração e arquivos legados
 

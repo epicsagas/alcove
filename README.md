@@ -307,6 +307,7 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 | `search_vault` | Search knowledge base vaults — separate from project docs, for research and reference |
 | `list_vaults` | List all knowledge base vaults with document counts |
 | `configure_project` | Create or update per-project settings (core docs, team docs, public docs, diagram format) |
+| `index_code_structure` | Parse source code with tree-sitter and generate `CODE_INDEX.md` per project (requires `code-index` feature) |
 
 ## CLI
 
@@ -320,6 +321,7 @@ alcove promote      Bring a file from an external vault into your doc-repo
 alcove index        Update the search index (incremental — only changed files)
 alcove rebuild      Rebuild the search index from scratch (use after schema changes)
 alcove search       Search docs from the terminal
+alcove index-code   Generate code structure index from source (requires code-index feature)
 alcove token        Print the bearer token for team sharing
 alcove uninstall    Remove skills, config, and legacy files
 
