@@ -3353,6 +3353,9 @@ pub fn tool_index_code_structure(docs_root: &Path, project_name: &str, args: Val
 
     let result = crate::code_index::index_code_structure(docs_root, project_name, source)?;
 
+    // Refresh the search index so CODE_INDEX.md is immediately searchable
+    let _ = crate::index::builder::build_index(docs_root);
+
     Ok(json!({
         "status": "completed",
         "modules_indexed": result.modules_indexed,

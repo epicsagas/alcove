@@ -506,6 +506,12 @@ fn main() -> Result<()> {
             if result.files_skipped > 0 {
                 println!("  ⚠ Skipped {} file(s)", result.files_skipped);
             }
+
+            // Refresh search index so CODE_INDEX.md is immediately searchable
+            if crate::index::builder::build_index(&docs_root).is_ok() {
+                println!("  ✓ Search index updated");
+            }
+
             Ok(())
         }
         Some(Commands::Token) => cli::cmd_token(),
