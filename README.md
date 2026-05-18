@@ -151,7 +151,20 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
 ```
 
-> **Note**: Pre-built binaries are available for **macOS Apple Silicon only** due to ONNX Runtime prebuilt constraints. Linux and Windows users must build from source.
+> **Note**: Pre-built binaries are available for macOS Apple Silicon only. Linux and Windows users can use the one-line installers above.
+
+### Linux (x86_64 / ARM64)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
+```
+
+### Windows (x86_64 / ARM64)
+
+```powershell
+irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
+```
 
 ### Via Rust toolchain
 

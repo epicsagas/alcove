@@ -132,7 +132,20 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **注意**: ONNX Runtimeのビルド済みバイナリ制約により、事前ビルドバイナリは**macOS Apple Silicon のみ**提供されています。LinuxおよびWindowsユーザーはソースからビルドする必要があります。
+> **注意**: 事前ビルドバイナリは macOS Apple Silicon のみ対応です。Linux および Windows ユーザーは上記のワンラインインストーラーを使用してください。
+
+### Linux (x86_64 / ARM64)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
+```
+
+### Windows (x86_64 / ARM64)
+
+```powershell
+irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
+```
 
 ### Rustツールチェーン
 

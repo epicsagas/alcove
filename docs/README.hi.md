@@ -132,7 +132,20 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **नोट**: ONNX Runtime प्रीबिल्ट बाधाओं के कारण प्रीबिल्ट बाइनरी केवल **macOS Apple Silicon** के लिए उपलब्ध हैं। Linux और Windows उपयोगकर्ताओं को सोर्स से बिल्ड करना होगा।
+> **नोट**: प्रीबिल्ट बाइनरी केवल macOS Apple Silicon के लिए उपलब्ध हैं। Linux और Windows उपयोगकर्ता ऊपर दिए गए वन-लाइन इंस्टॉलर का उपयोग कर सकते हैं।
+
+### Linux (x86_64 / ARM64)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
+```
+
+### Windows (x86_64 / ARM64)
+
+```powershell
+irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
+```
 
 ### Rust टूलचेन
 

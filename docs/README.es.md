@@ -132,7 +132,20 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **Nota**: Los binarios precompilados están disponibles **solo para macOS Apple Silicon** debido a las restricciones de los binarios precompilados de ONNX Runtime. Los usuarios de Linux y Windows deben compilar desde el código fuente.
+> **Nota**: Los binarios precompilados están disponibles solo para macOS Apple Silicon. Los usuarios de Linux y Windows pueden usar los instaladores de una línea anteriores.
+
+### Linux (x86_64 / ARM64)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
+```
+
+### Windows (x86_64 / ARM64)
+
+```powershell
+irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
+```
 
 ### Vía la cadena de herramientas de Rust
 

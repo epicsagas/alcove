@@ -132,7 +132,20 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **注意**：由于 ONNX Runtime 预构建限制，预构建二进制文件仅适用于 **macOS Apple Silicon**。Linux 和 Windows 用户必须从源码构建。
+> **注意**：预构建二进制文件仅适用于 macOS Apple Silicon。Linux 和 Windows 用户请使用上方的一行安装命令。
+
+### Linux (x86_64 / ARM64)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
+```
+
+### Windows (x86_64 / ARM64)
+
+```powershell
+irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
+```
 
 ### 通过 Rust 工具链
 

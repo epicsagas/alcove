@@ -134,7 +134,20 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **참고**: 사전 빌드 바이너리는 ONNX Runtime 사전 빌드 제약으로 인해 **macOS Apple Silicon 전용**으로 제공됩니다. Linux 및 Windows 사용자는 소스에서 빌드해야 합니다.
+> **참고**: 사전 빌드 바이너리는 macOS Apple Silicon 전용입니다. Linux 및 Windows 사용자는 아래 원라인 인스톨러를 사용하세요.
+
+### Linux (x86_64 / ARM64)
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
+```
+
+### Windows (x86_64 / ARM64)
+
+```powershell
+irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
+```
 
 ### Rust 툴체인
 
