@@ -39,6 +39,8 @@ pub enum Tool {
     SearchProjectDocs,
     SearchVault,
     ValidateDocs,
+    #[cfg(feature = "code-index")]
+    IndexCodeStructure,
 }
 
 impl Tool {
@@ -59,6 +61,8 @@ impl Tool {
             Self::SearchProjectDocs => "search_project_docs",
             Self::SearchVault => "search_vault",
             Self::ValidateDocs => "validate_docs",
+            #[cfg(feature = "code-index")]
+            Self::IndexCodeStructure => "index_code_structure",
         }
     }
 }

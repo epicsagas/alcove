@@ -514,6 +514,36 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                 "required": ["source"]
             }),
         },
+        #[cfg(feature = "code-index")]
+        ToolDescription {
+            name: "index_code_structure".into(),
+            description: concat!(
+                "Index source code structure using tree-sitter AST parsing. ",
+                "Parses Rust source files and generates a CODE_INDEX.md summary ",
+                "that integrates with the existing search pipeline.\n",
+                "\n",
+                "Use this tool when the user wants to:\n",
+                "- Index source code for a project\n",
+                "- Generate code structure documentation\n",
+                "- Make code structure searchable alongside project docs\n",
+                "\n",
+                "After indexing, code structure is automatically included in search_project_docs results."
+            ).into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "project": {
+                        "type": "string",
+                        "description": "Project name (auto-detected from CWD if omitted)"
+                    },
+                    "source_path": {
+                        "type": "string",
+                        "description": "Path to source directory to index"
+                    }
+                },
+                "required": ["source_path"]
+            }),
+        },
     ];
 
     RpcResponse::ok(id, json!({ "tools": tools }))
@@ -543,6 +573,8 @@ fn tool_enum(name: &str) -> Option<Tool> {
         "search_project_docs" => Some(Tool::SearchProjectDocs),
         "search_vault" => Some(Tool::SearchVault),
         "validate_docs" => Some(Tool::ValidateDocs),
+        #[cfg(feature = "code-index")]
+        "index_code_structure" => Some(Tool::IndexCodeStructure),
         _ => None,
     }
 }
@@ -862,6 +894,10 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             let source = crate::policy::policy_source(&docs_root, &resolved.name);
             let (pol, results) = crate::policy::validate(&docs_root, &resolved.name, repo_path);
             Ok(crate::policy::validation_to_json(&pol, &results, source))
+        }
+        #[cfg(feature = "code-index")]
+        "index_code_structure" => {
+            tools::tool_index_code_structure(&docs_root, &resolved.name, call.arguments)
         }
         other => Err(anyhow::anyhow!("Unknown tool: {other}")),
     };

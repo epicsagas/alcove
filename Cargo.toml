@@ -71,6 +71,10 @@ ureq = "3"
 # Token-optimized document transpiler (optional, transpile feature)
 llm-transpile = { git = "https://github.com/epicsagas/llm-transpile", tag = "v0.2.3", optional = true }
 
+# Code structure indexing (optional, code-index feature)
+tree-sitter = { version = "0.26", optional = true }
+tree-sitter-rust = { version = "0.24", optional = true }
+
 # HTTP server dependencies
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
@@ -85,6 +89,7 @@ pdf = ["pdf-extract"]
 office = ["zip", "quick-xml", "calamine"]
 alcove-server = ["axum", "tokio", "tower-http"]
 transpile = ["dep:llm-transpile"]
+code-index = ["dep:tree-sitter", "dep:tree-sitter-rust"]
 
 # Preset feature groups
 full-macos = ["core", "embed-candle", "vector", "pdf", "office", "alcove-server"]
