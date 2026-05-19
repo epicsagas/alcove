@@ -138,6 +138,14 @@ alcove setup   # run once after plugin install
 
 Updates with `claude plugin update alcove@epicsagas`.
 
+### Codex CLI
+
+```bash
+codex plugin marketplace add epicsagas/plugins
+```
+
+Skills are available immediately — no further steps needed.
+
 ### macOS (Apple Silicon only)
 
 ```bash
