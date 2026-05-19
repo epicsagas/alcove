@@ -178,7 +178,7 @@ alcove doctor
 2. 追跡するドキュメントカテゴリ
 3. 希望する図表フォーマット
 4. ハイブリッド検索用の埋め込みモデル
-5. **HTTPサーバー** — ホスト、ポート、自動生成されたベアラートークン、ログイン項目の登録
+5. **バックグラウンドサーバー** — 毎セッションのコールドスタート遅延を排除（macOSログイン項目）
 6. 設定するAIエージェント（MCP + スキルファイル）
 
 設定を変更したいときはいつでも `alcove setup` を再実行できます。以前の選択内容を記憶しています。
@@ -254,7 +254,7 @@ flowchart LR
     MCP -- "スコープ付きアクセス" --> Docs
 ```
 
-ドキュメントは別ディレクトリ（`DOCS_ROOT`）にプロジェクトごとのフォルダで整理されています。Alcoveはそこからドキュメントを管理し、提供します — stdioを通じて任意のMCP互換AIエージェントに。エージェントが`get_doc_file("PRD.md")`のようなツールを呼び出すと、使用しているエージェントに関係なく、プロジェクト固有の回答が得られます。
+ドキュメントは別ディレクトリ（`DOCS_ROOT`）にプロジェクトごとのフォルダで整理されています。Alcoveはそこからドキュメントを管理し、提供します — stdioを通じて任意のMCP互換AIエージェントに。
 
 ## ドキュメント分類
 
@@ -299,11 +299,10 @@ alcove index        検索インデックスの増分更新（変更されたフ
 alcove rebuild      検索インデックスをゼロから再構築（スキーマ変更後に使用）
 alcove search       ターミナルからドキュメントを検索
 alcove index-code   ソースコードからコード構造インデックスを生成（code-indexフィーチャーが必要）
-alcove token        チーム共有用のベアラートークンを表示
+alcove token        バックグラウンドサーバー認証用のベアラートークンを表示
 alcove uninstall    スキル、設定、レガシーファイルを削除
 
 alcove mcp <CMD>      バックグラウンドMCPサーバーのライフサイクルを管理 (start, stop, status, enable, disable)
-alcove api <CMD>      バックグラウンドREST APIサーバーのライフサイクルを管理 (start, stop, status, enable, disable)
 
 alcove vault create   新しいナレッジベースボルトを作成
 alcove vault link     外部ディレクトリをボルトとしてリンク (例: Obsidian)
@@ -353,39 +352,15 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 
 ### バックグラウンドサーバー
 
-バックグラウンドサーバーを常駐させることで、新しいエージェントセッションごとのコールドスタート遅延（ONNXモデルのロードに2〜5秒）を解消できます。**`alcove setup` を実行すると、デフォルトでこれが有効になります**（macOSのログイン項目）。
+バックグラウンドで永続的なサーバーを実行すると、新しいエージェントセッションごとのコールドスタート遅延を排除できます。**`alcove setup` でデフォルトで有効になります**（macOSログイン項目）。
 
 ```bash
-# 有効化して起動（再起動後も保持 — macOS）
-alcove mcp enable --now
-
-# ライフサイクル
+alcove mcp enable --now     # 有効化して起動（再起動後も保持）
 alcove mcp stop / start / restart / status
-
-# 無効化してログイン項目を削除
-alcove mcp disable
+alcove mcp disable          # 無効化してログイン項目を削除
 ```
 
-別のREST APIサーバーをバックグラウンドで実行することもできます：
-
-```bash
-# APIサーバーをバックグラウンドで起動
-alcove api start
-```
-
-サーバーは認証にベアラートークンを使用します。これは `alcove setup` 中に自動生成され、`config.toml` に保存されます。既存のMCP設定（`command: alcove`）は変更不要です。stdioプロセスが実行中のサーバーを自動検出し、プロキシとして動作します。
-
-```bash
-# トークンの確認または共有
-alcove token
-
-# シェルプロファイルに設定（setupで自動的に行われます）
-export ALCOVE_TOKEN="alcove-..."
-```
-
-トークンの優先順位： `--token` フラグ > `ALCOVE_TOKEN` 環境変数 > `config.toml`。
-
-ログは `~/.alcove/logs/` に書き込まれます。起動後、`alcove doctor` を実行してサーバーにアクセス可能か確認してください。
+バックグラウンドサーバーが実行中の場合、stdioプロセスは軽量プロキシとして動作します — 毎セッション検索エンジンをロードする代わりに、実行中のサーバーにリクエストを転送します。起動時、stdioプロセスは `GET /health` を確認し、自動的にプロキシモードに移行します。
 
 ## 検索
 
@@ -604,6 +579,10 @@ alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
 - **`search_vault`**: より広範な知識領域や研究ノートを検索
 
 `~/.alcove/vaults/` 内のシンボリックリンクを確認することで、物理的なストレージマッピングを検証できます。
+
+## ロードマップ
+
+- **マルチユーザーリモートアクセス** — LAN/VPN経由でのチームドキュメント共有用REST API（ベアラートークン認証、レート制限は実装済み）。必要: 書き込みAPI、同時インデックス調整、プロジェクトライフサイクル管理。
 
 ## コントリビュート
 

@@ -178,7 +178,7 @@ Sans `pdftotext`, Alcove se rabat sur un analyseur PDF intégré qui peut échou
 2. Quelles catégories de documents suivre
 3. Format de diagramme préféré
 4. Modèle d'embeddings pour la recherche hybride
-5. **Serveur HTTP** — hôte, port, jeton bearer auto-généré, et inscription de l'élément de connexion
+5. **Serveur en arrière-plan** — éliminer le démarrage à froid à chaque session (élément de connexion macOS)
 6. Quels agents IA configurer (MCP + fichiers de compétences)
 
 Relancez `alcove setup` à tout moment pour modifier les paramètres. Il se souvient de vos choix précédents.
@@ -254,7 +254,7 @@ flowchart LR
     MCP -- "accès délimité" --> Docs
 ```
 
-Vos documents sont organisés dans un répertoire séparé (`DOCS_ROOT`), un dossier par projet. Alcove gère les documents et les sert à tout agent IA compatible MCP via stdio. Votre agent appelle des outils comme `get_doc_file("PRD.md")` et obtient des réponses spécifiques au projet — quel que soit l'agent que vous utilisez.
+Vos documents sont organisés dans un répertoire séparé (`DOCS_ROOT`), un dossier par projet. Alcove gère les documents et les sert à tout agent IA compatible MCP via stdio.
 
 ## Classification des documents
 
@@ -299,11 +299,10 @@ alcove index        Mettre à jour l'index de recherche (incrémentiel — fichi
 alcove rebuild      Reconstruire l'index de recherche de zéro (après des changements de schéma)
 alcove search       Rechercher des documents depuis le terminal
 alcove index-code   Génère un index de structure de code depuis les sources (requiert la fonctionnalité code-index)
-alcove token        Afficher le jeton d'accès pour le partage en équipe
+alcove token        Afficher le jeton bearer (pour l'authentification du serveur en arrière-plan)
 alcove uninstall    Supprimer compétences, configuration et fichiers hérités
 
 alcove mcp <CMD>      Gérer le cycle de vie du serveur MCP en arrière-plan (start, stop, status, enable, disable)
-alcove api <CMD>      Gérer le cycle de vie du serveur REST API en arrière-plan (start, stop, status, enable, disable)
 
 alcove vault link     Lier un répertoire externe en tant que vault (ex. : Obsidian)
 alcove vault list     Lister tous les vaults avec le nombre de documents
@@ -349,39 +348,15 @@ Les fichiers sans projet correspondant sont sauvegardés dans `inbox/` pour exam
 
 ## Serveur en arrière-plan
 
-L'exécution d'un serveur persistant en arrière-plan élimine la latence du démarrage à froid (chargement du modèle ONNX de 2 à 5 secondes) à chaque nouvelle session de l'agent. **`alcove setup` active cela par défaut** (élément de connexion macOS).
+L'exécution d'un serveur persistant en arrière-plan élimine la latence du démarrage à froid à chaque nouvelle session de l'agent. **`alcove setup` active cela par défaut** (élément de connexion macOS).
 
 ```bash
-# Activer et démarrer (persiste après redémarrage — macOS)
-alcove mcp enable --now
-
-# Cycle de vie
+alcove mcp enable --now     # Activer et démarrer (persiste après redémarrage)
 alcove mcp stop / start / restart / status
-
-# Désactiver et supprimer l'élément de connexion
-alcove mcp disable
+alcove mcp disable          # Désactiver et supprimer l'élément de connexion
 ```
 
-Vous pouvez également exécuter un serveur API REST séparé :
-
-```bash
-# Démarrer le serveur API en arrière-plan
-alcove api start
-```
-
-Le serveur utilise un jeton bearer pour l'authentification — généré automatiquement lors de `alcove setup` et stocké dans `config.toml`. Votre configuration MCP existante (`command: alcove`) reste inchangée ; le processus stdio détecte automatiquement le serveur en cours d'exécution et sert de proxy vers celui-ci.
-
-```bash
-# Vérifier ou partager le jeton
-alcove token
-
-# Définir dans le profil du shell (le setup le fait automatiquement)
-export ALCOVE_TOKEN="alcove-..."
-```
-
-Priorité du jeton : indicateur `--token` > variable d'environnement `ALCOVE_TOKEN` > `config.toml`.
-
-Les logs sont écrits dans `~/.alcove/logs/`. Au démarrage, lancez `alcove doctor` pour vérifier que le serveur est accessible.
+Lorsque le serveur en arrière-plan est en cours d'exécution, le processus stdio agit comme un proxy léger — au lieu de charger le moteur de recherche à chaque session, il transfère les requêtes au serveur actif. Au démarrage, le processus stdio vérifie `GET /health` et passe automatiquement en mode proxy.
 
 ## Recherche
 
@@ -600,6 +575,10 @@ Désormais, vos agents disposent d'un accès structuré :
 - **`search_vault`** : Recherche dans vos domaines de connaissances plus larges et vos notes de recherche.
 
 Vous pouvez vérifier le mappage du stockage physique en consultant les liens symboliques dans `~/.alcove/vaults/`.
+
+## Feuille de route
+
+- **Accès distant multi-utilisateur** — API REST pour le partage de documents d'équipe via LAN/VPN (authentification par jeton bearer, limitation de débit déjà implémentée). Requis : API d'écriture, coordination d'index concurrente, gestion du cycle de vie des projets.
 
 ## Contribuer
 

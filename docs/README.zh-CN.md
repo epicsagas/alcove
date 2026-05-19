@@ -178,7 +178,7 @@ alcove doctor
 2. 要跟踪的文档类别
 3. 首选图表格式
 4. 混合搜索的嵌入模型
-5. **HTTP 服务器** — 主机、端口、自动生成的 bearer token、登录项注册
+5. **后台服务器** — 消除每次会话的冷启动延迟（macOS 登录项）
 6. 要配置的 AI 代理（MCP + 技能文件）
 
 随时重新运行 `alcove setup` 来更改设置。它会记住您之前的选择。
@@ -254,7 +254,7 @@ flowchart LR
     MCP -- "范围访问" --> Docs
 ```
 
-文档组织在单独的目录（`DOCS_ROOT`）中，每个项目一个文件夹。Alcove 管理文档并通过 stdio 提供给任何兼容 MCP 的 AI 代理。代理调用 `get_doc_file("PRD.md")` 等工具来获取项目特定的回答——无论您使用的是哪个代理。
+文档组织在单独的目录（`DOCS_ROOT`）中，每个项目一个文件夹。Alcove 通过 stdio 管理文档并提供给任何兼容 MCP 的 AI 代理。
 
 ## 文档分类
 
@@ -299,11 +299,10 @@ alcove index        增量更新搜索索引（仅处理变更文件）
 alcove rebuild      从头重建搜索索引（适用于模式变更后）
 alcove search       从终端搜索文档
 alcove index-code   从源代码生成代码结构索引（需要 code-index 特性）
-alcove token        打印用于团队共享的持有者令牌
+alcove token        打印持有者令牌（用于后台服务器认证）
 alcove uninstall    移除技能、配置和遗留文件
 
 alcove mcp <CMD>      管理后台 MCP 服务器生命周期 (start, stop, status, enable, disable)
-alcove api <CMD>      管理后台 REST API 服务器生命周期 (start, stop, status, enable, disable)
 
 alcove vault create   创建新的知识库 vault
 alcove vault link     将外部目录链接为 vault (例如 Obsidian)
@@ -353,39 +352,15 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 
 ### 后台服务器
 
-运行持久化后台服务器可以消除每次新代理会话的冷启动延迟（ONNX 模型加载需要 2-5 秒）。**`alcove setup` 默认启用此功能**（macOS 登录项）。
+运行持久化后台服务器可以消除每次新代理会话的冷启动延迟。**`alcove setup` 默认启用此功能**（macOS 登录项）。
 
 ```bash
-# 启用并启动（在重启后保持——macOS）
-alcove mcp enable --now
-
-# 生命周期
+alcove mcp enable --now     # 启用并启动（重启后保持）
 alcove mcp stop / start / restart / status
-
-# 禁用并移除登录项
-alcove mcp disable
+alcove mcp disable          # 禁用并移除登录项
 ```
 
-您还可以运行一个独立的 REST API 服务器：
-
-```bash
-# 在后台启动 API 服务器
-alcove api start
-```
-
-服务器使用持有者令牌进行身份验证——在 `alcove setup` 期间自动生成并存储在 `config.toml` 中。您现有的 MCP 配置（`command: alcove`）保持不变；stdio 进程会自动检测正在运行的服务器并进行代理。
-
-```bash
-# 检查或共享令牌
-alcove token
-
-# 在 shell 配置文件中设置（setup 会自动完成此操作）
-export ALCOVE_TOKEN="alcove-..."
-```
-
-令牌优先级： `--token` 标志 > `ALCOVE_TOKEN` 环境变量 > `config.toml`。
-
-日志写入 `~/.alcove/logs/`。启动后，运行 `alcove doctor` 验证服务器是否可达。
+当后台服务器运行时，stdio 进程作为轻量代理工作——不再每次会话加载搜索引擎，而是将请求转发给已运行的服务器。启动时，stdio 进程会检查 `GET /health` 并自动进入代理模式。
 
 ## 搜索
 
@@ -604,6 +579,10 @@ alcove vault link zettelkasten ~/Obsidian/SecondBrain/10-Zettelkasten
 - **`search_vault`**: 搜索更广泛的知识领域和研究笔记。
 
 您可以通过检查 `~/.alcove/vaults/` 中的符号链接来验证物理存储映射。
+
+## 路线图
+
+- **多用户远程访问** — 通过 LAN/VPN 共享团队文档的 REST API（持有者令牌认证、速率限制已实现）。需要：写入 API、并发索引协调、项目生命周期管理。
 
 ## 贡献
 

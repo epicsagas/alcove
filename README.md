@@ -197,7 +197,7 @@ Without `pdftotext`, Alcove falls back to a built-in PDF parser which may fail o
 2. Which document categories to track
 3. Preferred diagram format
 4. Embedding model for hybrid search
-5. **HTTP server** — host, port, auto-generated bearer token, and login item registration
+5. Background server — eliminate cold-start on every session (macOS login item)
 6. Which AI agents to configure (MCP + skill files)
 
 Re-run `alcove setup` anytime to change settings. It remembers your previous choices.
@@ -283,11 +283,11 @@ flowchart LR
 
     A1 -- "CWD detected" --> D1
     A2 -- "CWD detected" --> D2
-    Agents -- "stdio (proxy → HTTP)" --> MCP
+    Agents -- "stdio MCP" --> MCP
     MCP -- "scoped access" --> Docs
 ```
 
-Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent over stdio. When the background HTTP server is running (via `alcove enable`), the stdio process acts as a thin proxy — forwarding requests to the warm server for instant response with zero cold-start. Without the background server, it loads the full engine on each session.
+Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent over stdio.
 
 ## MCP Tools
 
@@ -322,11 +322,10 @@ alcove index        Update the search index (incremental — only changed files)
 alcove rebuild      Rebuild the search index from scratch (use after schema changes)
 alcove search       Search docs from the terminal
 alcove index-code   Generate code structure index from source (requires code-index feature)
-alcove token        Print the bearer token for team sharing
+alcove token        Print the bearer token (for background server auth)
 alcove uninstall    Remove skills, config, and legacy files
 
 alcove mcp <CMD>      Manage background MCP server lifecycle (start, stop, status, enable, disable)
-alcove api <CMD>      Manage background REST API server lifecycle (start, stop, status, enable, disable)
 
 alcove vault create   Create a new knowledge base vault
 alcove vault link     Link an external directory as a vault (e.g., Obsidian)
@@ -376,62 +375,15 @@ Files with no matching project land in `inbox/` for manual review.
 
 ### Background Server
 
-Running a persistent background server eliminates cold-start latency (2–5s ONNX model load) on every new agent session. **`alcove setup` enables this by default** (macOS login item).
+Running a persistent background server eliminates cold-start latency on every new agent session. **`alcove setup` enables this by default** (macOS login item).
 
 ```bash
-# Enable and start (persists across reboots — macOS)
-alcove mcp enable --now
-
-# Lifecycle
+alcove mcp enable --now     # Enable and start (persists across reboots)
 alcove mcp stop / start / restart / status
-
-# Disable and remove login item
-alcove mcp disable
+alcove mcp disable          # Disable and remove login item
 ```
 
-You can also run a separate REST API server:
-
-```bash
-# Start the API server in background
-alcove api start
-```
-
-The server uses a bearer token for authentication — auto-generated during `alcove setup` and stored in `config.toml`. Your existing MCP config (`command: alcove`) stays unchanged; the stdio process auto-detects the running server and proxies to it.
-
-```bash
-# Check or share the token
-alcove token
-
-# Set in shell profile (setup does this automatically)
-export ALCOVE_TOKEN="alcove-..."
-```
-
-Token priority: `--token` flag > `ALCOVE_TOKEN` env var > `config.toml`.
-
-Logs are written to `~/.alcove/logs/`. On startup, run `alcove doctor` to verify the server is reachable.
-
-<details>
-<summary>How proxy mode works internally</summary>
-
-Agents always connect via **stdio** (MCP standard). When the background server is running, the stdio process is a thin proxy — it forwards requests over HTTP instead of loading the search engine itself.
-
-```
-Proxy mode (background server running):
-  Agent ──stdio──→ alcove (thin proxy, <10 MB, instant)
-                     └──HTTP──→ alcove serve (always warm)
-                                 ├─ BM25 index (loaded)
-                                 ├─ ONNX embedding model (loaded)
-                                 ├─ HNSW vector index (loaded)
-                                 └─ hybrid search ready (~5ms)
-
-Direct mode (no background server):
-  Agent ──stdio──→ alcove (full engine, one process per session)
-                     ├─ load ONNX embedding model (2-5s cold start)
-                     ├─ open BM25 index
-                     └─ hybrid search ready (after warm-up)
-```
-
-On startup, the stdio process checks `GET /health`. If the server responds, it enters proxy mode automatically — no MCP config change needed.
+When the background server is running, the stdio process acts as a thin proxy — forwarding requests to the warm server instead of loading the search engine each session. On startup, the stdio process checks `GET /health` and enters proxy mode automatically.
 
 </details>
 
@@ -776,6 +728,10 @@ Now your agents have structured access:
 - **`search_vault`**: Searches your broader knowledge areas and research notes.
 
 You can verify the physical storage mapping by checking the symlinks in `~/.alcove/vaults/`.
+
+## Roadmap
+
+- **Multi-user remote access** — REST API for team doc sharing over LAN/VPN (bearer token auth, rate limiting already implemented). Requires: write API, concurrent index coordination, project lifecycle management.
 
 ## Contributing
 

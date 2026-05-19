@@ -178,7 +178,7 @@ Ohne `pdftotext` fällt Alcove auf einen integrierten PDF-Parser zurück, der be
 2. Welche Dokumentkategorien verfolgt werden sollen
 3. Bevorzugtes Diagrammformat
 4. Embedding-Modell für hybride Suche
-5. **HTTP-Server** — Host, Port, automatisch generierter Bearer-Token und Login-Objekt-Registrierung
+5. **Hintergrund-Server** — Kaltstart bei jeder Sitzung eliminieren (macOS-Login-Objekt)
 6. Welche KI-Agenten konfiguriert werden sollen (MCP + Skill-Dateien)
 
 Führe `alcove setup` jederzeit erneut aus, um Einstellungen zu ändern. Es merkt sich deine vorherigen Auswahlen.
@@ -254,7 +254,7 @@ flowchart LR
     MCP -- "bereichsbezogener Zugriff" --> Docs
 ```
 
-Deine Dokumente sind in einem separaten Verzeichnis (`DOCS_ROOT`) organisiert, ein Ordner pro Projekt. Alcove verwaltet Dokumente dort und stellt sie jedem MCP-kompatiblen KI-Agenten über stdio bereit. Dein Agent ruft Tools wie `get_doc_file("PRD.md")` auf und erhält projektspezifische Antworten — unabhängig davon, welchen Agenten du verwendest.
+Deine Dokumente sind in einem separaten Verzeichnis (`DOCS_ROOT`) organisiert, ein Ordner pro Projekt. Alcove verwaltet Dokumente dort und stellt sie über stdio jedem MCP-kompatiblen KI-Agenten bereit.
 
 ## Dokumentklassifizierung
 
@@ -299,11 +299,10 @@ alcove index        Suchindex inkrementell aktualisieren (nur geänderte Dateien
 alcove rebuild      Suchindex von Grund auf neu aufbauen (nach Schema-Änderungen)
 alcove search       Dokumente vom Terminal aus suchen
 alcove index-code   Code-Struktur-Index aus Quellcode generieren (erfordert code-index-Feature)
-alcove token        Bearer-Token für Team-Sharing ausgeben
+alcove token        Bearer-Token ausgeben (für Hintergrund-Server-Authentifizierung)
 alcove uninstall    Skills, Konfiguration und Legacy-Dateien entfernen
 
 alcove mcp <CMD>      Lebenszyklus des MCP-Servers im Hintergrund verwalten (start, stop, status, enable, disable)
-alcove api <CMD>      Lebenszyklus des REST-API-Servers im Hintergrund verwalten (start, stop, status, enable, disable)
 
 alcove vault link     Externes Verzeichnis als Vault verknüpfen (z. B. Obsidian)
 alcove vault list     Alle Vaults mit Dokumentanzahl auflisten
@@ -349,39 +348,15 @@ Dateien ohne passendes Projekt werden in `inbox/` zur manuellen Überprüfung ge
 
 ## Hintergrund-Server
 
-Das Ausführen eines dauerhaften Hintergrund-Servers eliminiert die Kaltstart-Latenz (2–5 Sekunden ONNX-Modell-Ladevorgang) bei jeder neuen Agenten-Sitzung. **`alcove setup` aktiviert dies standardmäßig** (macOS-Login-Objekt).
+Das Ausführen eines dauerhaften Hintergrund-Servers eliminiert die Kaltstart-Latenz bei jeder neuen Agenten-Sitzung. **`alcove setup` aktiviert dies standardmäßig** (macOS-Login-Objekt).
 
 ```bash
-# Aktivieren und starten (bleibt nach Neustarts bestehen — macOS)
-alcove mcp enable --now
-
-# Lebenszyklus
+alcove mcp enable --now     # Aktivieren und starten (bleibt nach Neustarts bestehen)
 alcove mcp stop / start / restart / status
-
-# Deaktivieren und Login-Objekt entfernen
-alcove mcp disable
+alcove mcp disable          # Deaktivieren und Login-Objekt entfernen
 ```
 
-Sie können auch einen separaten REST-API-Server ausführen:
-
-```bash
-# API-Server im Hintergrund starten
-alcove api start
-```
-
-Der Server verwendet einen Bearer-Token zur Authentifizierung – dieser wird während des `alcove setup` automatisch generiert und in `config.toml` gespeichert. Ihre bestehende MCP-Konfiguration (`command: alcove`) bleibt unverändert; der stdio-Prozess erkennt automatisch den laufenden Server und leitet Anfragen an diesen weiter.
-
-```bash
-# Token prüfen oder teilen
-alcove token
-
-# Im Shell-Profil festlegen (Setup erledigt dies automatisch)
-export ALCOVE_TOKEN="alcove-..."
-```
-
-Token-Priorität: `--token`-Flag > `ALCOVE_TOKEN`-Umgebungsvariable > `config.toml`.
-
-Protokolle werden in `~/.alcove/logs/` geschrieben. Führen Sie beim Start `alcove doctor` aus, um zu prüfen, ob der Server erreichbar ist.
+Wenn der Hintergrund-Server läuft, fungiert der stdio-Prozess als leichter Proxy — anstatt bei jeder Sitzung die Such-Engine zu laden, leitet er Anfragen an den aktiven Server weiter. Beim Start prüft der stdio-Prozess `GET /health` und wechselt automatisch in den Proxy-Modus.
 
 ## Suche
 
@@ -600,6 +575,10 @@ Jetzt haben deine Agenten strukturierten Zugriff:
 - **`search_vault`**: Durchsucht deine breiteren Wissensbereiche und Forschungsnotizen.
 
 Du kannst das physische Speicher-Mapping überprüfen, indem du die Symlinks in `~/.alcove/vaults/` kontrollierst.
+
+## Fahrplan
+
+- **Multi-User-Fernzugriff** — REST-API für Team-Dokumentenfreigabe über LAN/VPN (Bearer-Token-Authentifizierung, Rate-Limiting bereits implementiert). Erforderlich: Schreib-API, gleichzeitige Index-Koordination, Projekt-Lebenszyklusverwaltung.
 
 ## Mitwirken
 
