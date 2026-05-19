@@ -3336,7 +3336,11 @@ mod tests {
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "code-index")]
-pub fn tool_index_code_structure(docs_root: &Path, project_name: &str, args: Value) -> Result<Value> {
+pub fn tool_index_code_structure(
+    docs_root: &Path,
+    project_name: &str,
+    args: Value,
+) -> Result<Value> {
     let source_path = args
         .get("source_path")
         .and_then(|v| v.as_str())
@@ -3345,7 +3349,10 @@ pub fn tool_index_code_structure(docs_root: &Path, project_name: &str, args: Val
 
     let source = Path::new(source_path);
     if crate::config::is_blocked_system_path(source) {
-        anyhow::bail!("Source path points to a restricted system directory: {}", source_path);
+        anyhow::bail!(
+            "Source path points to a restricted system directory: {}",
+            source_path
+        );
     }
     if !source.is_dir() {
         anyhow::bail!("Source path is not a directory: {}", source_path);

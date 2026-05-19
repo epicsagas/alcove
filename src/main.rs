@@ -477,13 +477,18 @@ fn main() -> Result<()> {
             };
 
             if crate::config::is_blocked_system_path(&source) {
-                anyhow::bail!("Source path points to a restricted system directory: {}", source.display());
+                anyhow::bail!(
+                    "Source path points to a restricted system directory: {}",
+                    source.display()
+                );
             }
 
             let resolved = match &project {
                 Some(name) => {
                     if name.contains('/') || name.contains('\\') || name.contains("..") {
-                        anyhow::bail!("Project name must be a single path component (no /, \\, or ..)");
+                        anyhow::bail!(
+                            "Project name must be a single path component (no /, \\, or ..)"
+                        );
                     }
                     name.clone()
                 }
