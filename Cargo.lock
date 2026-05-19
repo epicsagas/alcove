@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "alcove"
-version = "0.9.0-dev"
+version = "0.8.10"
 dependencies = [
  "anyhow",
  "axum",
@@ -2283,8 +2283,9 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
 name = "llm-transpile"
-version = "0.2.3"
-source = "git+https://github.com/epicsagas/llm-transpile?tag=v0.2.3#a11cb9c8d8e13b67d6fefe6643328201095f5f43"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf60afcd92f88a6bac26207c7dfcd6531f368d1f903fe9507f266fe62043bacf"
 dependencies = [
  "aho-corasick",
  "ammonia",

@@ -1,6 +1,6 @@
 [package]
 name = "alcove"
-version = "0.8.10"
+version = "0.8.11"
 edition = "2024"
 description = "A quiet place for your project docs. MCP server that gives AI agents scoped access to private documentation."
 license = "Apache-2.0"
@@ -69,7 +69,7 @@ calamine = { version = "0.34", optional = true }
 ureq = "3"
 
 # Token-optimized document transpiler (optional, transpile feature)
-llm-transpile = { git = "https://github.com/epicsagas/llm-transpile", tag = "v0.2.3", optional = true }
+llm-transpile = { version = "0.2.4", optional = true }
 
 # Code structure indexing (optional, code-index feature)
 tree-sitter = { version = "0.26", optional = true }
