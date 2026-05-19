@@ -19,6 +19,9 @@ mod tools;
 mod transpile;
 mod vault;
 
+#[cfg(feature = "code-index")]
+mod code_index;
+
 #[cfg(feature = "vector")]
 mod vector;
 
@@ -149,6 +152,16 @@ enum Commands {
     Vault {
         #[command(subcommand)]
         subcmd: VaultCommands,
+    },
+    /// Index source code structure (tree-sitter based)
+    #[cfg(feature = "code-index")]
+    IndexCode {
+        /// Project name (auto-detected if omitted)
+        #[arg(long)]
+        project: Option<String>,
+        /// Path to source directory to index
+        #[arg(long)]
+        source: std::path::PathBuf,
     },
     /// Manage telemetry consent
     Telemetry {
@@ -452,6 +465,55 @@ fn main() -> Result<()> {
         Some(Commands::Mcp { subcmd }) => handle_server_command(subcmd, ServiceKind::Mcp),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Api { subcmd }) => handle_server_command(subcmd, ServiceKind::Api),
+        #[cfg(feature = "code-index")]
+        Some(Commands::IndexCode { project, source }) => {
+            #[cfg(feature = "code-index")]
+            use crate::code_index::index_code_structure;
+            use crate::setup::saved_docs_root;
+
+            let docs_root = match saved_docs_root() {
+                Some(p) => p,
+                None => anyhow::bail!("docs_root is not configured. Run `alcove setup` first."),
+            };
+
+            if crate::config::is_blocked_system_path(&source) {
+                anyhow::bail!("Source path points to a restricted system directory: {}", source.display());
+            }
+
+            let resolved = match &project {
+                Some(name) => {
+                    if name.contains('/') || name.contains('\\') || name.contains("..") {
+                        anyhow::bail!("Project name must be a single path component (no /, \\, or ..)");
+                    }
+                    name.clone()
+                }
+                None => {
+                    use crate::tools::resolve_project;
+                    match resolve_project(&docs_root) {
+                        Some(r) => r.name,
+                        None => anyhow::bail!(
+                            "Could not detect project. Use --project <name> or run from a project directory."
+                        ),
+                    }
+                }
+            };
+
+            let result = index_code_structure(&docs_root, &resolved, &source)?;
+            println!(
+                "  ✓ Indexed {} module(s) for project '{}'",
+                result.modules_indexed, resolved
+            );
+            if result.files_skipped > 0 {
+                println!("  ⚠ Skipped {} file(s)", result.files_skipped);
+            }
+
+            // Refresh search index so CODE_INDEX.md is immediately searchable
+            if crate::index::builder::build_index(&docs_root).is_ok() {
+                println!("  ✓ Search index updated");
+            }
+
+            Ok(())
+        }
         Some(Commands::Token) => cli::cmd_token(),
         #[cfg(unix)]
         Some(Commands::Reap) => cli::cmd_reap(),
