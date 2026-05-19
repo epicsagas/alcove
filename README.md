@@ -136,7 +136,7 @@ Auto-installs the binary and registers the MCP server on next session start.
 alcove setup   # run once after plugin install
 ```
 
-Updates with `claude plugin update epicsagas/alcove`.
+Updates with `claude plugin update alcove@epicsagas`.
 
 ### macOS (Apple Silicon only)
 

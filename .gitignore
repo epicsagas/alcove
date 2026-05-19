@@ -210,6 +210,8 @@ $RECYCLE.BIN/
 # collet
 .collet/.secrets
 .agents/
+!.agents/
+!.agents/plugins/
 .harness/
 .aider*
 # collet
