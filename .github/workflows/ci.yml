@@ -65,7 +65,7 @@ jobs:
 
   macos-intel-check:
     name: macOS x86_64 Check
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
