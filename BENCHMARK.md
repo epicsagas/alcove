@@ -1,10 +1,10 @@
 # Alcove Benchmark Report
 
-**Date:** 2026-05-19
+**Date:** 2026-05-19T03:22:53Z (precision), 2026-05-19T03:24:50Z (latency)
 
-**Environment:** macOS (Apple Silicon) | Alcove 0.9.0-dev
+**Environment:** macOS (Apple Silicon) | Alcove 0.8.9 (installed binary)
 
-**Dataset:** 768 files across 40+ projects (6.3 MB)
+**Dataset:** 768 files across 40+ projects (6,627,199 bytes)
 
 **Methodology:** 15 ground-truth queries (English + Korean + zero-result), 50 iterations per query for latency.
 
