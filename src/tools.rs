@@ -2315,6 +2315,45 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
 }
+
+// ---------------------------------------------------------------------------
+// index_code_structure
+// ---------------------------------------------------------------------------
+
+pub fn tool_index_code_structure(
+    docs_root: &Path,
+    project_name: &str,
+    args: Value,
+) -> Result<Value> {
+    let source_path = args
+        .get("source_path")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("source_path is required"))?;
+
+    let source = Path::new(source_path);
+    if crate::config::is_blocked_system_path(source) {
+        anyhow::bail!(
+            "Source path points to a restricted system directory: {}",
+            source_path
+        );
+    }
+    if !source.is_dir() {
+        anyhow::bail!("Source path is not a directory: {}", source_path);
+    }
+
+    let result = crate::code_index::index_code_structure(docs_root, project_name, source)?;
+
+    // Refresh the search index so CODE_INDEX.md is immediately searchable
+    let _ = crate::index::builder::build_index(docs_root);
+
+    Ok(json!({
+        "status": "completed",
+        "modules_indexed": result.modules_indexed,
+        "files_skipped": result.files_skipped,
+    }))
+}
+
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -3329,43 +3368,4 @@ mod tests {
         assert_eq!(cfg.diagram_format(), "plantuml");
         assert_eq!(cfg.core_files(), vec!["SPEC.md"]);
     }
-}
-
-// ---------------------------------------------------------------------------
-// index_code_structure (code-index feature)
-// ---------------------------------------------------------------------------
-
-#[cfg(feature = "code-index")]
-pub fn tool_index_code_structure(
-    docs_root: &Path,
-    project_name: &str,
-    args: Value,
-) -> Result<Value> {
-    let source_path = args
-        .get("source_path")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("source_path is required"))?;
-
-    let source = Path::new(source_path);
-    if crate::config::is_blocked_system_path(source) {
-        anyhow::bail!(
-            "Source path points to a restricted system directory: {}",
-            source_path
-        );
-    }
-    if !source.is_dir() {
-        anyhow::bail!("Source path is not a directory: {}", source_path);
-    }
-
-    let result = crate::code_index::index_code_structure(docs_root, project_name, source)?;
-
-    // Refresh the search index so CODE_INDEX.md is immediately searchable
-    let _ = crate::index::builder::build_index(docs_root);
-
-    Ok(json!({
-        "status": "completed",
-        "modules_indexed": result.modules_indexed,
-        "files_skipped": result.files_skipped,
-    }))
 }

@@ -71,9 +71,9 @@ ureq = "3"
 # Token-optimized document transpiler (optional, transpile feature)
 llm-transpile = { version = "0.2.4", optional = true }
 
-# Code structure indexing (optional, code-index feature)
-tree-sitter = { version = "0.26", optional = true }
-tree-sitter-rust = { version = "0.24", optional = true }
+# Code structure indexing
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
 
 # HTTP server dependencies
 axum = { version = "0.8", optional = true }
@@ -89,7 +89,6 @@ pdf = ["pdf-extract"]
 office = ["zip", "quick-xml", "calamine"]
 alcove-server = ["axum", "tokio", "tower-http"]
 transpile = ["dep:llm-transpile"]
-code-index = ["dep:tree-sitter", "dep:tree-sitter-rust"]
 
 # Preset feature groups
 full-macos = ["core", "embed-candle", "vector", "pdf", "office", "alcove-server"]

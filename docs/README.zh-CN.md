@@ -284,7 +284,7 @@ Alcove 将文档分为以下层级：
 | `check_doc_changes` | 检测自上次索引构建以来添加、修改或删除的文档 |
 | `lint_project` | 语义检查 — 失效链接、孤立文件、过期标记及过期日期表述 |
 | `promote_document` | 将外部仓库的文件复制或移动到 alcove doc-repo |
-| `index_code_structure` | 使用 tree-sitter 解析源代码并为每个项目生成 `CODE_INDEX.md`（需要 `code-index` 特性） |
+| `index_code_structure` | 使用 tree-sitter 解析源代码并为每个项目生成 `CODE_INDEX.md` |
 
 ## CLI
 
@@ -298,7 +298,7 @@ alcove promote      将外部仓库笔记引入 doc-repo
 alcove index        增量更新搜索索引（仅处理变更文件）
 alcove rebuild      从头重建搜索索引（适用于模式变更后）
 alcove search       从终端搜索文档
-alcove index-code   从源代码生成代码结构索引（需要 code-index 特性）
+alcove index-code   从源代码生成代码结构索引
 alcove token        打印持有者令牌（用于后台服务器认证）
 alcove uninstall    移除技能、配置和遗留文件
 

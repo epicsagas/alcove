@@ -9,7 +9,6 @@ pub mod promote;
 pub mod transpile;
 pub mod vault;
 
-#[cfg(feature = "code-index")]
 pub mod code_index;
 
 #[cfg(feature = "vector")]
@@ -38,5 +37,4 @@ pub use vector::{
     VectorMeta, VectorResult, VectorStore, cosine_similarity, reciprocal_rank_fusion,
 };
 
-#[cfg(feature = "code-index")]
 pub use code_index::{CodeIndexResult, index_code_structure};

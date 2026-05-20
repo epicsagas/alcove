@@ -19,7 +19,6 @@ mod tools;
 mod transpile;
 mod vault;
 
-#[cfg(feature = "code-index")]
 mod code_index;
 
 #[cfg(feature = "vector")]
@@ -154,7 +153,6 @@ enum Commands {
         subcmd: VaultCommands,
     },
     /// Index source code structure (tree-sitter based)
-    #[cfg(feature = "code-index")]
     IndexCode {
         /// Project name (auto-detected if omitted)
         #[arg(long)]
@@ -465,9 +463,7 @@ fn main() -> Result<()> {
         Some(Commands::Mcp { subcmd }) => handle_server_command(subcmd, ServiceKind::Mcp),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Api { subcmd }) => handle_server_command(subcmd, ServiceKind::Api),
-        #[cfg(feature = "code-index")]
         Some(Commands::IndexCode { project, source }) => {
-            #[cfg(feature = "code-index")]
             use crate::code_index::index_code_structure;
             use crate::setup::saved_docs_root;
 

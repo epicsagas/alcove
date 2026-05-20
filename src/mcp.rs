@@ -514,7 +514,6 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                 "required": ["source"]
             }),
         },
-        #[cfg(feature = "code-index")]
         ToolDescription {
             name: "index_code_structure".into(),
             description: concat!(
@@ -573,7 +572,6 @@ fn tool_enum(name: &str) -> Option<Tool> {
         "search_project_docs" => Some(Tool::SearchProjectDocs),
         "search_vault" => Some(Tool::SearchVault),
         "validate_docs" => Some(Tool::ValidateDocs),
-        #[cfg(feature = "code-index")]
         "index_code_structure" => Some(Tool::IndexCodeStructure),
         _ => None,
     }
@@ -895,7 +893,6 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             let (pol, results) = crate::policy::validate(&docs_root, &resolved.name, repo_path);
             Ok(crate::policy::validation_to_json(&pol, &results, source))
         }
-        #[cfg(feature = "code-index")]
         "index_code_structure" => {
             tools::tool_index_code_structure(&docs_root, &resolved.name, call.arguments)
         }
