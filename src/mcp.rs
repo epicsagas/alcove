@@ -518,8 +518,11 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
             name: "index_code_structure".into(),
             description: concat!(
                 "Index source code structure using tree-sitter AST parsing. ",
-                "Parses Rust source files and generates a CODE_INDEX.md summary ",
+                "Parses source files and generates a CODE_INDEX.md summary ",
                 "that integrates with the existing search pipeline.\n",
+                "\n",
+                "Supports multiple languages: Rust, TypeScript, Python, Go, Java, ",
+                "JavaScript, Kotlin, C, C++, Swift, Ruby, C# (depending on compile-time features).\n",
                 "\n",
                 "Use this tool when the user wants to:\n",
                 "- Index source code for a project\n",
@@ -538,6 +541,10 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                     "source_path": {
                         "type": "string",
                         "description": "Path to source directory to index"
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Language to index (auto-detected if omitted). Supported: rust, typescript, python, go, java, javascript, kotlin, c, cpp, swift, ruby, csharp"
                     }
                 },
                 "required": ["source_path"]

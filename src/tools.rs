@@ -2331,6 +2331,11 @@ pub fn tool_index_code_structure(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| anyhow::anyhow!("source_path is required"))?;
 
+    let language = args
+        .get("language")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
     let source = Path::new(source_path);
     if crate::config::is_blocked_system_path(source) {
         anyhow::bail!(
@@ -2342,7 +2347,9 @@ pub fn tool_index_code_structure(
         anyhow::bail!("Source path is not a directory: {}", source_path);
     }
 
-    let result = crate::code_index::index_code_structure(docs_root, project_name, source)?;
+    let result = crate::code_index::index_code_structure_with_lang(
+        docs_root, project_name, source, language,
+    )?;
 
     // Refresh the search index so CODE_INDEX.md is immediately searchable
     let _ = crate::index::builder::build_index(docs_root);
@@ -2351,6 +2358,7 @@ pub fn tool_index_code_structure(
         "status": "completed",
         "modules_indexed": result.modules_indexed,
         "files_skipped": result.files_skipped,
+        "languages_detected": result.languages_detected,
     }))
 }
 

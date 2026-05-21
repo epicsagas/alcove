@@ -71,9 +71,22 @@ ureq = "3"
 # Token-optimized document transpiler (optional, transpile feature)
 llm-transpile = { version = "0.2.4", optional = true }
 
-# Code structure indexing
+# Code structure indexing (core always present; grammars are feature-gated)
 tree-sitter = "0.26"
-tree-sitter-rust = "0.24"
+tree-sitter-rust = { version = "0.24", optional = true }
+
+# Additional grammar crates (Phase 2+)
+tree-sitter-python = { version = "0.25", optional = true }
+tree-sitter-typescript = { version = "0.23", optional = true }
+tree-sitter-javascript = { version = "0.25", optional = true }
+tree-sitter-go = { version = "0.25", optional = true }
+tree-sitter-java = { version = "0.23", optional = true }
+tree-sitter-kotlin-ng = { version = "1.1", optional = true }
+tree-sitter-c = { version = "0.24", optional = true }
+tree-sitter-cpp = { version = "0.23", optional = true }
+tree-sitter-swift = { version = "0.7", optional = true }
+tree-sitter-ruby = { version = "0.23", optional = true }
+tree-sitter-c-sharp = { version = "0.23", optional = true }
 
 # HTTP server dependencies
 axum = { version = "0.8", optional = true }
@@ -82,7 +95,7 @@ tower-http = { version = "0.6", features = ["cors"], optional = true }
 
 [features]
 default = ["core"]
-core = ["rusqlite", "alcove-server"]
+core = ["rusqlite", "alcove-server", "lang-rust"]
 embed-candle = ["candle-transformers", "candle-nn", "candle-core", "hf-hub", "tokenizers"]
 vector = ["hnsw_rs"]
 pdf = ["pdf-extract"]
@@ -90,9 +103,28 @@ office = ["zip", "quick-xml", "calamine"]
 alcove-server = ["axum", "tokio", "tower-http"]
 transpile = ["dep:llm-transpile"]
 
+# Language parsers (feature-gated for compile time control)
+lang-rust = ["dep:tree-sitter-rust"]
+lang-python = ["dep:tree-sitter-python"]
+lang-typescript = ["dep:tree-sitter-typescript"]
+lang-javascript = ["dep:tree-sitter-javascript"]
+lang-go = ["dep:tree-sitter-go"]
+lang-java = ["dep:tree-sitter-java"]
+lang-kotlin = ["dep:tree-sitter-kotlin-ng"]
+lang-c = ["dep:tree-sitter-c"]
+lang-cpp = ["dep:tree-sitter-cpp"]
+lang-swift = ["dep:tree-sitter-swift"]
+lang-ruby = ["dep:tree-sitter-ruby"]
+lang-csharp = ["dep:tree-sitter-c-sharp"]
+lang-all = [
+    "lang-rust", "lang-python", "lang-typescript", "lang-javascript",
+    "lang-go", "lang-java", "lang-kotlin", "lang-c", "lang-cpp",
+    "lang-swift", "lang-ruby", "lang-csharp",
+]
+
 # Preset feature groups
-full-macos = ["core", "embed-candle", "vector", "pdf", "office", "alcove-server"]
-full-cross = ["core", "embed-candle", "vector", "office", "alcove-server"]
+full-macos = ["core", "embed-candle", "vector", "pdf", "office", "alcove-server", "lang-all"]
+full-cross = ["core", "embed-candle", "vector", "office", "alcove-server", "lang-all"]
 # Backward compat: full = full-macos on existing macOS ARM builds
 full = ["full-cross"]
 

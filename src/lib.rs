@@ -37,4 +37,6 @@ pub use vector::{
     VectorMeta, VectorResult, VectorStore, cosine_similarity, reciprocal_rank_fusion,
 };
 
-pub use code_index::{CodeIndexResult, index_code_structure};
+pub use code_index::{
+    CodeIndexResult, index_code_structure, index_code_structure_with_lang,
+};

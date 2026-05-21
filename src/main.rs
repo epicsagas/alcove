@@ -160,6 +160,9 @@ enum Commands {
         /// Path to source directory to index
         #[arg(long)]
         source: std::path::PathBuf,
+        /// Language to index (auto-detected if omitted)
+        #[arg(long)]
+        language: Option<String>,
     },
     /// Manage telemetry consent
     Telemetry {
@@ -463,8 +466,8 @@ fn main() -> Result<()> {
         Some(Commands::Mcp { subcmd }) => handle_server_command(subcmd, ServiceKind::Mcp),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Api { subcmd }) => handle_server_command(subcmd, ServiceKind::Api),
-        Some(Commands::IndexCode { project, source }) => {
-            use crate::code_index::index_code_structure;
+        Some(Commands::IndexCode { project, source, language }) => {
+            use crate::code_index::index_code_structure_with_lang;
             use crate::setup::saved_docs_root;
 
             let docs_root = match saved_docs_root() {
@@ -499,13 +502,17 @@ fn main() -> Result<()> {
                 }
             };
 
-            let result = index_code_structure(&docs_root, &resolved, &source)?;
+            let lang_ref = language.as_deref();
+            let result = index_code_structure_with_lang(&docs_root, &resolved, &source, lang_ref)?;
             println!(
                 "  ✓ Indexed {} module(s) for project '{}'",
                 result.modules_indexed, resolved
             );
             if result.files_skipped > 0 {
                 println!("  ⚠ Skipped {} file(s)", result.files_skipped);
+            }
+            if !result.languages_detected.is_empty() {
+                println!("  Languages: {}", result.languages_detected.join(", "));
             }
 
             // Refresh search index so CODE_INDEX.md is immediately searchable
