@@ -11,7 +11,6 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-pub mod detection;
 pub mod languages;
 pub mod markdown;
 pub mod registry;
@@ -74,12 +73,9 @@ pub fn index_code_structure_with_lang(
         );
     }
 
-    // Resolve language filter: explicit > auto-detect > None (index all)
-    let resolved_lang = language
-        .map(|s| s.to_string())
-        .or_else(|| detection::detect_project_language(&canonical, &reg));
-
-    let lang_filter = resolved_lang.as_deref();
+    // Language filter: explicit → filter to that language only
+    // No explicit language → index ALL recognized files by extension (monorepo-safe)
+    let lang_filter = language;
 
     let mut modules = BTreeMap::new();
     let mut skipped = 0usize;
@@ -127,8 +123,7 @@ pub fn generate_markdown_with_lang(
     language: Option<&str>,
 ) -> Result<(String, usize)> {
     let reg = registry::default_registry();
-    let detected = detection::detect_project_language(source_path, &reg);
-    let lang_filter = language.or(detected.as_deref());
+    let lang_filter = language;
 
     let mut modules = BTreeMap::new();
     let mut skipped = 0usize;
