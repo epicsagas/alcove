@@ -83,7 +83,7 @@ Alcove conserve tous vos documents privés dans **un seul dépôt partagé**, or
 - **Validation des documents** — vérifie les fichiers manquants, les templates non remplis, les sections requises
 - **Lint sémantique** — détecte automatiquement les wikilinks cassés, les fichiers orphelins, les marqueurs WIP/DRAFT obsolètes et les références temporelles de plus de 2 ans
 - **Import depuis un vault externe** — importe une note d'Obsidian (ou autre vault) dans le doc-repo en une seule commande ; routage automatique vers le bon projet
-- **Compatible avec 9+ agents** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Antigravity
+- **Compatible avec 9+ agents** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity
 
 ## Pourquoi Alcove
 
@@ -118,6 +118,24 @@ alcove setup   # exécuter une fois après l'installation du plugin
 ```
 
 Mises à jour avec `claude plugin update epicsagas/alcove`.
+
+### Codex CLI
+
+```bash
+codex plugin marketplace add epicsagas/plugins
+```
+
+Les skills sont disponibles immédiatement — aucune étape supplémentaire nécessaire.
+
+### Antigravity
+
+```bash
+antigravity plugin marketplace add epicsagas/plugins
+```
+
+Les skills sont disponibles immédiatement — aucune étape supplémentaire nécessaire.
+
+> **Remarque** : Antigravity ne prend pas encore en charge les sous-agents. Le serveur MCP Alcove est enregistré dans `~/.gemini/config/mcp_config.json`.
 
 ### macOS (Apple Silicon uniquement)
 

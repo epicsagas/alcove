@@ -83,7 +83,7 @@ Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织
 - **文档验证** —— 检查缺失文件、未填充模板、必需章节
 - **语义检查** —— 自动检测失效的 Wiki 链接、孤立文件、过期 WIP/DRAFT 标记及 2 年以上的日期表述
 - **外部仓库引入** —— 一条命令将 Obsidian 等工具的笔记带入 doc-repo；根据文件名和内容自动路由到对应项目
-- **支持 9+ 个代理** —— Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity、Antigravity
+- **支持 9+ 个代理** —— Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity
 
 ## 为什么选择 Alcove
 
@@ -118,6 +118,24 @@ alcove setup   # 插件安装后运行一次
 ```
 
 使用 `claude plugin update epicsagas/alcove` 进行更新。
+
+### Codex CLI
+
+```bash
+codex plugin marketplace add epicsagas/plugins
+```
+
+技能立即可用 — 无需额外步骤。
+
+### Antigravity
+
+```bash
+antigravity plugin marketplace add epicsagas/plugins
+```
+
+技能立即可用 — 无需额外步骤。
+
+> **注意**：Antigravity 目前不支持子代理。Alcove MCP 服务器注册在 `~/.gemini/config/mcp_config.json`。
 
 ### macOS（仅限 Apple Silicon）
 

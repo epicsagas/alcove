@@ -83,7 +83,7 @@ Alcove는 모든 프라이빗 문서를 프로젝트별로 정리된 **하나의
 - **문서 검증** — 누락된 파일, 미작성 템플릿, 필수 섹션 확인
 - **시맨틱 린트** — 깨진 위키링크, 고아 파일, 오래된 WIP/DRAFT 마커, 2년 이상 지난 날짜 표현 자동 감지
 - **외부 볼트 가져오기** — Obsidian 등의 노트를 한 명령으로 doc-repo에 추가; 파일명·내용 기반 프로젝트 자동 라우팅
-- **9개 이상 에이전트 지원** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Antigravity
+- **9개 이상 에이전트 지원** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity
 
 ## Alcove를 사용하는 이유
 
@@ -118,6 +118,24 @@ alcove setup   # 플러그인 설치 후 한 번 실행
 ```
 
 `claude plugin update epicsagas/alcove`로 업데이트합니다.
+
+### Codex CLI
+
+```bash
+codex plugin marketplace add epicsagas/plugins
+```
+
+스킬은 즉시 사용 가능합니다 — 추가 단계 불필요.
+
+### Antigravity
+
+```bash
+antigravity plugin marketplace add epicsagas/plugins
+```
+
+스킬은 즉시 사용 가능합니다 — 추가 단계 불필요.
+
+> **참고**: Antigravity는 아직 서브에이전트를 지원하지 않습니다. Alcove MCP 서버는 `~/.gemini/config/mcp_config.json`에 등록됩니다.
 
 ### macOS (Apple Silicon 전용)
 

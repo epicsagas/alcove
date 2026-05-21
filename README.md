@@ -146,6 +146,16 @@ codex plugin marketplace add epicsagas/plugins
 
 Skills are available immediately — no further steps needed.
 
+### Antigravity
+
+```bash
+antigravity plugin marketplace add epicsagas/plugins
+```
+
+Skills are available immediately — no further steps needed.
+
+> **Note**: Antigravity does not yet support subagents. The Alcove MCP server is registered at `~/.gemini/config/mcp_config.json`.
+
 ### macOS (Apple Silicon only)
 
 ```bash

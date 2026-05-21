@@ -83,7 +83,7 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 - **ドキュメント検証** — 不足ファイル、未記入テンプレート、必須セクションをチェック
 - **セマンティックLint** — 壊れたウィキリンク、孤立ファイル、古いWIP/DRAFTマーカー、2年以上前の日付表現を自動検出
 - **外部ボルトへの取り込み** — Obsidianなど外部ツールのノートをdoc-repoにワンコマンドで追加；ファイル名・内容に基づくプロジェクト自動ルーティング
-- **9つ以上のエージェントに対応** — Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity、Antigravity
+- **9つ以上のエージェントに対応** — Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity
 
 ## なぜAlcoveなのか
 
@@ -118,6 +118,24 @@ alcove setup   # プラグインインストール後に一度実行
 ```
 
 `claude plugin update epicsagas/alcove` でアップデートします。
+
+### Codex CLI
+
+```bash
+codex plugin marketplace add epicsagas/plugins
+```
+
+スキルはすぐに利用可能です — 追加手順は不要です。
+
+### Antigravity
+
+```bash
+antigravity plugin marketplace add epicsagas/plugins
+```
+
+スキルはすぐに利用可能です — 追加手順は不要です。
+
+> **注意**: Antigravity はまだサブエージェントをサポートしていません。Alcove MCP サーバーは `~/.gemini/config/mcp_config.json` に登録されます。
 
 ### macOS（Apple Silicon のみ）
 
