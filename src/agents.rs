@@ -131,21 +131,11 @@ pub(crate) fn agents() -> Vec<AgentDef> {
         AgentDef {
             name: "Antigravity",
             mcp_config: McpConfig::Json {
-                path: "~/.gemini/antigravity/mcp_config.json",
+                path: "~/.gemini/config/mcp_config.json",
                 server_key: "mcpServers",
                 omit_type: false,
             },
             skill_dir: None,
-            env_syntax: EnvVarSyntax::DollarBrace,
-        },
-        AgentDef {
-            name: "Gemini CLI",
-            mcp_config: McpConfig::Json {
-                path: "~/.gemini/settings.json",
-                server_key: "mcpServers",
-                omit_type: false,
-            },
-            skill_dir: Some("~/.gemini/skills/alcove"),
             env_syntax: EnvVarSyntax::DollarBrace,
         },
     ]
@@ -444,7 +434,7 @@ mod tests {
     #[test]
     fn agents_returns_expected_count() {
         let a = agents();
-        assert_eq!(a.len(), 9, "expected 9 agent definitions");
+        assert_eq!(a.len(), 8, "expected 8 agent definitions");
     }
 
     #[test]
@@ -458,7 +448,6 @@ mod tests {
         assert!(names.contains(&"OpenCode"));
         assert!(names.contains(&"Codex CLI"));
         assert!(names.contains(&"Antigravity"));
-        assert!(names.contains(&"Gemini CLI"));
     }
 
     #[test]
