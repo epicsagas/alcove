@@ -75,21 +75,24 @@ fn extract_from_node(
             }
             "interface_declaration" => {
                 if is_public(&child)
-                    && let Some(def) = extract_interface_def(&child, source) {
-                        types.push(def);
-                    }
+                    && let Some(def) = extract_interface_def(&child, source)
+                {
+                    types.push(def);
+                }
             }
             "enum_declaration" => {
                 if is_public(&child)
-                    && let Some(def) = extract_enum_def(&child, source) {
-                        types.push(def);
-                    }
+                    && let Some(def) = extract_enum_def(&child, source)
+                {
+                    types.push(def);
+                }
             }
             "record_declaration" => {
                 if is_public(&child)
-                    && let Some(name) = child_text_by_field(&child, source, "name") {
-                        types.push(format!("record {name}(...)"));
-                    }
+                    && let Some(name) = child_text_by_field(&child, source, "name")
+                {
+                    types.push(format!("record {name}(...)"));
+                }
             }
             "import_declaration" => {
                 imports.push(node_text(&child, source));
@@ -97,9 +100,10 @@ fn extract_from_node(
             "method_declaration" => {
                 // Top-level method (rare but valid in some contexts)
                 if is_public(&child)
-                    && let Some(sig) = extract_method_sig(&child, source) {
-                        functions.push(sig);
-                    }
+                    && let Some(sig) = extract_method_sig(&child, source)
+                {
+                    functions.push(sig);
+                }
             }
             _ => {
                 // Recurse into nested structures
@@ -113,14 +117,17 @@ fn extract_from_node(
 fn is_public(node: &tree_sitter::Node) -> bool {
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i as u32)
-            && child.kind() == "modifiers" {
-                for j in 0..child.child_count() {
-                    if let Some(modifier) = child.child(j as u32)
-                        && !modifier.is_named() && modifier.kind() == "public" {
-                            return true;
-                        }
+            && child.kind() == "modifiers"
+        {
+            for j in 0..child.child_count() {
+                if let Some(modifier) = child.child(j as u32)
+                    && !modifier.is_named()
+                    && modifier.kind() == "public"
+                {
+                    return true;
                 }
             }
+        }
     }
     false
 }
@@ -175,9 +182,10 @@ fn collect_enum_constants(body: &tree_sitter::Node, source: &str) -> Vec<String>
     for i in 0..body.named_child_count() {
         let child = body.named_child(i as u32).unwrap();
         if child.kind() == "enum_constant"
-            && let Some(name) = child_text_by_field(&child, source, "name") {
-                variants.push(name);
-            }
+            && let Some(name) = child_text_by_field(&child, source, "name")
+        {
+            variants.push(name);
+        }
     }
     variants
 }
@@ -190,10 +198,12 @@ fn extract_class_methods(
     if let Some(body) = class_node.child_by_field_name("body") {
         for i in 0..body.named_child_count() {
             let child = body.named_child(i as u32).unwrap();
-            if child.kind() == "method_declaration" && is_public(&child)
-                && let Some(sig) = extract_method_sig(&child, source) {
-                    functions.push(sig);
-                }
+            if child.kind() == "method_declaration"
+                && is_public(&child)
+                && let Some(sig) = extract_method_sig(&child, source)
+            {
+                functions.push(sig);
+            }
         }
     }
 }
@@ -233,7 +243,10 @@ mod tests {
     fn test_module_path() {
         let base = Path::new("/project/src/main/java");
         assert_eq!(
-            JavaParser.module_path_for_file(base, Path::new("/project/src/main/java/com/example/Server.java")),
+            JavaParser.module_path_for_file(
+                base,
+                Path::new("/project/src/main/java/com/example/Server.java")
+            ),
             "com.example.Server"
         );
     }

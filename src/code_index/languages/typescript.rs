@@ -40,8 +40,7 @@ impl LanguageParser for TypescriptParser {
         module_path: &str,
         parser: &mut Parser,
     ) -> Option<ModuleInfo> {
-        let lang: tree_sitter::Language =
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        let lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
         parser.set_language(&lang).ok()?;
         let tree = parser.parse(source, None)?;
         let root = tree.root_node();
@@ -267,7 +266,8 @@ mod tests {
             "utils/helpers"
         );
         assert_eq!(
-            TypescriptParser.module_path_for_file(base, Path::new("/project/src/components/index.ts")),
+            TypescriptParser
+                .module_path_for_file(base, Path::new("/project/src/components/index.ts")),
             "components"
         );
     }
@@ -310,7 +310,11 @@ export enum Color {
 }
 "#;
         let info = parse(source, "test").unwrap();
-        assert!(info.types.iter().any(|t| t.contains("interface SearchResult")));
+        assert!(
+            info.types
+                .iter()
+                .any(|t| t.contains("interface SearchResult"))
+        );
         assert!(info.types.iter().any(|t| t.contains("type Status")));
         assert!(info.types.iter().any(|t| t.contains("enum Color")));
     }
@@ -329,7 +333,11 @@ export abstract class BaseHandler {
 "#;
         let info = parse(source, "test").unwrap();
         assert!(info.types.iter().any(|t| t.contains("class SearchEngine")));
-        assert!(info.types.iter().any(|t| t.contains("abstract class BaseHandler")));
+        assert!(
+            info.types
+                .iter()
+                .any(|t| t.contains("abstract class BaseHandler"))
+        );
     }
 
     #[test]

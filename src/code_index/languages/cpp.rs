@@ -123,7 +123,9 @@ fn extract_function_sig(node: &tree_sitter::Node, source: &str) -> Option<String
     }
 
     if let Some(body) = node.child_by_field_name("body") {
-        let sig = source[node.start_byte()..body.start_byte()].trim().to_string();
+        let sig = source[node.start_byte()..body.start_byte()]
+            .trim()
+            .to_string();
         return Some(sig);
     }
 
@@ -137,7 +139,11 @@ fn is_static(node: &tree_sitter::Node, source: &str) -> bool {
             if kind == "storage_class_specifier" {
                 return node_text(&child, source) == "static";
             }
-            if kind == "function_declarator" || kind == "identifier" || kind == "pointer_declarator" || kind == "reference_declarator" {
+            if kind == "function_declarator"
+                || kind == "identifier"
+                || kind == "pointer_declarator"
+                || kind == "reference_declarator"
+            {
                 break;
             }
         }
@@ -172,15 +178,18 @@ fn collect_class_method_names(body: &tree_sitter::Node, source: &str) -> Vec<Str
             "function_definition" | "declaration" => {
                 // Try to extract method name from the declarator
                 if let Some(decl) = find_function_declarator(&child)
-                    && let Some(name) = extract_declarator_name(&decl, source) {
-                        methods.push(format!("{name}()"));
-                    }
+                    && let Some(name) = extract_declarator_name(&decl, source)
+                {
+                    methods.push(format!("{name}()"));
+                }
             }
             "access_specifier" | "constructor_declaration" | "constructor_definition" => {
-                if (child.kind() == "constructor_definition" || child.kind() == "constructor_declaration")
-                    && let Some(name) = child_text_by_field(&child, source, "name") {
-                        methods.push(format!("{name}()"));
-                    }
+                if (child.kind() == "constructor_definition"
+                    || child.kind() == "constructor_declaration")
+                    && let Some(name) = child_text_by_field(&child, source, "name")
+                {
+                    methods.push(format!("{name}()"));
+                }
             }
             _ => {}
         }
@@ -196,9 +205,10 @@ fn find_function_declarator<'a>(node: &tree_sitter::Node<'a>) -> Option<tree_sit
             }
             // Recurse into pointer_declarator
             if (child.kind() == "pointer_declarator" || child.kind() == "reference_declarator")
-                && let Some(inner) = find_function_declarator(&child) {
-                    return Some(inner);
-                }
+                && let Some(inner) = find_function_declarator(&child)
+            {
+                return Some(inner);
+            }
         }
     }
     None
@@ -350,4 +360,3 @@ public:
         assert!(CppParser.file_extensions().contains(&"hpp"));
     }
 }
-

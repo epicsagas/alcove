@@ -69,7 +69,8 @@ pub fn has_child_kind(node: &Node, kind: &str) -> bool {
 
 /// Extract text of a node's child by field name.
 pub fn child_text_by_field(node: &Node, source: &str, field: &str) -> Option<String> {
-    node.child_by_field_name(field).map(|n| node_text(&n, source))
+    node.child_by_field_name(field)
+        .map(|n| node_text(&n, source))
 }
 
 // ── Re-exports of enabled language parsers ───────────────────────────

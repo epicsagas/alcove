@@ -5,9 +5,7 @@ use std::path::Path;
 use tree_sitter::Parser;
 
 use crate::code_index::ModuleInfo;
-use crate::code_index::languages::{
-    LanguageParser, child_text_by_field, node_text,
-};
+use crate::code_index::languages::{LanguageParser, child_text_by_field, node_text};
 
 pub struct PythonParser;
 
@@ -152,17 +150,19 @@ fn collect_class_methods(body: &tree_sitter::Node, source: &str) -> Vec<String> 
         match child.kind() {
             "function_definition" => {
                 if let Some(name) = child_text_by_field(&child, source, "name")
-                    && !is_private_name(&name) {
-                        methods.push(format!("{name}()"));
-                    }
+                    && !is_private_name(&name)
+                {
+                    methods.push(format!("{name}()"));
+                }
             }
             "decorated_definition" => {
                 if let Some(definition) = child.child_by_field_name("definition")
                     && definition.kind() == "function_definition"
-                        && let Some(name) = child_text_by_field(&definition, source, "name")
-                            && !is_private_name(&name) {
-                                methods.push(format!("{name}()"));
-                            }
+                    && let Some(name) = child_text_by_field(&definition, source, "name")
+                    && !is_private_name(&name)
+                {
+                    methods.push(format!("{name}()"));
+                }
             }
             _ => {}
         }
@@ -249,7 +249,12 @@ async def fetch_data(url: str) -> Response:
         let info = parse(source, "test").unwrap();
         assert!(info.functions.iter().any(|f| f.contains("search")));
         assert!(info.functions.iter().any(|f| f.contains("fetch_data")));
-        assert!(!info.functions.iter().any(|f| f.contains("_internal_helper")));
+        assert!(
+            !info
+                .functions
+                .iter()
+                .any(|f| f.contains("_internal_helper"))
+        );
     }
 
     #[test]

@@ -466,7 +466,11 @@ fn main() -> Result<()> {
         Some(Commands::Mcp { subcmd }) => handle_server_command(subcmd, ServiceKind::Mcp),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Api { subcmd }) => handle_server_command(subcmd, ServiceKind::Api),
-        Some(Commands::IndexCode { project, source, language }) => {
+        Some(Commands::IndexCode {
+            project,
+            source,
+            language,
+        }) => {
             use crate::code_index::index_code_structure_with_lang;
             use crate::setup::saved_docs_root;
 

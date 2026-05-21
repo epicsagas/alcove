@@ -84,15 +84,17 @@ fn extract_from_node(
         match child.kind() {
             "method" => {
                 if current_vis == Visibility::Public
-                    && let Some(sig) = extract_method_sig(&child, source) {
-                        functions.push(sig);
-                    }
+                    && let Some(sig) = extract_method_sig(&child, source)
+                {
+                    functions.push(sig);
+                }
             }
             "singleton_method" => {
                 if current_vis == Visibility::Public
-                    && let Some(sig) = extract_singleton_method_sig(&child, source) {
-                        functions.push(sig);
-                    }
+                    && let Some(sig) = extract_singleton_method_sig(&child, source)
+                {
+                    functions.push(sig);
+                }
             }
             "class" => {
                 if let Some(def) = extract_class_def(&child, source, "class") {
@@ -224,7 +226,11 @@ end
         assert!(info.types.iter().any(|t| t.contains("class SearchService")));
         assert!(info.types.iter().any(|t| t.contains("module Utils")));
         assert!(info.functions.iter().any(|f| f.contains("search")));
-        assert!(info.functions.iter().any(|f| f.contains("standalone_function")));
+        assert!(
+            info.functions
+                .iter()
+                .any(|f| f.contains("standalone_function"))
+        );
     }
 
     #[test]

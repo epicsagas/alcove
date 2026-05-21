@@ -2348,7 +2348,10 @@ pub fn tool_index_code_structure(
     }
 
     let result = crate::code_index::index_code_structure_with_lang(
-        docs_root, project_name, source, language,
+        docs_root,
+        project_name,
+        source,
+        language,
     )?;
 
     // Refresh the search index so CODE_INDEX.md is immediately searchable

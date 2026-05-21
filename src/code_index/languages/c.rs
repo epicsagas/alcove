@@ -31,9 +31,7 @@ impl LanguageParser for CParser {
         module_path: &str,
         parser: &mut Parser,
     ) -> Option<ModuleInfo> {
-        parser
-            .set_language(&tree_sitter_c::LANGUAGE.into())
-            .ok()?;
+        parser.set_language(&tree_sitter_c::LANGUAGE.into()).ok()?;
         let tree = parser.parse(source, None)?;
         let root = tree.root_node();
 
@@ -48,9 +46,10 @@ impl LanguageParser for CParser {
             match child.kind() {
                 "function_definition" => {
                     if !is_static(&child, source)
-                        && let Some(sig) = extract_function_sig(&child, source) {
-                            functions.push(sig);
-                        }
+                        && let Some(sig) = extract_function_sig(&child, source)
+                    {
+                        functions.push(sig);
+                    }
                 }
                 "struct_specifier" => {
                     if let Some(def) = extract_struct_def(&child, source) {
@@ -95,9 +94,7 @@ fn is_static(node: &tree_sitter::Node, source: &str) -> bool {
             if kind == "storage_class_specifier" {
                 return node_text(&child, source) == "static";
             }
-            if kind == "identifier"
-                || kind == "pointer_declarator"
-                || kind == "function_declarator"
+            if kind == "identifier" || kind == "pointer_declarator" || kind == "function_declarator"
             {
                 break;
             }
@@ -113,7 +110,9 @@ fn extract_function_sig(node: &tree_sitter::Node, source: &str) -> Option<String
 
     // Get the full declaration (up to the body)
     if let Some(body) = node.child_by_field_name("body") {
-        let sig = source[node.start_byte()..body.start_byte()].trim().to_string();
+        let sig = source[node.start_byte()..body.start_byte()]
+            .trim()
+            .to_string();
         return Some(sig);
     }
 
@@ -165,9 +164,10 @@ fn collect_enum_variants(body: &tree_sitter::Node, source: &str) -> Vec<String> 
     for i in 0..body.named_child_count() {
         let child = body.named_child(i as u32).unwrap();
         if child.kind() == "enumerator"
-            && let Some(name) = child_text_by_field(&child, source, "name") {
-                variants.push(name);
-            }
+            && let Some(name) = child_text_by_field(&child, source, "name")
+        {
+            variants.push(name);
+        }
     }
     variants
 }

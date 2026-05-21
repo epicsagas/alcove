@@ -30,9 +30,7 @@ impl LanguageParser for GoParser {
         module_path: &str,
         parser: &mut Parser,
     ) -> Option<ModuleInfo> {
-        parser
-            .set_language(&tree_sitter_go::LANGUAGE.into())
-            .ok()?;
+        parser.set_language(&tree_sitter_go::LANGUAGE.into()).ok()?;
         let tree = parser.parse(source, None)?;
         let root = tree.root_node();
 
@@ -129,11 +127,7 @@ fn extract_method_sig(node: &tree_sitter::Node, source: &str) -> Option<String> 
     Some(sig)
 }
 
-fn extract_type_decl(
-    node: &tree_sitter::Node,
-    source: &str,
-    types: &mut Vec<String>,
-) {
+fn extract_type_decl(node: &tree_sitter::Node, source: &str, types: &mut Vec<String>) {
     for i in 0..node.named_child_count() {
         let child = node.named_child(i as u32).unwrap();
 
@@ -151,7 +145,8 @@ fn extract_type_decl(
                                 if fields.is_empty() {
                                     types.push(format!("struct {name} {{}}"));
                                 } else {
-                                    types.push(format!("struct {name} {{ {} }}", fields.join(", ")));
+                                    types
+                                        .push(format!("struct {name} {{ {} }}", fields.join(", ")));
                                 }
                             }
                             "interface_type" => {
@@ -159,7 +154,10 @@ fn extract_type_decl(
                                 if methods.is_empty() {
                                     types.push(format!("interface {name} {{}}"));
                                 } else {
-                                    types.push(format!("interface {name} {{ {} }}", methods.join(", ")));
+                                    types.push(format!(
+                                        "interface {name} {{ {} }}",
+                                        methods.join(", ")
+                                    ));
                                 }
                             }
                             _ => {
@@ -171,9 +169,10 @@ fn extract_type_decl(
             }
             "type_alias" => {
                 if let Some(name) = child_text_by_field(&child, source, "name")
-                    && is_exported(&name) {
-                        types.push(format!("type {name} = ..."));
-                    }
+                    && is_exported(&name)
+                {
+                    types.push(format!("type {name} = ..."));
+                }
             }
             _ => {}
         }
@@ -188,12 +187,13 @@ fn collect_struct_fields(node: &tree_sitter::Node, source: &str) -> Vec<String> 
             for j in 0..child.named_child_count() {
                 let field = child.named_child(j as u32).unwrap();
                 if field.kind() == "field_declaration"
-                    && let Some(names) = field.child_by_field_name("name") {
-                        let name_str = node_text(&names, source);
-                        if let Some(ftype) = field.child_by_field_name("type") {
-                            fields.push(format!("{name_str}: {}", node_text(&ftype, source)));
-                        }
+                    && let Some(names) = field.child_by_field_name("name")
+                {
+                    let name_str = node_text(&names, source);
+                    if let Some(ftype) = field.child_by_field_name("type") {
+                        fields.push(format!("{name_str}: {}", node_text(&ftype, source)));
                     }
+                }
             }
         }
     }
@@ -205,9 +205,10 @@ fn collect_interface_methods(node: &tree_sitter::Node, source: &str) -> Vec<Stri
     for i in 0..node.named_child_count() {
         let child = node.named_child(i as u32).unwrap();
         if child.kind() == "method_elem"
-            && let Some(name) = child_text_by_field(&child, source, "name") {
-                methods.push(format!("{name}()"));
-            }
+            && let Some(name) = child_text_by_field(&child, source, "name")
+        {
+            methods.push(format!("{name}()"));
+        }
     }
     methods
 }

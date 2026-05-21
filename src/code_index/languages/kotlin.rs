@@ -262,10 +262,18 @@ private fun hiddenFunction() {}
 "#;
         let info = parse(source, "test").unwrap();
         assert!(info.types.iter().any(|t| t.contains("class SearchService")));
-        assert!(info.types.iter().any(|t| t.contains("interface Repository")));
+        assert!(
+            info.types
+                .iter()
+                .any(|t| t.contains("interface Repository"))
+        );
         assert!(info.types.iter().any(|t| t.contains("object Config")));
         assert!(info.types.iter().any(|t| t.contains("enum class Status")));
-        assert!(info.functions.iter().any(|f| f.contains("topLevelFunction")));
+        assert!(
+            info.functions
+                .iter()
+                .any(|f| f.contains("topLevelFunction"))
+        );
         assert!(info.functions.iter().any(|f| f.contains("search")));
         assert!(!info.functions.iter().any(|f| f.contains("internalHelper")));
         assert!(!info.functions.iter().any(|f| f.contains("hiddenFunction")));

@@ -64,13 +64,20 @@ impl LanguageRegistry {
 fn is_alias(lang: &str, query: &str) -> bool {
     matches!(
         (lang, query),
-        ("c++", "cpp") | ("cpp", "c++")
-            | ("c#", "csharp") | ("csharp", "c#")
-            | ("typescript", "ts") | ("ts", "typescript")
-            | ("javascript", "js") | ("js", "javascript")
-            | ("python", "py") | ("py", "python")
-            | ("kotlin", "kt") | ("kt", "kotlin")
-            | ("ruby", "rb") | ("rb", "ruby")
+        ("c++", "cpp")
+            | ("cpp", "c++")
+            | ("c#", "csharp")
+            | ("csharp", "c#")
+            | ("typescript", "ts")
+            | ("ts", "typescript")
+            | ("javascript", "js")
+            | ("js", "javascript")
+            | ("python", "py")
+            | ("py", "python")
+            | ("kotlin", "kt")
+            | ("kt", "kotlin")
+            | ("ruby", "rb")
+            | ("rb", "ruby")
     )
 }
 

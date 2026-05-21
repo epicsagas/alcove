@@ -201,11 +201,7 @@ fn compact_trait(node: &Node, source: &str) -> String {
         .children_by_field_name("bounds", &mut node.walk())
         .filter_map(|n| {
             let text = node_text(&n, source);
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
-            }
+            if text.is_empty() { None } else { Some(text) }
         })
         .collect::<Vec<_>>()
         .join(": ");

@@ -138,7 +138,10 @@ pub fn generate_markdown_with_lang(
 
     let count = modules.len();
     let module_list: Vec<ModuleInfo> = modules.into_values().collect();
-    Ok((markdown::generate_code_index(&module_list, source_path), count))
+    Ok((
+        markdown::generate_code_index(&module_list, source_path),
+        count,
+    ))
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

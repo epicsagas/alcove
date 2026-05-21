@@ -24,10 +24,7 @@ impl LanguageParser for JavascriptParser {
         let rel = file.strip_prefix(base).unwrap_or(file);
         let s = rel.to_string_lossy();
 
-        if s.ends_with("/index.js")
-            || s.ends_with("/index.jsx")
-            || s.ends_with("/index.mjs")
-        {
+        if s.ends_with("/index.js") || s.ends_with("/index.jsx") || s.ends_with("/index.mjs") {
             let parent = rel.parent().unwrap_or(Path::new(""));
             return parent.to_string_lossy().to_string();
         }
@@ -120,13 +117,16 @@ fn extract_single_decl(
             for j in 0..node.named_child_count() {
                 let vc = node.named_child(j as u32).unwrap();
                 if vc.kind() == "variable_declarator"
-                    && let Some(name) = vc.child_by_field_name("name") {
-                        let name_str = node_text(&name, source);
-                        if let Some(value) = vc.child_by_field_name("value")
-                            && (value.kind() == "arrow_function" || value.kind() == "function_expression") {
-                                functions.push(format!("{name_str}()"));
-                            }
+                    && let Some(name) = vc.child_by_field_name("name")
+                {
+                    let name_str = node_text(&name, source);
+                    if let Some(value) = vc.child_by_field_name("value")
+                        && (value.kind() == "arrow_function"
+                            || value.kind() == "function_expression")
+                    {
+                        functions.push(format!("{name_str}()"));
                     }
+                }
             }
         }
         _ => {}
@@ -169,9 +169,10 @@ fn collect_class_methods(body: &tree_sitter::Node, source: &str) -> Vec<String> 
     for i in 0..body.named_child_count() {
         let child = body.named_child(i as u32).unwrap();
         if child.kind() == "method_definition"
-            && let Some(name) = child.child_by_field_name("name") {
-                methods.push(format!("{}()", node_text(&name, source)));
-            }
+            && let Some(name) = child.child_by_field_name("name")
+        {
+            methods.push(format!("{}()", node_text(&name, source)));
+        }
     }
     methods
 }
@@ -193,7 +194,8 @@ mod tests {
             "server"
         );
         assert_eq!(
-            JavascriptParser.module_path_for_file(base, Path::new("/project/src/components/index.jsx")),
+            JavascriptParser
+                .module_path_for_file(base, Path::new("/project/src/components/index.jsx")),
             "components"
         );
     }
@@ -233,6 +235,9 @@ export class SearchEngine extends BaseEngine {
     #[test]
     fn test_language_name() {
         assert_eq!(JavascriptParser.language_name(), "JavaScript");
-        assert_eq!(JavascriptParser.file_extensions(), &["js", "jsx", "mjs", "cjs"]);
+        assert_eq!(
+            JavascriptParser.file_extensions(),
+            &["js", "jsx", "mjs", "cjs"]
+        );
     }
 }

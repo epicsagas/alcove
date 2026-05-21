@@ -77,27 +77,31 @@ fn extract_from_node(
             }
             "interface_declaration" => {
                 if is_public(&child, source)
-                    && let Some(name) = child_text_by_field(&child, source, "name") {
-                        types.push(format!("interface {name} {{ ... }}"));
-                    }
+                    && let Some(name) = child_text_by_field(&child, source, "name")
+                {
+                    types.push(format!("interface {name} {{ ... }}"));
+                }
             }
             "struct_declaration" => {
                 if is_public(&child, source)
-                    && let Some(name) = child_text_by_field(&child, source, "name") {
-                        types.push(format!("struct {name}"));
-                    }
+                    && let Some(name) = child_text_by_field(&child, source, "name")
+                {
+                    types.push(format!("struct {name}"));
+                }
             }
             "enum_declaration" => {
                 if is_public(&child, source)
-                    && let Some(def) = extract_enum_def(&child, source) {
-                        types.push(def);
-                    }
+                    && let Some(def) = extract_enum_def(&child, source)
+                {
+                    types.push(def);
+                }
             }
             "record_declaration" => {
                 if is_public(&child, source)
-                    && let Some(name) = child_text_by_field(&child, source, "name") {
-                        types.push(format!("record {name}"));
-                    }
+                    && let Some(name) = child_text_by_field(&child, source, "name")
+                {
+                    types.push(format!("record {name}"));
+                }
             }
             "namespace_declaration" => {
                 // Recurse into namespace
@@ -108,20 +112,22 @@ fn extract_from_node(
             }
             "method_declaration" => {
                 if is_public(&child, source)
-                    && let Some(sig) = extract_method_sig(&child, source) {
-                        functions.push(sig);
-                    }
+                    && let Some(sig) = extract_method_sig(&child, source)
+                {
+                    functions.push(sig);
+                }
             }
             "constructor_declaration" => {
                 if is_public(&child, source)
-                    && let Some(name) = child_text_by_field(&child, source, "name") {
-                        let mut sig = format!("{name}(");
-                        if let Some(params) = child.child_by_field_name("parameters") {
-                            sig.push_str(&node_text(&params, source));
-                        }
-                        sig.push(')');
-                        functions.push(sig);
+                    && let Some(name) = child_text_by_field(&child, source, "name")
+                {
+                    let mut sig = format!("{name}(");
+                    if let Some(params) = child.child_by_field_name("parameters") {
+                        sig.push_str(&node_text(&params, source));
                     }
+                    sig.push(')');
+                    functions.push(sig);
+                }
             }
             _ => {
                 // Recurse for nested declarations
@@ -134,21 +140,18 @@ fn extract_from_node(
 fn is_public(node: &tree_sitter::Node, source: &str) -> bool {
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i as u32)
-            && child.kind() == "modifier" {
-                let text = node_text(&child, source);
-                if text == "public" {
-                    return true;
-                }
+            && child.kind() == "modifier"
+        {
+            let text = node_text(&child, source);
+            if text == "public" {
+                return true;
             }
+        }
     }
     false
 }
 
-fn extract_class_def(
-    node: &tree_sitter::Node,
-    source: &str,
-    keyword: &str,
-) -> Option<String> {
+fn extract_class_def(node: &tree_sitter::Node, source: &str, keyword: &str) -> Option<String> {
     let name = child_text_by_field(node, source, "name")?;
     let mut sig = format!("{keyword} {name}");
 
@@ -183,9 +186,10 @@ fn collect_enum_variants(body: &tree_sitter::Node, source: &str) -> Vec<String> 
     for i in 0..body.named_child_count() {
         let child = body.named_child(i as u32).unwrap();
         if child.kind() == "enum_member_declaration"
-            && let Some(name) = child_text_by_field(&child, source, "name") {
-                variants.push(name);
-            }
+            && let Some(name) = child_text_by_field(&child, source, "name")
+        {
+            variants.push(name);
+        }
     }
     variants
 }
@@ -222,20 +226,22 @@ fn extract_class_members(
             match child.kind() {
                 "method_declaration" => {
                     if is_public(&child, source)
-                        && let Some(sig) = extract_method_sig(&child, source) {
-                            functions.push(sig);
-                        }
+                        && let Some(sig) = extract_method_sig(&child, source)
+                    {
+                        functions.push(sig);
+                    }
                 }
                 "constructor_declaration" => {
                     if is_public(&child, source)
-                        && let Some(name) = child_text_by_field(&child, source, "name") {
-                            let mut sig = format!("{name}(");
-                            if let Some(params) = child.child_by_field_name("parameters") {
-                                sig.push_str(&node_text(&params, source));
-                            }
-                            sig.push(')');
-                            functions.push(sig);
+                        && let Some(name) = child_text_by_field(&child, source, "name")
+                    {
+                        let mut sig = format!("{name}(");
+                        if let Some(params) = child.child_by_field_name("parameters") {
+                            sig.push_str(&node_text(&params, source));
                         }
+                        sig.push(')');
+                        functions.push(sig);
+                    }
                 }
                 _ => {}
             }
@@ -256,7 +262,8 @@ mod tests {
     fn test_module_path() {
         let base = Path::new("/project/Services");
         assert_eq!(
-            CSharpParser.module_path_for_file(base, Path::new("/project/Services/SearchService.cs")),
+            CSharpParser
+                .module_path_for_file(base, Path::new("/project/Services/SearchService.cs")),
             "SearchService"
         );
     }
@@ -304,7 +311,11 @@ namespace MyApp.Services
 "#;
         let info = parse(source, "test").unwrap();
         assert!(info.types.iter().any(|t| t.contains("class SearchService")));
-        assert!(info.types.iter().any(|t| t.contains("interface ISearchService")));
+        assert!(
+            info.types
+                .iter()
+                .any(|t| t.contains("interface ISearchService"))
+        );
         assert!(info.types.iter().any(|t| t.contains("enum Status")));
         assert!(!info.types.iter().any(|t| t.contains("PackagePrivateClass")));
         assert!(info.functions.iter().any(|f| f.contains("Search")));
