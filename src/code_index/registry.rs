@@ -37,7 +37,10 @@ impl LanguageRegistry {
         let lower = name.to_lowercase();
         self.parsers
             .iter()
-            .find(|p| p.language_name().to_lowercase() == lower)
+            .find(|p| {
+                let lang = p.language_name().to_lowercase();
+                lang == lower || is_alias(&lang, &lower)
+            })
             .map(|p| p.as_ref())
     }
 
@@ -55,6 +58,20 @@ impl LanguageRegistry {
     pub fn language_names(&self) -> Vec<&str> {
         self.parsers.iter().map(|p| p.language_name()).collect()
     }
+}
+
+/// Check common aliases: cpp↔c++, csharp↔c#, typescript↔ts, javascript↔js, etc.
+fn is_alias(lang: &str, query: &str) -> bool {
+    matches!(
+        (lang, query),
+        ("c++", "cpp") | ("cpp", "c++")
+            | ("c#", "csharp") | ("csharp", "c#")
+            | ("typescript", "ts") | ("ts", "typescript")
+            | ("javascript", "js") | ("js", "javascript")
+            | ("python", "py") | ("py", "python")
+            | ("kotlin", "kt") | ("kt", "kotlin")
+            | ("ruby", "rb") | ("rb", "ruby")
+    )
 }
 
 impl Default for LanguageRegistry {
