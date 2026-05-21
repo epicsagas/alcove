@@ -85,6 +85,24 @@ pub fn default_registry() -> LanguageRegistry {
     #[cfg(feature = "lang-java")]
     reg.register(crate::code_index::languages::JavaParser);
 
+    #[cfg(feature = "lang-kotlin")]
+    reg.register(crate::code_index::languages::KotlinParser);
+
+    #[cfg(feature = "lang-c")]
+    reg.register(crate::code_index::languages::CParser);
+
+    #[cfg(feature = "lang-cpp")]
+    reg.register(crate::code_index::languages::CppParser);
+
+    #[cfg(feature = "lang-swift")]
+    reg.register(crate::code_index::languages::SwiftParser);
+
+    #[cfg(feature = "lang-ruby")]
+    reg.register(crate::code_index::languages::RubyParser);
+
+    #[cfg(feature = "lang-csharp")]
+    reg.register(crate::code_index::languages::CSharpParser);
+
     reg
 }
 

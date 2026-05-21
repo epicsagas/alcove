@@ -103,3 +103,33 @@ pub use go::GoParser;
 mod java;
 #[cfg(feature = "lang-java")]
 pub use java::JavaParser;
+
+#[cfg(feature = "lang-kotlin")]
+mod kotlin;
+#[cfg(feature = "lang-kotlin")]
+pub use kotlin::KotlinParser;
+
+#[cfg(feature = "lang-c")]
+mod c;
+#[cfg(feature = "lang-c")]
+pub use c::CParser;
+
+#[cfg(feature = "lang-cpp")]
+mod cpp;
+#[cfg(feature = "lang-cpp")]
+pub use cpp::CppParser;
+
+#[cfg(feature = "lang-swift")]
+mod swift;
+#[cfg(feature = "lang-swift")]
+pub use swift::SwiftParser;
+
+#[cfg(feature = "lang-ruby")]
+mod ruby;
+#[cfg(feature = "lang-ruby")]
+pub use ruby::RubyParser;
+
+#[cfg(feature = "lang-csharp")]
+mod csharp;
+#[cfg(feature = "lang-csharp")]
+pub use csharp::CSharpParser;

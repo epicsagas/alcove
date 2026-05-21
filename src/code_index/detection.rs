@@ -57,9 +57,20 @@ fn detect_by_config_file(source_path: &Path, registry: &LanguageRegistry) -> Opt
                 return Some("C#".to_string());
             }
             if name_str == "CMakeLists.txt"
-                && registry.parser_for_name("C++").is_some()
+                && (registry.parser_for_name("C++").is_some()
+                    || registry.parser_for_name("C").is_some())
             {
-                return Some("C++".to_string());
+                // CMakeLists.txt could be C or C++ — prefer C++ if available
+                if registry.parser_for_name("C++").is_some() {
+                    return Some("C++".to_string());
+                }
+                return Some("C".to_string());
+            }
+            if name_str == "Makefile"
+                && registry.parser_for_name("C").is_some()
+                && registry.parser_for_name("C++").is_none()
+            {
+                return Some("C".to_string());
             }
         }
     }
