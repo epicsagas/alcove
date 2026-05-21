@@ -38,7 +38,7 @@ Alcove is an MCP server that gives AI coding agents on-demand access to your pri
 ## Demo
 
 ![Alcove agent demo](demo-agent.gif)
-> *Claude, Gemini, Codex — search · switch projects · global search · validate & generate. One setup.*
+> *Claude, Codex, Antigravity — search · switch projects · global search · validate & generate. One setup.*
 
 <details>
 <summary>CLI demo</summary>
@@ -282,7 +282,7 @@ flowchart LR
     end
 
     subgraph Agents["Any MCP agent"]
-        AG["Claude Code · Cursor\nGemini CLI · Codex · Copilot\n+4 more"]
+        AG["Claude Code · Cursor\nAntigravity · Codex · Copilot\n+4 more"]
     end
 
     subgraph MCP["Alcove MCP server"]
@@ -637,8 +637,7 @@ files = ["README.md", "CHANGELOG.md", "PRD.md"]  # PRD exposed as public for thi
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/antigravity/mcp_config.json` | — |
-| Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/skills/alcove/` |
+| Antigravity | `~/.gemini/config/mcp_config.json` | — |
 
 Agents with skill support activate Alcove automatically when you ask about project architecture, conventions, decisions, or status. They can also be invoked explicitly:
 

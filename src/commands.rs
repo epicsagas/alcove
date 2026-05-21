@@ -663,7 +663,6 @@ pub fn cmd_uninstall() -> Result<()> {
         "~/.opencode/skills/alcove",
         "~/.codex/skills/alcove",
         "~/.copilot/skills/alcove",
-        "~/.gemini/skills/alcove",
     ];
     for d in &skill_dirs {
         let p = expand_path(d);
@@ -714,8 +713,7 @@ pub fn cmd_uninstall() -> Result<()> {
     println!("    OpenCode:       ~/.config/opencode/opencode.json");
     println!("    Codex:          ~/.codex/config.toml");
     println!("    Copilot CLI:    ~/.copilot/mcp-config.json");
-    println!("    Antigravity:    ~/.gemini/antigravity/mcp_config.json");
-    println!("    Gemini CLI:     ~/.gemini/settings.json");
+    println!("    Antigravity:    ~/.gemini/config/mcp_config.json");
     println!();
 
     Ok(())

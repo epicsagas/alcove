@@ -49,7 +49,7 @@ Multipliziere das mit 5 Projekten und 3 Agenten. Jedes Mal wenn du wechselst, ve
 
 ## Wie Alcove das löst
 
-Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository**, organisiert nach Projekt. Jeder MCP-kompatible Agent greift auf dieselbe Weise darauf zu — egal ob du Claude Code, Cursor, Gemini CLI oder Codex verwendest.
+Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository**, organisiert nach Projekt. Jeder MCP-kompatible Agent greift auf dieselbe Weise darauf zu — egal ob du Claude Code, Cursor, Antigravity oder Codex verwendest.
 
 ```
 ~/projects/my-app $ claude "Wie ist die Authentifizierung implementiert?"
@@ -83,7 +83,7 @@ Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository
 - **Dokumentvalidierung** — prüft auf fehlende Dateien, unausgefüllte Templates, erforderliche Abschnitte
 - **Semantisches Lint** — erkennt automatisch defekte Wikilinks, verwaiste Dateien, veraltete WIP/DRAFT-Markierungen und Datumsangaben älter als 2 Jahre
 - **Import aus externen Vaults** — bringt eine Notiz aus Obsidian (oder einem anderen Vault) mit einem Befehl ins doc-repo; automatisches Routing zum richtigen Projekt
-- **Funktioniert mit 9+ Agenten** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Gemini CLI
+- **Funktioniert mit 9+ Agenten** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity, Antigravity
 
 ## Warum Alcove
 
@@ -241,7 +241,7 @@ flowchart LR
     end
 
     subgraph Agents["Jeder MCP-Agent"]
-        AG["Claude Code · Cursor\nGemini CLI · Codex · Copilot\n+4 more"]
+        AG["Claude Code · Cursor\nAntigravity · Codex · Copilot\n+4 more"]
     end
 
     subgraph MCP["Alcove MCP-Server"]
@@ -484,8 +484,7 @@ Alles wird interaktiv über `alcove setup` eingestellt. Du kannst die Datei auch
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/antigravity/mcp_config.json` | — |
-| Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/skills/alcove/` |
+| Antigravity | `~/.gemini/config/mcp_config.json` | — |
 
 ## Unterstützte Sprachen
 

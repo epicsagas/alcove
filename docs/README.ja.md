@@ -49,7 +49,7 @@ AIエージェントは毎回ゼロからセッションを開始します。
 
 ## Alcoveの解決方法
 
-Alcoveはすべてのプライベートドキュメントを**一つの共有リポジトリ**に、プロジェクトごとに整理して保管します。MCP互換のエージェントであれば、Claude Code、Cursor、Gemini CLI、Codexのいずれでも同じ方法でアクセスできます。
+Alcoveはすべてのプライベートドキュメントを**一つの共有リポジトリ**に、プロジェクトごとに整理して保管します。MCP互換のエージェントであれば、Claude Code、Cursor、Antigravity、Codexのいずれでも同じ方法でアクセスできます。
 
 ```
 ~/projects/my-app $ claude "認証はどう実装されている？"
@@ -83,7 +83,7 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 - **ドキュメント検証** — 不足ファイル、未記入テンプレート、必須セクションをチェック
 - **セマンティックLint** — 壊れたウィキリンク、孤立ファイル、古いWIP/DRAFTマーカー、2年以上前の日付表現を自動検出
 - **外部ボルトへの取り込み** — Obsidianなど外部ツールのノートをdoc-repoにワンコマンドで追加；ファイル名・内容に基づくプロジェクト自動ルーティング
-- **9つ以上のエージェントに対応** — Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity、Gemini CLI
+- **9つ以上のエージェントに対応** — Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity、Antigravity
 
 ## なぜAlcoveなのか
 
@@ -241,7 +241,7 @@ flowchart LR
     end
 
     subgraph Agents["任意のMCPエージェント"]
-        AG["Claude Code · Cursor\nGemini CLI · Codex · Copilot\n+4 more"]
+        AG["Claude Code · Cursor\nAntigravity · Codex · Copilot\n+4 more"]
     end
 
     subgraph MCP["Alcove MCPサーバー"]
@@ -488,8 +488,7 @@ format = "mermaid"
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/antigravity/mcp_config.json` | — |
-| Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/skills/alcove/` |
+| Antigravity | `~/.gemini/config/mcp_config.json` | — |
 
 ## 対応言語
 

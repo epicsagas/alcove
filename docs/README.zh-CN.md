@@ -49,7 +49,7 @@ Alcove 让任何 AI 编码代理都能读取和管理您的私有项目文档—
 
 ## Alcove 如何解决这个问题
 
-Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织。任何兼容 MCP 的代理都以相同方式访问它们——无论您使用的是 Claude Code、Cursor、Gemini CLI 还是 Codex。
+Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织。任何兼容 MCP 的代理都以相同方式访问它们——无论您使用的是 Claude Code、Cursor、Antigravity 还是 Codex。
 
 ```
 ~/projects/my-app $ claude "认证是如何实现的？"
@@ -83,7 +83,7 @@ Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织
 - **文档验证** —— 检查缺失文件、未填充模板、必需章节
 - **语义检查** —— 自动检测失效的 Wiki 链接、孤立文件、过期 WIP/DRAFT 标记及 2 年以上的日期表述
 - **外部仓库引入** —— 一条命令将 Obsidian 等工具的笔记带入 doc-repo；根据文件名和内容自动路由到对应项目
-- **支持 9+ 个代理** —— Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity、Gemini CLI
+- **支持 9+ 个代理** —— Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity、Antigravity
 
 ## 为什么选择 Alcove
 
@@ -241,7 +241,7 @@ flowchart LR
     end
 
     subgraph Agents["任意 MCP 代理"]
-        AG["Claude Code · Cursor\nGemini CLI · Codex · Copilot\n+4 more"]
+        AG["Claude Code · Cursor\nAntigravity · Codex · Copilot\n+4 more"]
     end
 
     subgraph MCP["Alcove MCP 服务器"]
@@ -488,8 +488,7 @@ format = "mermaid"
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/antigravity/mcp_config.json` | — |
-| Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/skills/alcove/` |
+| Antigravity | `~/.gemini/config/mcp_config.json` | — |
 
 ## 支持的语言
 

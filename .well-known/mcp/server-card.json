@@ -1,6 +1,6 @@
 {
   "name": "Alcove",
-  "description": "MCP server that gives AI coding agents on-demand access to private project docs via BM25 ranked search. One setup for Claude Code, Cursor, Codex, Gemini CLI, Copilot, Cline, and more. Docs stay private, never in public repos.",
+  "description": "MCP server that gives AI coding agents on-demand access to private project docs via BM25 ranked search. One setup for Claude Code, Cursor, Codex, Antigravity, Copilot, Cline, and more. Docs stay private, never in public repos.",
   "icon": "https://raw.githubusercontent.com/epicsagas/alcove/main/alcove.png",
   "tools": [
     {
