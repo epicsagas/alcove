@@ -298,7 +298,7 @@ alcove promote      Импорт заметок из внешнего храни
 alcove index        Обновить поисковый индекс (инкрементально — только изменённые файлы)
 alcove rebuild      Перестроить поисковый индекс с нуля (использовать после изменений схемы)
 alcove search       Искать документы из терминала
-alcove index-code   Генерирует индекс структуры кода из исходников
+alcove index-code   Генерирует индекс структуры кода из исходников [--language LANG] [--source PATH]
 alcove token        Вывести bearer-токен (для аутентификации фонового сервера)
 alcove uninstall    Удалить навыки, конфигурацию и устаревшие файлы
 
@@ -308,6 +308,43 @@ alcove vault link     Связать внешний каталог как vault 
 alcove vault list     Список всех vault с количеством документов
 alcove vault index    Создать поисковый индекс для vault
 ```
+
+### Индексация кода
+
+Анализирует исходные файлы с помощью tree-sitter и генерирует `CODE_INDEX.md`—сводку кодовой базы на уровне модулей в формате Markdown, интегрированную с поисковым конвейером Tantivy.
+
+```bash
+# Индексировать текущий проект (автоматическое определение всех языков)
+alcove index-code --source ./src
+
+# Монорепо: индексировать директорию с несколькими языками
+alcove index-code --source ./
+
+# Ограничить одним языком
+alcove index-code --source ./src --language typescript
+alcove index-code --source ./src --language rust
+```
+
+**Поддерживаемые языки:**
+
+| Язык | Feature-флаг | Расширения файлов |
+|------|-------------|------------------|
+| Rust | `lang-rust` | `.rs` |
+| Python | `lang-python` | `.py`, `.pyi` |
+| TypeScript | `lang-typescript` | `.ts`, `.tsx` |
+| JavaScript | `lang-javascript` | `.js`, `.jsx`, `.mjs` |
+| Go | `lang-go` | `.go` |
+| Java | `lang-java` | `.java` |
+| Kotlin | `lang-kotlin` | `.kt`, `.kts` |
+| C | `lang-c` | `.c`, `.h` |
+| C++ | `lang-cpp` | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.h` |
+| Swift | `lang-swift` | `.swift` |
+| Ruby | `lang-ruby` | `.rb` |
+| C# | `lang-csharp` | `.cs` |
+
+Официальные бинарные файлы активируют все 12 парсеров (`lang-all`). Без `--language` **автоматически индексируются все распознанные расширения**—безопасно для монорепо.
+
+`--language` принимает сокращения: `ts` → TypeScript, `cpp` → C++, `csharp` → C#, `py` → Python, `js` → JavaScript, `kt` → Kotlin, `rb` → Ruby.
 
 ### Lint (Линтинг)
 

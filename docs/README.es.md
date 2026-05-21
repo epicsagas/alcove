@@ -298,7 +298,7 @@ alcove promote      Importar notas de un vault externo al doc-repo
 alcove index        Actualizar el índice de búsqueda (incremental — solo archivos modificados)
 alcove rebuild      Reconstruir el índice de búsqueda desde cero (usar tras cambios de esquema)
 alcove search       Buscar documentos desde la terminal
-alcove index-code   Genera índice de estructura de código desde el fuente
+alcove index-code   Genera índice de estructura de código desde el fuente [--language LANG] [--source PATH]
 alcove token        Imprimir el token de portador (para autenticación del servidor en segundo plano)
 alcove uninstall    Eliminar habilidades, configuración y archivos heredados
 
@@ -312,6 +312,43 @@ alcove vault add      Añadir un documento a un vault
 alcove vault index    Construir el índice de búsqueda para vaults
 alcove vault rebuild  Reconstruir el índice de búsqueda de vaults desde cero
 ```
+
+### Indexación de código
+
+Analiza archivos fuente con tree-sitter y genera `CODE_INDEX.md`—un resumen Markdown a nivel de módulo de tu código base que se integra con el pipeline de búsqueda Tantivy.
+
+```bash
+# Indexar el proyecto actual (detecta todos los lenguajes automáticamente)
+alcove index-code --source ./src
+
+# Monorepo: indexar un directorio con múltiples lenguajes a la vez
+alcove index-code --source ./
+
+# Restringir a un solo lenguaje
+alcove index-code --source ./src --language typescript
+alcove index-code --source ./src --language rust
+```
+
+**Lenguajes soportados:**
+
+| Lenguaje | Feature flag | Extensiones |
+|----------|-------------|-------------|
+| Rust | `lang-rust` | `.rs` |
+| Python | `lang-python` | `.py`, `.pyi` |
+| TypeScript | `lang-typescript` | `.ts`, `.tsx` |
+| JavaScript | `lang-javascript` | `.js`, `.jsx`, `.mjs` |
+| Go | `lang-go` | `.go` |
+| Java | `lang-java` | `.java` |
+| Kotlin | `lang-kotlin` | `.kt`, `.kts` |
+| C | `lang-c` | `.c`, `.h` |
+| C++ | `lang-cpp` | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.h` |
+| Swift | `lang-swift` | `.swift` |
+| Ruby | `lang-ruby` | `.rb` |
+| C# | `lang-csharp` | `.cs` |
+
+Los binarios oficiales habilitan los 12 parsers (`lang-all`). Sin `--language`, **se indexan automáticamente todas las extensiones reconocidas**—seguro para monorepos.
+
+`--language` acepta abreviaturas: `ts` → TypeScript, `cpp` → C++, `csharp` → C#, `py` → Python, `js` → JavaScript, `kt` → Kotlin, `rb` → Ruby.
 
 ### Lint
 

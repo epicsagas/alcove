@@ -298,7 +298,7 @@ alcove promote      Notizen aus einem externen Vault ins doc-repo importieren
 alcove index        Suchindex inkrementell aktualisieren (nur geänderte Dateien)
 alcove rebuild      Suchindex von Grund auf neu aufbauen (nach Schema-Änderungen)
 alcove search       Dokumente vom Terminal aus suchen
-alcove index-code   Code-Struktur-Index aus Quellcode generieren
+alcove index-code   Code-Struktur-Index aus Quellcode generieren [--language LANG] [--source PATH]
 alcove token        Bearer-Token ausgeben (für Hintergrund-Server-Authentifizierung)
 alcove uninstall    Skills, Konfiguration und Legacy-Dateien entfernen
 
@@ -308,6 +308,43 @@ alcove vault link     Externes Verzeichnis als Vault verknüpfen (z. B. Obsidian
 alcove vault list     Alle Vaults mit Dokumentanzahl auflisten
 alcove vault index    Suchindex für Vaults aufbauen
 ```
+
+### Code-Indexierung
+
+Analysiert Quelldateien mit tree-sitter und generiert `CODE_INDEX.md`—eine modulebene Markdown-Zusammenfassung Ihrer Codebasis, die in die Tantivy-Suchpipeline integriert ist.
+
+```bash
+# Aktuelles Projekt indexieren (alle Sprachen automatisch erkennen)
+alcove index-code --source ./src
+
+# Monorepo: Verzeichnis mit mehreren Sprachen auf einmal indexieren
+alcove index-code --source ./
+
+# Auf eine einzelne Sprache beschränken
+alcove index-code --source ./src --language typescript
+alcove index-code --source ./src --language rust
+```
+
+**Unterstützte Sprachen:**
+
+| Sprache | Feature-Flag | Dateierweiterungen |
+|---------|-------------|-------------------|
+| Rust | `lang-rust` | `.rs` |
+| Python | `lang-python` | `.py`, `.pyi` |
+| TypeScript | `lang-typescript` | `.ts`, `.tsx` |
+| JavaScript | `lang-javascript` | `.js`, `.jsx`, `.mjs` |
+| Go | `lang-go` | `.go` |
+| Java | `lang-java` | `.java` |
+| Kotlin | `lang-kotlin` | `.kt`, `.kts` |
+| C | `lang-c` | `.c`, `.h` |
+| C++ | `lang-cpp` | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.h` |
+| Swift | `lang-swift` | `.swift` |
+| Ruby | `lang-ruby` | `.rb` |
+| C# | `lang-csharp` | `.cs` |
+
+Offizielle Binärdateien aktivieren alle 12 Parser (`lang-all`). Ohne `--language` werden **alle erkannten Erweiterungen automatisch indexiert**—sicher für Monorepos.
+
+`--language` akzeptiert Abkürzungen: `ts` → TypeScript, `cpp` → C++, `csharp` → C#, `py` → Python, `js` → JavaScript, `kt` → Kotlin, `rb` → Ruby.
 
 ### Lint
 

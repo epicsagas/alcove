@@ -315,7 +315,7 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 | `search_vault` | Search knowledge base vaults — separate from project docs, for research and reference |
 | `list_vaults` | List all knowledge base vaults with document counts |
 | `configure_project` | Create or update per-project settings (core docs, team docs, public docs, diagram format) |
-| `index_code_structure` | Parse source code with tree-sitter and generate `CODE_INDEX.md` per project |
+| `index_code_structure` | Parse source code with tree-sitter and generate `CODE_INDEX.md` per project. Supports 12 languages (see [Code Indexing](#code-indexing) below) |
 
 ## CLI
 
@@ -329,7 +329,7 @@ alcove promote      Bring a file from an external vault into your doc-repo
 alcove index        Update the search index (incremental — only changed files)
 alcove rebuild      Rebuild the search index from scratch (use after schema changes)
 alcove search       Search docs from the terminal
-alcove index-code   Generate code structure index from source
+alcove index-code   Generate code structure index from source [--language LANG] [--source PATH]
 alcove token        Print the bearer token (for background server auth)
 alcove uninstall    Remove skills, config, and legacy files
 
@@ -343,6 +343,43 @@ alcove vault add      Add a document to a vault
 alcove vault index    Build search index for vaults
 alcove vault rebuild  Rebuild vault search index from scratch
 ```
+
+### Code Indexing
+
+Parse source files with tree-sitter and generate `CODE_INDEX.md` — a module-level markdown summary of your codebase that integrates with the Tantivy search pipeline.
+
+```bash
+# Index the current project's source (auto-detects all languages)
+alcove index-code --source ./src
+
+# Monorepo: index a directory with multiple languages at once
+alcove index-code --source ./
+
+# Restrict to a single language (useful when only one language should be indexed)
+alcove index-code --source ./src --language typescript
+alcove index-code --source ./src --language rust
+```
+
+**Supported languages:**
+
+| Language | Feature flag | File extensions |
+|----------|-------------|----------------|
+| Rust | `lang-rust` | `.rs` |
+| Python | `lang-python` | `.py`, `.pyi` |
+| TypeScript | `lang-typescript` | `.ts`, `.tsx` |
+| JavaScript | `lang-javascript` | `.js`, `.jsx`, `.mjs` |
+| Go | `lang-go` | `.go` |
+| Java | `lang-java` | `.java` |
+| Kotlin | `lang-kotlin` | `.kt`, `.kts` |
+| C | `lang-c` | `.c`, `.h` |
+| C++ | `lang-cpp` | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.h` |
+| Swift | `lang-swift` | `.swift` |
+| Ruby | `lang-ruby` | `.rb` |
+| C# | `lang-csharp` | `.cs` |
+
+All 12 parsers are enabled in official binaries (`lang-all` feature). When no `--language` flag is given, **all recognized extensions are indexed automatically** — safe for monorepos.
+
+The `--language` flag accepts both canonical names and common aliases: `ts` → TypeScript, `cpp` → C++, `csharp` → C#, `py` → Python, `js` → JavaScript, `kt` → Kotlin, `rb` → Ruby.
 
 ### Lint
 

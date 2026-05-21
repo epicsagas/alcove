@@ -298,12 +298,49 @@ alcove promote      외부 볼트의 노트를 doc-repo에 가져오기
 alcove index        검색 인덱스 업데이트 (증분 — 변경된 파일만)
 alcove rebuild      검색 인덱스 전체 재구축 (스키마 변경 후 사용)
 alcove search       터미널에서 문서 검색
-alcove index-code   소스코드에서 코드 구조 인덱스 생성
+alcove index-code   소스코드에서 코드 구조 인덱스 생성 [--language LANG] [--source PATH]
 alcove token        백그라운드 서버 인증용 베어러 토큰 출력
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
 
 alcove mcp <CMD>      백그라운드 MCP 서버 관리 (start, stop, status, enable, disable)
 ```
+
+### 코드 인덱싱
+
+tree-sitter로 소스 파일을 파싱하여 `CODE_INDEX.md`를 생성합니다. 코드베이스의 모듈별 마크다운 요약으로, Tantivy 검색 파이프라인과 통합됩니다.
+
+```bash
+# 현재 프로젝트 소스 인덱싱 (모든 언어 자동 감지)
+alcove index-code --source ./src
+
+# 모노레포: 여러 언어가 섞인 디렉토리 한 번에 인덱싱
+alcove index-code --source ./
+
+# 단일 언어만 인덱싱
+alcove index-code --source ./src --language typescript
+alcove index-code --source ./src --language rust
+```
+
+**지원 언어:**
+
+| 언어 | 피처 플래그 | 파일 확장자 |
+|------|------------|------------|
+| Rust | `lang-rust` | `.rs` |
+| Python | `lang-python` | `.py`, `.pyi` |
+| TypeScript | `lang-typescript` | `.ts`, `.tsx` |
+| JavaScript | `lang-javascript` | `.js`, `.jsx`, `.mjs` |
+| Go | `lang-go` | `.go` |
+| Java | `lang-java` | `.java` |
+| Kotlin | `lang-kotlin` | `.kt`, `.kts` |
+| C | `lang-c` | `.c`, `.h` |
+| C++ | `lang-cpp` | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.h` |
+| Swift | `lang-swift` | `.swift` |
+| Ruby | `lang-ruby` | `.rb` |
+| C# | `lang-csharp` | `.cs` |
+
+공식 바이너리는 12개 파서 전부 활성화(`lang-all`)되어 있습니다. `--language` 플래그 없이 실행하면 **인식된 모든 확장자를 자동으로 인덱싱**하므로 모노레포에서도 안전하게 사용할 수 있습니다.
+
+`--language` 플래그는 약칭도 지원합니다: `ts` → TypeScript, `cpp` → C++, `csharp` → C#, `py` → Python, `js` → JavaScript, `kt` → Kotlin, `rb` → Ruby.
 
 ### 린트
 

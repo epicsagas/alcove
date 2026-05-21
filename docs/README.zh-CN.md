@@ -298,7 +298,7 @@ alcove promote      将外部仓库笔记引入 doc-repo
 alcove index        增量更新搜索索引（仅处理变更文件）
 alcove rebuild      从头重建搜索索引（适用于模式变更后）
 alcove search       从终端搜索文档
-alcove index-code   从源代码生成代码结构索引
+alcove index-code   从源代码生成代码结构索引 [--language LANG] [--source PATH]
 alcove token        打印持有者令牌（用于后台服务器认证）
 alcove uninstall    移除技能、配置和遗留文件
 
@@ -312,6 +312,43 @@ alcove vault add      向 vault 添加文档
 alcove vault index    构建 vault 搜索索引
 alcove vault rebuild  从头重建 vault 搜索索引
 ```
+
+### 代码索引
+
+使用 tree-sitter 解析源文件，生成 `CODE_INDEX.md`——代码库的模块级 Markdown 摘要，与 Tantivy 搜索管道集成。
+
+```bash
+# 索引当前项目源代码（自动检测所有语言）
+alcove index-code --source ./src
+
+# 单体仓库：一次性索引包含多种语言的目录
+alcove index-code --source ./
+
+# 仅索引单一语言
+alcove index-code --source ./src --language typescript
+alcove index-code --source ./src --language rust
+```
+
+**支持的语言:**
+
+| 语言 | 功能标志 | 文件扩展名 |
+|------|---------|-----------|
+| Rust | `lang-rust` | `.rs` |
+| Python | `lang-python` | `.py`, `.pyi` |
+| TypeScript | `lang-typescript` | `.ts`, `.tsx` |
+| JavaScript | `lang-javascript` | `.js`, `.jsx`, `.mjs` |
+| Go | `lang-go` | `.go` |
+| Java | `lang-java` | `.java` |
+| Kotlin | `lang-kotlin` | `.kt`, `.kts` |
+| C | `lang-c` | `.c`, `.h` |
+| C++ | `lang-cpp` | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.h` |
+| Swift | `lang-swift` | `.swift` |
+| Ruby | `lang-ruby` | `.rb` |
+| C# | `lang-csharp` | `.cs` |
+
+官方二进制文件启用了全部 12 个解析器（`lang-all`）。不使用 `--language` 标志时，**自动索引所有已识别的扩展名**，适合单体仓库使用。
+
+`--language` 标志支持缩写: `ts` → TypeScript、`cpp` → C++、`csharp` → C#、`py` → Python、`js` → JavaScript、`kt` → Kotlin、`rb` → Ruby。
 
 ### 检查（Lint）
 

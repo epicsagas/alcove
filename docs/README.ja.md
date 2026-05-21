@@ -298,7 +298,7 @@ alcove promote      外部ボルトのノートをdoc-repoに取り込む
 alcove index        検索インデックスの増分更新（変更されたファイルのみ）
 alcove rebuild      検索インデックスをゼロから再構築（スキーマ変更後に使用）
 alcove search       ターミナルからドキュメントを検索
-alcove index-code   ソースコードからコード構造インデックスを生成
+alcove index-code   ソースコードからコード構造インデックスを生成 [--language LANG] [--source PATH]
 alcove token        バックグラウンドサーバー認証用のベアラートークンを表示
 alcove uninstall    スキル、設定、レガシーファイルを削除
 
@@ -312,6 +312,43 @@ alcove vault add      ドキュメントをボルトに追加
 alcove vault index    ボルトの検索インデックスを構築
 alcove vault rebuild  ボルトの検索インデックスをゼロから再構築
 ```
+
+### コードインデックス
+
+tree-sitterでソースファイルをパースし、`CODE_INDEX.md`を生成します。コードベースのモジュール別マークダウン要約で、Tantivy検索パイプラインと統合されます。
+
+```bash
+# 現在のプロジェクトをインデックス（全言語自動検出）
+alcove index-code --source ./src
+
+# モノレポ：複数言語が混在するディレクトリを一括インデックス
+alcove index-code --source ./
+
+# 単一言語のみインデックス
+alcove index-code --source ./src --language typescript
+alcove index-code --source ./src --language rust
+```
+
+**対応言語:**
+
+| 言語 | フィーチャーフラグ | ファイル拡張子 |
+|------|-----------------|--------------|
+| Rust | `lang-rust` | `.rs` |
+| Python | `lang-python` | `.py`, `.pyi` |
+| TypeScript | `lang-typescript` | `.ts`, `.tsx` |
+| JavaScript | `lang-javascript` | `.js`, `.jsx`, `.mjs` |
+| Go | `lang-go` | `.go` |
+| Java | `lang-java` | `.java` |
+| Kotlin | `lang-kotlin` | `.kt`, `.kts` |
+| C | `lang-c` | `.c`, `.h` |
+| C++ | `lang-cpp` | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.h` |
+| Swift | `lang-swift` | `.swift` |
+| Ruby | `lang-ruby` | `.rb` |
+| C# | `lang-csharp` | `.cs` |
+
+公式バイナリは12のパーサー全てを有効化（`lang-all`）しています。`--language`フラグなしで実行すると、**認識された全拡張子を自動インデックス**するためモノレポでも安全です。
+
+`--language`フラグは略称も使用可能: `ts` → TypeScript、`cpp` → C++、`csharp` → C#、`py` → Python、`js` → JavaScript、`kt` → Kotlin、`rb` → Ruby。
 
 ### Lint
 
