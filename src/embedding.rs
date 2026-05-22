@@ -211,8 +211,14 @@ impl QueryEmbedCache {
 /// Holds a loaded model + tokenizer, ready for inference.
 #[cfg(feature = "embed-candle")]
 enum ModelSession {
-    Bert { model: BertModel, tokenizer: tokenizers::Tokenizer },
-    XlmRoberta { model: XLMRobertaModel, tokenizer: tokenizers::Tokenizer },
+    Bert {
+        model: BertModel,
+        tokenizer: tokenizers::Tokenizer,
+    },
+    XlmRoberta {
+        model: XLMRobertaModel,
+        tokenizer: tokenizers::Tokenizer,
+    },
 }
 
 #[cfg(feature = "embed-candle")]
@@ -295,8 +301,8 @@ impl CandleSession {
         };
 
         let session = if model_choice.is_xlm_roberta() {
-            let config: XlmRobertaConfig =
-                serde_json::from_str(&config_str).context("Failed to parse XLM-RoBERTa config.json")?;
+            let config: XlmRobertaConfig = serde_json::from_str(&config_str)
+                .context("Failed to parse XLM-RoBERTa config.json")?;
             let model = XLMRobertaModel::new(&config, vb.pp("roberta"))
                 .context("Failed to load XLM-RoBERTa model")?;
             ModelSession::XlmRoberta { model, tokenizer }

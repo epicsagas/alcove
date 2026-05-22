@@ -400,7 +400,11 @@ impl DocConfig {
             server: self.server.clone().or_else(|| base.server.clone()),
             memory: self.memory.clone().or_else(|| base.memory.clone()),
             // vector_index: project true wins; otherwise inherit from base
-            vector_index: if self.vector_index { true } else { base.vector_index },
+            vector_index: if self.vector_index {
+                true
+            } else {
+                base.vector_index
+            },
         }
     }
 
