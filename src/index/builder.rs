@@ -780,8 +780,8 @@ fn run_full_vector_indexing(
     };
 
     if !files_to_index.is_empty() {
-        // Filter: skip projects where vector_index = false (default).
-        // Only projects with explicit `vector_index = true` in alcove.toml are embedded.
+        // Filter: skip projects where vector_index resolves to false.
+        // Projects inherit vector_index from global config unless overridden locally.
         // Also skip files already present in the vector store (incremental indexing).
         let to_embed: Vec<ProjectFile> = files_to_index
             .into_iter()

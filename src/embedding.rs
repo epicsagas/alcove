@@ -18,7 +18,9 @@ use candle_core::Tensor;
 #[cfg(feature = "embed-candle")]
 use candle_nn::VarBuilder;
 #[cfg(feature = "embed-candle")]
-use candle_transformers::models::bert::{BertModel, Config, DTYPE};
+use candle_transformers::models::bert::{BertModel, Config as BertConfig, DTYPE};
+#[cfg(feature = "embed-candle")]
+use candle_transformers::models::xlm_roberta::{Config as XlmRobertaConfig, XLMRobertaModel};
 #[cfg(feature = "embed-candle")]
 use hf_hub::api::sync::ApiBuilder;
 #[cfg(feature = "embed-candle")]
@@ -146,6 +148,10 @@ impl EmbeddingModelChoice {
             _ => None,
         }
     }
+
+    pub fn is_xlm_roberta(self) -> bool {
+        matches!(self, Self::BGEM3)
+    }
 }
 
 impl std::fmt::Display for EmbeddingModelChoice {
@@ -202,16 +208,21 @@ impl QueryEmbedCache {
 // Candle-based embedding session (the actual inference engine)
 // ---------------------------------------------------------------------------
 
-/// Holds a loaded candle BERT model + tokenizer, ready for inference.
+/// Holds a loaded model + tokenizer, ready for inference.
+#[cfg(feature = "embed-candle")]
+enum ModelSession {
+    Bert { model: BertModel, tokenizer: tokenizers::Tokenizer },
+    XlmRoberta { model: XLMRobertaModel, tokenizer: tokenizers::Tokenizer },
+}
+
 #[cfg(feature = "embed-candle")]
 struct CandleSession {
-    model: BertModel,
-    tokenizer: tokenizers::Tokenizer,
+    session: ModelSession,
 }
 
 #[cfg(feature = "embed-candle")]
 impl CandleSession {
-    /// Download model files from HuggingFace Hub and build a BERT session.
+    /// Download model files from HuggingFace Hub and build a session.
     fn load(model_choice: EmbeddingModelChoice, cache_dir: &std::path::Path) -> Result<Self> {
         let device = candle_core::Device::Cpu;
         let model_id = model_choice.model_id();
@@ -232,8 +243,6 @@ impl CandleSession {
 
         let config_str =
             std::fs::read_to_string(&config_path).context("Failed to read config.json")?;
-        let config: Config =
-            serde_json::from_str(&config_str).context("Failed to parse config.json")?;
 
         let mut tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
@@ -284,27 +293,83 @@ impl CandleSession {
                 unsafe { VarBuilder::from_mmaped_safetensors(&shard_paths, DTYPE, &device)? }
             }
         };
-        let model = BertModel::load(vb, &config)?;
 
-        Ok(Self { model, tokenizer })
+        let session = if model_choice.is_xlm_roberta() {
+            let config: XlmRobertaConfig =
+                serde_json::from_str(&config_str).context("Failed to parse XLM-RoBERTa config.json")?;
+            let model = XLMRobertaModel::new(&config, vb.pp("roberta"))
+                .context("Failed to load XLM-RoBERTa model")?;
+            ModelSession::XlmRoberta { model, tokenizer }
+        } else {
+            let config: BertConfig =
+                serde_json::from_str(&config_str).context("Failed to parse BERT config.json")?;
+            let model = BertModel::load(vb, &config)?;
+            ModelSession::Bert { model, tokenizer }
+        };
+
+        Ok(Self { session })
     }
 
     /// Embed a batch of texts, returning one Vec<f32> per text.
     fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let device = candle_core::Device::Cpu;
 
-        let encodings = self
-            .tokenizer
-            .encode_batch(texts.to_vec(), true)
-            .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
+        let (encodings, embeddings) = match &self.session {
+            ModelSession::Bert { model, tokenizer } => {
+                let encodings = tokenizer
+                    .encode_batch(texts.to_vec(), true)
+                    .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
+                let token_ids = Tensor::stack(
+                    &encodings
+                        .iter()
+                        .map(|e| Tensor::new(e.get_ids(), &device))
+                        .collect::<candle_core::Result<Vec<_>>>()?,
+                    0,
+                )?;
+                let attention_mask = Tensor::stack(
+                    &encodings
+                        .iter()
+                        .map(|e| Tensor::new(e.get_attention_mask(), &device))
+                        .collect::<candle_core::Result<Vec<_>>>()?,
+                    0,
+                )?;
+                let token_type_ids = token_ids.zeros_like()?;
+                let embeddings =
+                    model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
+                (encodings, embeddings)
+            }
+            ModelSession::XlmRoberta { model, tokenizer } => {
+                let encodings = tokenizer
+                    .encode_batch(texts.to_vec(), true)
+                    .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
+                let token_ids = Tensor::stack(
+                    &encodings
+                        .iter()
+                        .map(|e| Tensor::new(e.get_ids(), &device))
+                        .collect::<candle_core::Result<Vec<_>>>()?,
+                    0,
+                )?;
+                let attention_mask = Tensor::stack(
+                    &encodings
+                        .iter()
+                        .map(|e| Tensor::new(e.get_attention_mask(), &device))
+                        .collect::<candle_core::Result<Vec<_>>>()?,
+                    0,
+                )?;
+                let token_type_ids = token_ids.zeros_like()?;
+                let embeddings = model.forward(
+                    &token_ids,
+                    &attention_mask,
+                    &token_type_ids,
+                    None,
+                    None,
+                    None,
+                )?;
+                (encodings, embeddings)
+            }
+        };
 
-        let token_ids = Tensor::stack(
-            &encodings
-                .iter()
-                .map(|e| Tensor::new(e.get_ids(), &device))
-                .collect::<candle_core::Result<Vec<_>>>()?,
-            0,
-        )?;
+        // Mean pooling with attention mask
         let attention_mask = Tensor::stack(
             &encodings
                 .iter()
@@ -312,14 +377,6 @@ impl CandleSession {
                 .collect::<candle_core::Result<Vec<_>>>()?,
             0,
         )?;
-        let token_type_ids = token_ids.zeros_like()?;
-
-        // Forward: [batch, seq_len, hidden_size]
-        let embeddings = self
-            .model
-            .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
-
-        // Mean pooling with attention mask
         let mask_f = attention_mask.to_dtype(DTYPE)?.unsqueeze(2)?;
         let sum_mask = mask_f.sum(1)?;
         let pooled = (embeddings.broadcast_mul(&mask_f)?)

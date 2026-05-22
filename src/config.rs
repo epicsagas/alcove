@@ -399,9 +399,8 @@ impl DocConfig {
             embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
             server: self.server.clone().or_else(|| base.server.clone()),
             memory: self.memory.clone().or_else(|| base.memory.clone()),
-            // vector_index: project-level value wins; false does not inherit base
-            // (a project's explicit false should not be overridden by base true)
-            vector_index: self.vector_index,
+            // vector_index: project true wins; otherwise inherit from base
+            vector_index: if self.vector_index { true } else { base.vector_index },
         }
     }
 
@@ -501,8 +500,18 @@ impl DocConfig {
         &self.embedding
     }
 
-    /// Get embedding configuration with defaults applied
+    /// Get embedding configuration with defaults applied.
+    /// `ALCOVE_EMBEDDING_MODEL` env var overrides the configured model name.
     #[cfg(feature = "embed-candle")]
+    pub fn embedding_config_with_defaults(&self) -> EmbeddingConfig {
+        let mut cfg = self.embedding.clone().unwrap_or_default();
+        if let Ok(model) = std::env::var("ALCOVE_EMBEDDING_MODEL") {
+            cfg.model = model;
+        }
+        cfg
+    }
+
+    #[cfg(not(feature = "embed-candle"))]
     pub fn embedding_config_with_defaults(&self) -> EmbeddingConfig {
         self.embedding.clone().unwrap_or_default()
     }
@@ -1509,9 +1518,9 @@ reader_ttl_secs = 120
     }
 
     #[test]
-    fn vector_index_overlay_project_false_not_overridden_by_base_true() {
-        // A project that explicitly sets vector_index = false should not inherit
-        // a hypothetical base value of true.
+    fn vector_index_overlay_project_default_inherits_base_true() {
+        // A project without vector_index set (default false) should inherit
+        // the base (global) value of true.
         let base = DocConfig {
             vector_index: true,
             ..DocConfig::default()
@@ -1521,7 +1530,7 @@ reader_ttl_secs = 120
             ..DocConfig::default()
         };
         let merged = project.overlay(&base);
-        assert!(!merged.vector_index);
+        assert!(merged.vector_index);
     }
 
     #[test]
