@@ -130,7 +130,7 @@ Las skills están disponibles inmediatamente — no se necesitan más pasos.
 ### Antigravity
 
 ```bash
-antigravity plugin marketplace add epicsagas/plugins
+agy marketplace add epicsagas/plugins
 ```
 
 Las skills están disponibles inmediatamente — no se necesitan más pasos.
