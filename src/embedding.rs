@@ -374,9 +374,9 @@ impl CandleSession {
                 &token_ids,
                 &attention_mask,
                 &token_type_ids,
-                None,
-                None,
-                None,
+                None, // past_key_value
+                None, // encoder_hidden_states
+                None, // encoder_attention_mask
             )?,
         };
 

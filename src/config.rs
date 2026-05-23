@@ -510,11 +510,6 @@ impl DocConfig {
         cfg
     }
 
-    #[cfg(not(feature = "embed-candle"))]
-    pub fn embedding_config_with_defaults(&self) -> EmbeddingConfig {
-        self.embedding.clone().unwrap_or_default()
-    }
-
     /// Get resolved server configuration (config value with defaults applied).
     #[cfg(feature = "alcove-server")]
     pub fn server_config(&self) -> ServerConfig {
