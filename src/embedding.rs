@@ -257,13 +257,18 @@ impl CandleSession {
             ..Default::default()
         }));
 
-        // Try single-shard first, then fall back to multi-shard via index.json
-        let vb = match api_repo.get("model.safetensors") {
-            Ok(path) => unsafe { VarBuilder::from_mmaped_safetensors(&[path], DTYPE, &device)? },
-            Err(_) => {
-                let index_path = api_repo.get("model.safetensors.index.json").context(
-                    "Failed to download model.safetensors or model.safetensors.index.json",
-                )?;
+        // Weight loading: safetensors (single → multi-shard) → pytorch fallback
+        let vb = 'vb: {
+            // 1. Single-shard safetensors
+            if let Ok(path) = api_repo.get("model.safetensors") {
+                // SAFETY: mmaped safetensors files are read-only and the file content
+                // is not modified after loading. The HuggingFace Hub cache guarantees
+                // atomic file placement (write-to-temp + rename).
+                break 'vb unsafe { VarBuilder::from_mmaped_safetensors(&[path], DTYPE, &device)? };
+            }
+
+            // 2. Multi-shard safetensors via index.json
+            if let Ok(index_path) = api_repo.get("model.safetensors.index.json") {
                 let index_str = std::fs::read_to_string(&index_path)
                     .context("Failed to read model.safetensors.index.json")?;
                 let shard_map: serde_json::Value = serde_json::from_str(&index_str)
@@ -296,8 +301,22 @@ impl CandleSession {
                     !shard_paths.is_empty(),
                     "No safetensor shards found in index"
                 );
-                unsafe { VarBuilder::from_mmaped_safetensors(&shard_paths, DTYPE, &device)? }
+                // SAFETY: same rationale as single-shard — read-only mmaped safetensors.
+                break 'vb unsafe {
+                    VarBuilder::from_mmaped_safetensors(&shard_paths, DTYPE, &device)?
+                };
             }
+
+            // 3. PyTorch fallback (e.g. BGE-M3 ships as pytorch_model.bin)
+            if let Ok(path) = api_repo.get("pytorch_model.bin") {
+                break 'vb VarBuilder::from_pth(&path, DTYPE, &device)
+                    .context("Failed to load pytorch_model.bin")?;
+            }
+
+            anyhow::bail!(
+                "No model weights found (tried model.safetensors, \
+                 model.safetensors.index.json, pytorch_model.bin)"
+            );
         };
 
         let session = if model_choice.is_xlm_roberta() {
@@ -320,62 +339,23 @@ impl CandleSession {
     fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let device = candle_core::Device::Cpu;
 
-        let (encodings, embeddings) = match &self.session {
-            ModelSession::Bert { model, tokenizer } => {
-                let encodings = tokenizer
-                    .encode_batch(texts.to_vec(), true)
-                    .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
-                let token_ids = Tensor::stack(
-                    &encodings
-                        .iter()
-                        .map(|e| Tensor::new(e.get_ids(), &device))
-                        .collect::<candle_core::Result<Vec<_>>>()?,
-                    0,
-                )?;
-                let attention_mask = Tensor::stack(
-                    &encodings
-                        .iter()
-                        .map(|e| Tensor::new(e.get_attention_mask(), &device))
-                        .collect::<candle_core::Result<Vec<_>>>()?,
-                    0,
-                )?;
-                let token_type_ids = token_ids.zeros_like()?;
-                let embeddings =
-                    model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
-                (encodings, embeddings)
-            }
-            ModelSession::XlmRoberta { model, tokenizer } => {
-                let encodings = tokenizer
-                    .encode_batch(texts.to_vec(), true)
-                    .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
-                let token_ids = Tensor::stack(
-                    &encodings
-                        .iter()
-                        .map(|e| Tensor::new(e.get_ids(), &device))
-                        .collect::<candle_core::Result<Vec<_>>>()?,
-                    0,
-                )?;
-                let attention_mask = Tensor::stack(
-                    &encodings
-                        .iter()
-                        .map(|e| Tensor::new(e.get_attention_mask(), &device))
-                        .collect::<candle_core::Result<Vec<_>>>()?,
-                    0,
-                )?;
-                let token_type_ids = token_ids.zeros_like()?;
-                let embeddings = model.forward(
-                    &token_ids,
-                    &attention_mask,
-                    &token_type_ids,
-                    None,
-                    None,
-                    None,
-                )?;
-                (encodings, embeddings)
+        // Tokenize — all architectures share the same tokenizer interface
+        let tokenizer = match &self.session {
+            ModelSession::Bert { tokenizer, .. } | ModelSession::XlmRoberta { tokenizer, .. } => {
+                tokenizer
             }
         };
+        let encodings = tokenizer
+            .encode_batch(texts.to_vec(), true)
+            .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
 
-        // Mean pooling with attention mask
+        let token_ids = Tensor::stack(
+            &encodings
+                .iter()
+                .map(|e| Tensor::new(e.get_ids(), &device))
+                .collect::<candle_core::Result<Vec<_>>>()?,
+            0,
+        )?;
         let attention_mask = Tensor::stack(
             &encodings
                 .iter()
@@ -383,6 +363,24 @@ impl CandleSession {
                 .collect::<candle_core::Result<Vec<_>>>()?,
             0,
         )?;
+        let token_type_ids = token_ids.zeros_like()?;
+
+        // Forward pass — only the model call differs between architectures
+        let embeddings = match &self.session {
+            ModelSession::Bert { model, .. } => {
+                model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?
+            }
+            ModelSession::XlmRoberta { model, .. } => model.forward(
+                &token_ids,
+                &attention_mask,
+                &token_type_ids,
+                None,
+                None,
+                None,
+            )?,
+        };
+
+        // Mean pooling with attention mask
         let mask_f = attention_mask.to_dtype(DTYPE)?.unsqueeze(2)?;
         let sum_mask = mask_f.sum(1)?;
         let pooled = (embeddings.broadcast_mul(&mask_f)?)

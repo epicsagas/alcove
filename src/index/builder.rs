@@ -788,7 +788,7 @@ fn run_full_vector_indexing(
             .filter(|(proj, rel, _)| {
                 let proj_path = docs_root.join(proj);
                 let proj_cfg = effective_config(&proj_path);
-                if !proj_cfg.vector_index {
+                if !proj_cfg.vector_index.unwrap_or(false) {
                     return false;
                 }
                 !matches!(store.has_file(proj, rel), Ok(true))
@@ -852,7 +852,7 @@ fn count_vector_skipped_projects(docs_root: &Path) -> u64 {
                 return false;
             }
             // A project is "skipped" when vector_index is false (the default).
-            !effective_config(&path).vector_index
+            !effective_config(&path).vector_index.unwrap_or(false)
         })
         .count() as u64
 }
