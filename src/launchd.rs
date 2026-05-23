@@ -326,7 +326,13 @@ pub fn restart(kind: ServiceKind) -> Result<()> {
         if is_loaded(kind) {
             launchctl(&["stop", &label])?;
         }
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // Wait for process to fully terminate and release resources (port, file handles)
+        for _ in 0..10 {
+            if running_pid(kind).is_none() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
     }
 
     if is_loaded(kind) {
@@ -342,7 +348,13 @@ pub fn restart(kind: ServiceKind) -> Result<()> {
         );
     }
 
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    // Wait for process to start and bind port
+    for _ in 0..10 {
+        if running_pid(kind).is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
     if let Some(pid) = running_pid(kind) {
         println!(
             "  {} Alcove {:?} restarted (PID {}).",

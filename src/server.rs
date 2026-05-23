@@ -788,7 +788,15 @@ pub async fn run_server(
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid server host '{}': {}", host, e))?;
     let addr = SocketAddr::from((ip, port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let socket = socket2::Socket::new(
+        socket2::Domain::for_address(addr),
+        socket2::Type::STREAM,
+        Some(socket2::Protocol::TCP),
+    )?;
+    socket.set_reuse_address(true)?;
+    socket.bind(&addr.into())?;
+    socket.listen(128)?;
+    let listener = tokio::net::TcpListener::from_std(socket.into())?;
 
     println!(
         "  {} Alcove RAG server running on http://{}",
