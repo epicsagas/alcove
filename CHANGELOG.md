@@ -5,6 +5,20 @@ All notable changes to alcove will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] — 2026-05-24
+
+### Fixed
+
+- MCP restart now uses `unload`/`load` instead of `stop`/`start` to ensure port is fully released before restart
+- Set `SO_REUSEADDR` on HTTP server socket to allow rebinding during `TIME_WAIT`
+- Increased startup polling timeout to handle slow tantivy index initialization
+
+## [0.10.1] — 2026-05-24
+
+### Fixed
+
+- Plugin skill tool table synced with actual MCP tools (added `list_vaults`, `search_vault`, `backup_vault`; removed nonexistent `index_code_structure`)
+
 ## [0.10.0] — 2026-05-24
 
 ### Added
