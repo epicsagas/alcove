@@ -722,6 +722,7 @@ mod tests {
             assert_eq!(EmbeddingModelChoice::MultilingualE5Small.dimension(), 384);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Base.dimension(), 768);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Large.dimension(), 1024);
+            assert_eq!(EmbeddingModelChoice::BGEM3.dimension(), 1024);
         }
     }
 
@@ -754,6 +755,10 @@ mod tests {
                 EmbeddingModelChoice::parse("AllMiniLML6V2"),
                 Some(EmbeddingModelChoice::AllMiniLML6V2)
             );
+            assert_eq!(
+                EmbeddingModelChoice::parse("BGEM3"),
+                Some(EmbeddingModelChoice::BGEM3)
+            );
             assert_eq!(EmbeddingModelChoice::parse("InvalidModel"), None);
         }
     }
@@ -777,6 +782,16 @@ mod tests {
         {
             assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.size_mb(), 80);
             assert_eq!(EmbeddingModelChoice::BGEM3.size_mb(), 2300);
+        }
+    }
+
+    #[test]
+    fn test_is_xlm_roberta() {
+        #[cfg(feature = "embed-candle")]
+        {
+            assert!(EmbeddingModelChoice::BGEM3.is_xlm_roberta());
+            assert!(!EmbeddingModelChoice::AllMiniLML6V2.is_xlm_roberta());
+            assert!(!EmbeddingModelChoice::MultilingualE5Large.is_xlm_roberta());
         }
     }
 
