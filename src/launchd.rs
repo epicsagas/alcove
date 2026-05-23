@@ -321,26 +321,8 @@ pub fn status(kind: ServiceKind) -> Result<()> {
 
 /// Restart the background process.
 pub fn restart(kind: ServiceKind) -> Result<()> {
-    if running_pid(kind).is_some() {
-        let label = label_for(kind);
-        if is_loaded(kind) {
-            launchctl(&["stop", &label])?;
-        }
-        // Wait for process to fully terminate and release resources (port, file handles)
-        for _ in 0..10 {
-            if running_pid(kind).is_none() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
-    }
-
-    if is_loaded(kind) {
-        let label = label_for(kind);
-        launchctl(&["start", &label])?;
-    } else if plist_path(kind).exists() {
-        launchctl(&["load", &plist_path(kind).to_string_lossy()])?;
-    } else {
+    let plist = plist_path(kind);
+    if !plist.exists() {
         bail!(
             "Alcove {:?} is not registered. Run `alcove {:?} enable` first.",
             kind,
@@ -348,12 +330,22 @@ pub fn restart(kind: ServiceKind) -> Result<()> {
         );
     }
 
-    // Wait for process to start and bind port
-    for _ in 0..10 {
+    // Unload stops the process and deregisters — ensures port is fully released
+    if is_loaded(kind) {
+        let _ = launchctl(&["unload", &plist.to_string_lossy()]);
+    }
+
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    // Load registers and starts (RunAtLoad=true)
+    launchctl(&["load", &plist.to_string_lossy()])?;
+
+    // Wait for process to start (index init can be slow)
+    for _ in 0..20 {
         if running_pid(kind).is_some() {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
     if let Some(pid) = running_pid(kind) {
         println!(
