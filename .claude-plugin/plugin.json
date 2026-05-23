@@ -1,6 +1,6 @@
 {
   "name": "alcove",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "MCP documentation server — hybrid BM25+vector search, code structure indexing, lint, and launchd lifecycle for project docs.",
   "author": {
     "name": "epicsagas",
