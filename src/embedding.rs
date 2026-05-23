@@ -18,7 +18,9 @@ use candle_core::Tensor;
 #[cfg(feature = "embed-candle")]
 use candle_nn::VarBuilder;
 #[cfg(feature = "embed-candle")]
-use candle_transformers::models::bert::{BertModel, Config, DTYPE};
+use candle_transformers::models::bert::{BertModel, Config as BertConfig, DTYPE};
+#[cfg(feature = "embed-candle")]
+use candle_transformers::models::xlm_roberta::{Config as XlmRobertaConfig, XLMRobertaModel};
 #[cfg(feature = "embed-candle")]
 use hf_hub::api::sync::ApiBuilder;
 #[cfg(feature = "embed-candle")]
@@ -146,6 +148,10 @@ impl EmbeddingModelChoice {
             _ => None,
         }
     }
+
+    pub fn is_xlm_roberta(self) -> bool {
+        matches!(self, Self::BGEM3)
+    }
 }
 
 impl std::fmt::Display for EmbeddingModelChoice {
@@ -202,16 +208,27 @@ impl QueryEmbedCache {
 // Candle-based embedding session (the actual inference engine)
 // ---------------------------------------------------------------------------
 
-/// Holds a loaded candle BERT model + tokenizer, ready for inference.
+/// Holds a loaded model + tokenizer, ready for inference.
+#[cfg(feature = "embed-candle")]
+enum ModelSession {
+    Bert {
+        model: BertModel,
+        tokenizer: tokenizers::Tokenizer,
+    },
+    XlmRoberta {
+        model: XLMRobertaModel,
+        tokenizer: tokenizers::Tokenizer,
+    },
+}
+
 #[cfg(feature = "embed-candle")]
 struct CandleSession {
-    model: BertModel,
-    tokenizer: tokenizers::Tokenizer,
+    session: ModelSession,
 }
 
 #[cfg(feature = "embed-candle")]
 impl CandleSession {
-    /// Download model files from HuggingFace Hub and build a BERT session.
+    /// Download model files from HuggingFace Hub and build a session.
     fn load(model_choice: EmbeddingModelChoice, cache_dir: &std::path::Path) -> Result<Self> {
         let device = candle_core::Device::Cpu;
         let model_id = model_choice.model_id();
@@ -232,8 +249,6 @@ impl CandleSession {
 
         let config_str =
             std::fs::read_to_string(&config_path).context("Failed to read config.json")?;
-        let config: Config =
-            serde_json::from_str(&config_str).context("Failed to parse config.json")?;
 
         let mut tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
@@ -242,13 +257,18 @@ impl CandleSession {
             ..Default::default()
         }));
 
-        // Try single-shard first, then fall back to multi-shard via index.json
-        let vb = match api_repo.get("model.safetensors") {
-            Ok(path) => unsafe { VarBuilder::from_mmaped_safetensors(&[path], DTYPE, &device)? },
-            Err(_) => {
-                let index_path = api_repo.get("model.safetensors.index.json").context(
-                    "Failed to download model.safetensors or model.safetensors.index.json",
-                )?;
+        // Weight loading: safetensors (single → multi-shard) → pytorch fallback
+        let vb = 'vb: {
+            // 1. Single-shard safetensors
+            if let Ok(path) = api_repo.get("model.safetensors") {
+                // SAFETY: mmaped safetensors files are read-only and the file content
+                // is not modified after loading. The HuggingFace Hub cache guarantees
+                // atomic file placement (write-to-temp + rename).
+                break 'vb unsafe { VarBuilder::from_mmaped_safetensors(&[path], DTYPE, &device)? };
+            }
+
+            // 2. Multi-shard safetensors via index.json
+            if let Ok(index_path) = api_repo.get("model.safetensors.index.json") {
                 let index_str = std::fs::read_to_string(&index_path)
                     .context("Failed to read model.safetensors.index.json")?;
                 let shard_map: serde_json::Value = serde_json::from_str(&index_str)
@@ -281,20 +301,51 @@ impl CandleSession {
                     !shard_paths.is_empty(),
                     "No safetensor shards found in index"
                 );
-                unsafe { VarBuilder::from_mmaped_safetensors(&shard_paths, DTYPE, &device)? }
+                // SAFETY: same rationale as single-shard — read-only mmaped safetensors.
+                break 'vb unsafe {
+                    VarBuilder::from_mmaped_safetensors(&shard_paths, DTYPE, &device)?
+                };
             }
-        };
-        let model = BertModel::load(vb, &config)?;
 
-        Ok(Self { model, tokenizer })
+            // 3. PyTorch fallback (e.g. BGE-M3 ships as pytorch_model.bin)
+            if let Ok(path) = api_repo.get("pytorch_model.bin") {
+                break 'vb VarBuilder::from_pth(&path, DTYPE, &device)
+                    .context("Failed to load pytorch_model.bin")?;
+            }
+
+            anyhow::bail!(
+                "No model weights found (tried model.safetensors, \
+                 model.safetensors.index.json, pytorch_model.bin)"
+            );
+        };
+
+        let session = if model_choice.is_xlm_roberta() {
+            let config: XlmRobertaConfig = serde_json::from_str(&config_str)
+                .context("Failed to parse XLM-RoBERTa config.json")?;
+            let model = XLMRobertaModel::new(&config, vb.pp("roberta"))
+                .context("Failed to load XLM-RoBERTa model")?;
+            ModelSession::XlmRoberta { model, tokenizer }
+        } else {
+            let config: BertConfig =
+                serde_json::from_str(&config_str).context("Failed to parse BERT config.json")?;
+            let model = BertModel::load(vb, &config)?;
+            ModelSession::Bert { model, tokenizer }
+        };
+
+        Ok(Self { session })
     }
 
     /// Embed a batch of texts, returning one Vec<f32> per text.
     fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let device = candle_core::Device::Cpu;
 
-        let encodings = self
-            .tokenizer
+        // Tokenize — all architectures share the same tokenizer interface
+        let tokenizer = match &self.session {
+            ModelSession::Bert { tokenizer, .. } | ModelSession::XlmRoberta { tokenizer, .. } => {
+                tokenizer
+            }
+        };
+        let encodings = tokenizer
             .encode_batch(texts.to_vec(), true)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
 
@@ -314,10 +365,20 @@ impl CandleSession {
         )?;
         let token_type_ids = token_ids.zeros_like()?;
 
-        // Forward: [batch, seq_len, hidden_size]
-        let embeddings = self
-            .model
-            .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
+        // Forward pass — only the model call differs between architectures
+        let embeddings = match &self.session {
+            ModelSession::Bert { model, .. } => {
+                model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?
+            }
+            ModelSession::XlmRoberta { model, .. } => model.forward(
+                &token_ids,
+                &attention_mask,
+                &token_type_ids,
+                None, // past_key_value
+                None, // encoder_hidden_states
+                None, // encoder_attention_mask
+            )?,
+        };
 
         // Mean pooling with attention mask
         let mask_f = attention_mask.to_dtype(DTYPE)?.unsqueeze(2)?;
@@ -661,6 +722,7 @@ mod tests {
             assert_eq!(EmbeddingModelChoice::MultilingualE5Small.dimension(), 384);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Base.dimension(), 768);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Large.dimension(), 1024);
+            assert_eq!(EmbeddingModelChoice::BGEM3.dimension(), 1024);
         }
     }
 
@@ -693,6 +755,10 @@ mod tests {
                 EmbeddingModelChoice::parse("AllMiniLML6V2"),
                 Some(EmbeddingModelChoice::AllMiniLML6V2)
             );
+            assert_eq!(
+                EmbeddingModelChoice::parse("BGEM3"),
+                Some(EmbeddingModelChoice::BGEM3)
+            );
             assert_eq!(EmbeddingModelChoice::parse("InvalidModel"), None);
         }
     }
@@ -716,6 +782,16 @@ mod tests {
         {
             assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.size_mb(), 80);
             assert_eq!(EmbeddingModelChoice::BGEM3.size_mb(), 2300);
+        }
+    }
+
+    #[test]
+    fn test_is_xlm_roberta() {
+        #[cfg(feature = "embed-candle")]
+        {
+            assert!(EmbeddingModelChoice::BGEM3.is_xlm_roberta());
+            assert!(!EmbeddingModelChoice::AllMiniLML6V2.is_xlm_roberta());
+            assert!(!EmbeddingModelChoice::MultilingualE5Large.is_xlm_roberta());
         }
     }
 

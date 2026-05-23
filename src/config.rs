@@ -374,10 +374,10 @@ pub struct DocConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<MemoryConfig>,
     /// Opt-in flag to enable vector embedding for this project.
-    /// Default: `false` — vector indexing is skipped unless explicitly enabled.
-    /// Set `vector_index = true` in `alcove.toml` to enable.
+    /// `None` (absent from TOML) inherits from the global config during overlay.
+    /// `Some(true)` enables vector indexing; `Some(false)` explicitly disables it.
     #[serde(default)]
-    pub vector_index: bool,
+    pub vector_index: Option<bool>,
 }
 
 impl DocConfig {
@@ -399,9 +399,7 @@ impl DocConfig {
             embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
             server: self.server.clone().or_else(|| base.server.clone()),
             memory: self.memory.clone().or_else(|| base.memory.clone()),
-            // vector_index: project-level value wins; false does not inherit base
-            // (a project's explicit false should not be overridden by base true)
-            vector_index: self.vector_index,
+            vector_index: self.vector_index.or(base.vector_index),
         }
     }
 
@@ -501,10 +499,15 @@ impl DocConfig {
         &self.embedding
     }
 
-    /// Get embedding configuration with defaults applied
+    /// Get embedding configuration with defaults applied.
+    /// `ALCOVE_EMBEDDING_MODEL` env var overrides the configured model name.
     #[cfg(feature = "embed-candle")]
     pub fn embedding_config_with_defaults(&self) -> EmbeddingConfig {
-        self.embedding.clone().unwrap_or_default()
+        let mut cfg = self.embedding.clone().unwrap_or_default();
+        if let Ok(model) = std::env::var("ALCOVE_EMBEDDING_MODEL") {
+            cfg.model = model;
+        }
+        cfg
     }
 
     /// Get resolved server configuration (config value with defaults applied).
@@ -572,7 +575,7 @@ pub fn load_config() -> &'static DocConfig {
             embedding: None,
             server: None,
             memory: None,
-            vector_index: false,
+            vector_index: None,
         }
     })
 }
@@ -1467,61 +1470,75 @@ reader_ttl_secs = 120
     // -- vector_index opt-in flag --
 
     #[test]
-    fn vector_index_default_is_false() {
+    fn vector_index_default_is_none() {
         let cfg = DocConfig::default();
-        assert!(!cfg.vector_index, "vector_index must default to false");
+        assert_eq!(cfg.vector_index, None, "vector_index must default to None");
     }
 
     #[test]
     fn vector_index_toml_true() {
         let toml = r#"vector_index = true"#;
         let cfg: DocConfig = toml::from_str(toml).unwrap();
-        assert!(cfg.vector_index);
+        assert_eq!(cfg.vector_index, Some(true));
     }
 
     #[test]
     fn vector_index_toml_false() {
         let toml = r#"vector_index = false"#;
         let cfg: DocConfig = toml::from_str(toml).unwrap();
-        assert!(!cfg.vector_index);
+        assert_eq!(cfg.vector_index, Some(false));
     }
 
     #[test]
-    fn vector_index_toml_absent_defaults_to_false() {
-        // An alcove.toml with no vector_index key should parse to false.
+    fn vector_index_toml_absent_defaults_to_none() {
         let toml = r#"docs_root = "/tmp/docs""#;
         let cfg: DocConfig = toml::from_str(toml).unwrap();
-        assert!(!cfg.vector_index);
+        assert_eq!(cfg.vector_index, None);
     }
 
     #[test]
     fn vector_index_overlay_project_true_wins() {
         let base = DocConfig {
-            vector_index: false,
+            vector_index: Some(false),
             ..DocConfig::default()
         };
         let project = DocConfig {
-            vector_index: true,
+            vector_index: Some(true),
             ..DocConfig::default()
         };
         let merged = project.overlay(&base);
-        assert!(merged.vector_index);
+        assert_eq!(merged.vector_index, Some(true));
     }
 
     #[test]
-    fn vector_index_overlay_project_false_not_overridden_by_base_true() {
-        // A project that explicitly sets vector_index = false should not inherit
-        // a hypothetical base value of true.
+    fn vector_index_overlay_project_false_overrides_base_true() {
+        // A project that explicitly sets vector_index = false should NOT
+        // inherit the base (global) value of true.
         let base = DocConfig {
-            vector_index: true,
+            vector_index: Some(true),
             ..DocConfig::default()
         };
         let project = DocConfig {
-            vector_index: false,
+            vector_index: Some(false),
             ..DocConfig::default()
         };
         let merged = project.overlay(&base);
-        assert!(!merged.vector_index);
+        assert_eq!(merged.vector_index, Some(false));
+    }
+
+    #[test]
+    fn vector_index_overlay_project_none_inherits_base_true() {
+        // A project without vector_index set (None) should inherit from base.
+        let base = DocConfig {
+            vector_index: Some(true),
+            ..DocConfig::default()
+        };
+        let project = DocConfig {
+            vector_index: None,
+            ..DocConfig::default()
+        };
+        let merged = project.overlay(&base);
+        assert_eq!(merged.vector_index, Some(true));
     }
 
     #[test]
@@ -1529,11 +1546,11 @@ reader_ttl_secs = 120
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("alcove.toml"), "vector_index = true\n").unwrap();
         let cfg = load_project_config(tmp.path());
-        assert!(cfg.vector_index);
+        assert_eq!(cfg.vector_index, Some(true));
     }
 
     #[test]
-    fn load_project_config_vector_index_absent_is_false() {
+    fn load_project_config_vector_index_absent_is_none() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("alcove.toml"),
@@ -1541,6 +1558,6 @@ reader_ttl_secs = 120
         )
         .unwrap();
         let cfg = load_project_config(tmp.path());
-        assert!(!cfg.vector_index);
+        assert_eq!(cfg.vector_index, None);
     }
 }

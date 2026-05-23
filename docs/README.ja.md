@@ -130,7 +130,7 @@ codex plugin marketplace add epicsagas/plugins
 ### Antigravity
 
 ```bash
-antigravity plugin marketplace add epicsagas/plugins
+agy marketplace add epicsagas/plugins
 ```
 
 スキルはすぐに利用可能です — 追加手順は不要です。

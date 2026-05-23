@@ -130,7 +130,7 @@ codex plugin marketplace add epicsagas/plugins
 ### Antigravity
 
 ```bash
-antigravity plugin marketplace add epicsagas/plugins
+agy marketplace add epicsagas/plugins
 ```
 
 Навыки доступны сразу — дополнительные шаги не требуются.
