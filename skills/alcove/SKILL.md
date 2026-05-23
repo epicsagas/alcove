@@ -1,6 +1,6 @@
 ---
 name: alcove
-description: "Questions about project architecture, conventions, decisions, code structure, tech debt, env config, progress, or doc health. Also: init project, audit docs, lint, validate, promote note, rebuild index, index code structure."
+description: "Questions about project architecture, conventions, decisions, code structure, tech debt, env config, progress, or doc health. Also: init project, audit docs, lint, validate, promote note, rebuild index, search vaults."
 ---
 
 # Alcove
@@ -33,6 +33,8 @@ Unsure → `search_project_docs`. **Never contradict existing decisions.**
 | `search_project_docs` | BM25/grep. Default: current project. Global only if user says "all projects"/"everywhere" |
 | `get_doc_file` | Read doc by path (`offset`/`limit` for large files) |
 | `list_projects` | List all projects |
+| `list_vaults` | List knowledge base vaults with doc counts |
+| `search_vault` | Search vaults for research notes, reference materials, curated knowledge |
 | `audit_project` | Cross-repo audit → file status + `suggested_actions` |
 | `check_doc_changes` | Detect changes since last index. `auto_rebuild: true` to auto-refresh |
 | `rebuild_index` | Full index rebuild |
@@ -41,7 +43,7 @@ Unsure → `search_project_docs`. **Never contradict existing decisions.**
 | `promote_document` | Import file from external vault into doc-repo |
 | `configure_project` | Create/update `alcove.toml`. Preserves unmentioned fields |
 | `init_project` | Scaffold docs from template |
-| `index_code_structure` | tree-sitter parse → `CODE_INDEX.md`. Auto-rebuilds search index |
+| `backup_vault` | Git snapshot of vault state. Per-vault or all vaults |
 
 ## Rules
 
@@ -51,7 +53,7 @@ Unsure → `search_project_docs`. **Never contradict existing decisions.**
 ### Before writing code
 1. `CONVENTIONS.md` → project-specific rules
 2. `CODE_INDEX.md` → compact module/type/function overview (avoids reading dozens of source files)
-3. If missing → `index_code_structure(source_path: "<src>")` to generate
+3. For research/reference material → `search_vault` across knowledge base vaults
 
 ### Answering questions
 **Never answer from memory.** `get_project_docs_overview` → read relevant file → summarize. Do not dump full files unless asked.
