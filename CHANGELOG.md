@@ -5,6 +5,21 @@ All notable changes to alcove will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-05-24
+
+### Added
+
+- Code structure indexing with 12 languages (Rust, TypeScript, Python, Go, Java, Kotlin, C, C++, Swift, Ruby, C#, JavaScript)
+- Shorthand language names support (cpp, csharp, ts, js)
+- XLM-RoBERTa embedding support for BGE-M3 with PyTorch fallback and `ALCOVE_EMBED_PROVIDER` env var override
+
+### Changed
+
+- Code indexing now indexes all available languages by default instead of auto-detecting
+- Removed Gemini CLI agent and Antigravity MCP path references
+- Removed Codex marketplace plugin definition
+- Synced plugin skill tool table with actual MCP tools (added `list_vaults`, `search_vault`, `backup_vault`; removed nonexistent `index_code_structure`)
+
 ## [0.7.1] — 2026-03-08
 
 ### Fixed
