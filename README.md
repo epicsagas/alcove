@@ -123,6 +123,8 @@ Agent config files                ← agent rules, coding conventions, recurring
 ## Quick start
 
 > **Required**: Run `alcove setup` once after installation to configure your docs root and enable full functionality. Plugins seed the MCP connection automatically, but Alcove cannot search or index documents until `setup` has been run.
+>
+> **Using Obsidian?** See the [Ecosystem](#ecosystem) section for the recommended docs structure and vault configuration.
 
 ### Claude Code
 

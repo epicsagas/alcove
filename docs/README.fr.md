@@ -102,6 +102,8 @@ Alcove conserve tous vos documents privés dans **un seul dépôt partagé**, or
 ## Démarrage rapide
 
 > **Obligatoire**: Exécutez `alcove setup` une fois après l'installation pour configurer votre répertoire de documents et activer toutes les fonctionnalités. Les plugins enregistrent automatiquement la connexion MCP, mais Alcove ne peut pas rechercher ni indexer les documents tant que `setup` n'a pas été exécuté.
+>
+> **Vous utilisez Obsidian ?** Consultez la section [Écosystème](#ecosystem) pour la structure de documents recommandée et la configuration des coffres.
 
 ### Claude Code
 
