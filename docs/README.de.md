@@ -103,6 +103,8 @@ Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository
 
 ## Schnellstart
 
+> **Erforderlich**: Führen Sie einmal `alcove setup` nach der Installation aus, um Ihr Dokumentenverzeichnis zu konfigurieren und die volle Funktionalität zu aktivieren. Plugins registrieren die MCP-Verbindung automatisch, aber Alcove kann Dokumente erst durchsuchen und indizieren, wenn `setup` ausgeführt wurde.
+
 ### Claude Code
 
 ```

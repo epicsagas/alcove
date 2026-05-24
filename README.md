@@ -122,6 +122,8 @@ Agent config files                ← agent rules, coding conventions, recurring
 
 ## Quick start
 
+> **Required**: Run `alcove setup` once after installation to configure your docs root and enable full functionality. Plugins seed the MCP connection automatically, but Alcove cannot search or index documents until `setup` has been run.
+
 ### Claude Code
 
 ```
@@ -130,8 +132,6 @@ Agent config files                ← agent rules, coding conventions, recurring
 ```
 
 Auto-installs the binary and registers the MCP server on next session start.
-
-> **Required**: Run `alcove setup` once after installation to configure your docs root and enable full functionality. The plugin seeds the MCP connection automatically, but Alcove cannot search or index documents until `setup` has been run.
 
 ```bash
 alcove setup   # run once after plugin install
