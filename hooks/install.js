@@ -97,7 +97,8 @@ async function install() {
 }
 
 function seed() {
-  spawnSync(BINARY, ["register", "Claude Code"], { stdio: "inherit" });
+  // No-op: plugin mode auto-discovers .mcp.json + skills/
+  // Standalone installs should use plugin install instead.
 }
 
 async function main() {

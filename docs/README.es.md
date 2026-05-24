@@ -197,7 +197,7 @@ Sin `pdftotext`, Alcove recurre a un parser PDF integrado que puede fallar en al
 3. Formato preferido de diagramas
 4. Modelo de embeddings para búsqueda híbrida
 5. **Servidor en segundo plano** — eliminar el arranque en frío en cada sesión (ítem de inicio de macOS)
-6. Qué agentes de IA configurar (MCP + archivos de habilidades)
+6. Qué agentes de IA configurar (MCP + archivos de habilidades — Claude Code y Codex se gestionan mediante sus sistemas de plugins)
 
 Ejecuta `alcove setup` en cualquier momento para cambiar la configuración. Recuerda tus elecciones anteriores.
 

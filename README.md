@@ -216,7 +216,7 @@ Without `pdftotext`, Alcove falls back to a built-in PDF parser which may fail o
 3. Preferred diagram format
 4. Embedding model for hybrid search
 5. Background server — eliminate cold-start on every session (macOS login item)
-6. Which AI agents to configure (MCP + skill files)
+6. Which AI agents to configure (MCP + skill files — Claude Code and Codex are handled by their plugin systems)
 
 Re-run `alcove setup` anytime to change settings. It remembers your previous choices.
 

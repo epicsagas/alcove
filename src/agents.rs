@@ -44,7 +44,8 @@ pub(crate) enum McpConfig {
     },
     /// OpenCode format: { "mcp": { "alcove": { "type": "local", ... } } }
     OpenCode { path: &'static str },
-    /// Codex TOML format
+    /// Codex TOML format (retained for tests; Codex uses plugin install)
+    #[allow(dead_code)]
     Codex { path: &'static str },
 }
 
@@ -54,16 +55,6 @@ pub(crate) fn home() -> PathBuf {
 
 pub(crate) fn agents() -> Vec<AgentDef> {
     vec![
-        AgentDef {
-            name: "Claude Code",
-            mcp_config: McpConfig::Json {
-                path: "~/.claude.json",
-                server_key: "mcpServers",
-                omit_type: false,
-            },
-            skill_dir: Some("~/.claude/skills/alcove"),
-            env_syntax: EnvVarSyntax::DollarBrace,
-        },
         AgentDef {
             name: "Cursor",
             mcp_config: McpConfig::Json {
@@ -109,14 +100,6 @@ pub(crate) fn agents() -> Vec<AgentDef> {
             },
             skill_dir: Some("~/.opencode/skills/alcove"),
             env_syntax: EnvVarSyntax::BraceEnvColon,
-        },
-        AgentDef {
-            name: "Codex CLI",
-            mcp_config: McpConfig::Codex {
-                path: "~/.codex/config.toml",
-            },
-            skill_dir: Some("~/.codex/skills/alcove"),
-            env_syntax: EnvVarSyntax::DollarBrace, // Codex env section uses ${VAR} interpolation
         },
         AgentDef {
             name: "Copilot CLI",
@@ -434,19 +417,18 @@ mod tests {
     #[test]
     fn agents_returns_expected_count() {
         let a = agents();
-        assert_eq!(a.len(), 8, "expected 8 agent definitions");
+        assert_eq!(a.len(), 6, "expected 6 agent definitions");
     }
 
     #[test]
     fn agents_contains_known_names() {
         let a = agents();
         let names: Vec<&str> = a.iter().map(|x| x.name).collect();
-        assert!(names.contains(&"Claude Code"));
         assert!(names.contains(&"Cursor"));
         assert!(names.contains(&"Claude Desktop"));
         assert!(names.contains(&"Cline (VS Code)"));
         assert!(names.contains(&"OpenCode"));
-        assert!(names.contains(&"Codex CLI"));
+        assert!(names.contains(&"Copilot CLI"));
         assert!(names.contains(&"Antigravity"));
     }
 

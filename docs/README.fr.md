@@ -197,7 +197,7 @@ Sans `pdftotext`, Alcove se rabat sur un analyseur PDF intégré qui peut échou
 3. Format de diagramme préféré
 4. Modèle d'embeddings pour la recherche hybride
 5. **Serveur en arrière-plan** — éliminer le démarrage à froid à chaque session (élément de connexion macOS)
-6. Quels agents IA configurer (MCP + fichiers de compétences)
+6. Quels agents IA configurer (MCP + fichiers de compétences — Claude Code et Codex sont gérés par leurs systèmes de plugins)
 
 Relancez `alcove setup` à tout moment pour modifier les paramètres. Il se souvient de vos choix précédents.
 
