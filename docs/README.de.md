@@ -25,7 +25,7 @@
   <a href="https://buymeacoffee.com/epicsaga"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee" /></a>
 </p>
 
-Alcove ermöglicht jedem KI-Codierungs-Agenten, deine private Projektdokumentation zu lesen und verwalten — ohne sie in öffentliche Repositories zu leaken.
+Alcove ist ein MCP-Server, der KI-Codierungs-Agenten bedarfsgesteuerten Zugriff auf deine private Projektdokumentation gibt — **BM25 + Vektor-Hybridsuche** für präzise Abrufe, **tree-sitter Code-Indexierung** damit Agenten deine Codebasis-Struktur verstehen, und **Policy-Durchsetzung** für Dokumentkonsistenz. Kein Context-Bloat, keine Doc-Leaks in öffentliche Repos, keine Projekt-für-Projekt-Konfiguration für jeden Agenten.
 
 Speichere PRDs, Architekturentscheidungen, Secret-Maps und interne Runbooks an einem Ort. Jeder MCP-kompatible Agent erhält dieselben Tools, über alle Projekte hinweg, ohne Konfiguration pro Projekt.
 
@@ -92,7 +92,8 @@ Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository
 | Interne Dokumente verstreut über Notion, Google Docs, lokale Dateien | Ein Docs-Repository, nach Projekt strukturiert |
 | Jeder KI-Agent separat für Dokumentzugriff konfiguriert | Einmal einrichten, alle Agenten teilen dieselben Tools |
 | Projektwechsel bedeutet Verlust des Dokumentkontexts | CWD-Autoerkennung, sofortiger Projektwechsel |
-| Agentensuche liefert zufällige Treffer | BM25-Ranking-Suche — beste Treffer zuerst, automatische Indexierung |
+| Agentensuche liefert zufällige Treffer | Hybridsuche (BM25 + RAG) — Agenten rufen nur ab, was sie brauchen, nach Relevanz sortiert |
+| Agent sieht nur Textdokumente, nicht die Codestruktur | tree-sitter Code-Indexierung — Agenten verstehen Module, Funktionen und Typen in 12 Sprachen |
 | "Alle meine Notizen zur Authentifizierung durchsuchen" — unmöglich | Globale Suche über alle Projekte in einer Abfrage |
 | Sensible Dokumente riskieren Leak in öffentliche Repos | Private Dokumente physisch von Projekt-Repos getrennt |
 | Dokumentstruktur variiert pro Projekt und Teammitglied | `policy.toml` erzwingt Standards über alle Projekte |
@@ -102,7 +103,7 @@ Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository
 
 ## Schnellstart
 
-### Claude Code (empfohlen)
+### Claude Code
 
 ```
 /plugin marketplace add epicsagas/plugins
@@ -126,16 +127,6 @@ codex plugin marketplace add epicsagas/plugins
 ```
 
 Skills sind sofort verfügbar — keine weiteren Schritte erforderlich.
-
-### Antigravity
-
-```bash
-agy marketplace add epicsagas/plugins
-```
-
-Skills sind sofort verfügbar — keine weiteren Schritte erforderlich.
-
-> **Hinweis**: Antigravity unterstützt noch keine Subagenten. Der Alcove MCP-Server wird unter `~/.gemini/config/mcp_config.json` registriert.
 
 ### macOS (nur Apple Silicon)
 
@@ -172,23 +163,17 @@ cargo binstall alcove   # vorgefertigtes Binary (schnell)
 cargo install alcove    # aus Quellcode kompilieren
 ```
 
-Dann führe setup aus:
+> **Hinweis**: Vorgefertigte Binaries sind verfügbar für Linux (x86\_64), macOS (Apple Silicon und Intel) und Windows.
+
+### Ersteinrichtung (erforderlich)
+
+Nach der Installation mit einer der obigen Methoden, führe aus:
 
 ```bash
 alcove setup
 alcove --version
 alcove doctor
 ```
-
-**Optionale Abhängigkeiten**
-
-| Tool | Zweck | Installation |
-|---|---|---|
-| `pdftotext` (poppler) | Vollständige PDF-Textextraktion — erforderlich für PDF-Suche | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
-
-Ohne `pdftotext` fällt Alcove auf einen integrierten PDF-Parser zurück, der bei einigen Dateien fehlschlagen kann. Führe `alcove doctor` aus, um deine Installation zu überprüfen.
-
-> **Hinweis**: Vorgefertigte Binaries sind verfügbar für Linux (x86\_64), macOS (Apple Silicon und Intel) und Windows.
 
 `setup` führt dich interaktiv durch alles:
 
@@ -200,6 +185,14 @@ Ohne `pdftotext` fällt Alcove auf einen integrierten PDF-Parser zurück, der be
 6. Welche KI-Agenten konfiguriert werden sollen (MCP + Skill-Dateien — Claude Code und Codex werden über ihre Plugin-Systeme verwaltet)
 
 Führe `alcove setup` jederzeit erneut aus, um Einstellungen zu ändern. Es merkt sich deine vorherigen Auswahlen.
+
+**Optionale Abhängigkeiten**
+
+| Tool | Zweck | Installation |
+|---|---|---|
+| `pdftotext` (poppler) | Vollständige PDF-Textextraktion — erforderlich für PDF-Suche | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+Ohne `pdftotext` fällt Alcove auf einen integrierten PDF-Parser zurück, der bei einigen Dateien fehlschlagen kann. Führe `alcove doctor` aus, um deine Installation zu überprüfen.
 
 ## Verwendung
 

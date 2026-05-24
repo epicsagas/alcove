@@ -25,9 +25,7 @@
   <a href="https://buymeacoffee.com/epicsaga"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee" /></a>
 </p>
 
-Alcove permet à tout agent de codage IA de lire et gérer la documentation privée de votre projet — sans la divulguer dans les dépôts publics.
-
-Gardez les PRDs, décisions d'architecture, cartes de secrets et runbooks internes en un seul endroit. Chaque agent compatible MCP obtient les mêmes outils, sur tous les projets, sans configuration par projet.
+Alcove est un serveur MCP qui donne aux agents de codage IA un accès à la demande à la documentation privée de votre projet — **recherche hybride BM25 + vectorielle** pour une récupération précise, **indexation de code tree-sitter** pour que les agents comprennent la structure de votre codebase, et **application de politiques** pour la cohérence des documents. Pas de gonflement de contexte, pas de fuite de documents dans les dépôts publics, pas de configuration par projet pour chaque agent.
 
 ## Le problème
 
@@ -49,7 +47,7 @@ Multipliez par 5 projets et 3 agents. À chaque changement, vous perdez le conte
 
 ## Comment Alcove résout ce problème
 
-Alcove conserve tous vos documents privés dans **un seul dépôt partagé**, organisé par projet. Tout agent compatible MCP y accède de la même manière — que vous utilisiez Claude Code, Cursor, Antigravity ou Codex.
+Alcove conserve tous vos documents privés dans **un seul dépôt partagé**, organisé par projet. Tout agent compatible MCP y accède de la même manière — que vous utilisiez Claude Code, Cursor ou Codex.
 
 ```
 ~/projects/my-app $ claude "comment l'authentification est-elle implémentée ?"
@@ -83,7 +81,7 @@ Alcove conserve tous vos documents privés dans **un seul dépôt partagé**, or
 - **Validation des documents** — vérifie les fichiers manquants, les templates non remplis, les sections requises
 - **Lint sémantique** — détecte automatiquement les wikilinks cassés, les fichiers orphelins, les marqueurs WIP/DRAFT obsolètes et les références temporelles de plus de 2 ans
 - **Import depuis un vault externe** — importe une note d'Obsidian (ou autre vault) dans le doc-repo en une seule commande ; routage automatique vers le bon projet
-- **Compatible avec 9+ agents** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot, Antigravity
+- **Compatible avec 9+ agents** — Claude Code, Cursor, Claude Desktop, Cline, OpenCode, Codex, Copilot
 
 ## Pourquoi Alcove
 
@@ -92,7 +90,8 @@ Alcove conserve tous vos documents privés dans **un seul dépôt partagé**, or
 | Documents internes éparpillés entre Notion, Google Docs, fichiers locaux | Un dépôt de documents, structuré par projet |
 | Chaque agent IA configuré séparément pour l'accès aux documents | Une seule configuration, tous les agents partagent le même accès |
 | Changer de projet signifie perdre le contexte documentaire | Détection automatique par CWD, changement de projet instantané |
-| Les recherches de l'agent renvoient des lignes aléatoires | Recherche BM25 classée — meilleures correspondances en premier, indexation automatique |
+| Les recherches de l'agent renvoient des lignes aléatoires | Recherche hybride (BM25 + RAG) — les agents récupèrent uniquement ce dont ils ont besoin, classé par pertinence |
+| L'agent ne voit que des documents texte, pas la structure du code | Indexation de code tree-sitter — les agents comprennent les modules, fonctions et types sur 12 langages |
 | "Chercher toutes mes notes sur l'authentification" — impossible | Recherche globale dans tous les projets en une seule requête |
 | Documents sensibles risquent de fuiter dans les dépôts publics | Documents privés physiquement séparés des dépôts de projet |
 | La structure documentaire varie par projet et par membre de l'équipe | `policy.toml` impose des standards à travers tous les projets |
@@ -102,7 +101,7 @@ Alcove conserve tous vos documents privés dans **un seul dépôt partagé**, or
 
 ## Démarrage rapide
 
-### Claude Code (recommandé)
+### Claude Code
 
 ```
 /plugin marketplace add epicsagas/plugins
@@ -126,16 +125,6 @@ codex plugin marketplace add epicsagas/plugins
 ```
 
 Les skills sont disponibles immédiatement — aucune étape supplémentaire nécessaire.
-
-### Antigravity
-
-```bash
-agy marketplace add epicsagas/plugins
-```
-
-Les skills sont disponibles immédiatement — aucune étape supplémentaire nécessaire.
-
-> **Remarque** : Antigravity ne prend pas encore en charge les sous-agents. Le serveur MCP Alcove est enregistré dans `~/.gemini/config/mcp_config.json`.
 
 ### macOS (Apple Silicon uniquement)
 
@@ -172,23 +161,17 @@ cargo binstall alcove   # binaire précompilé (rapide)
 cargo install alcove    # compiler depuis le code source
 ```
 
-Puis exécutez setup :
+> **Note** : Les binaires précompilés sont disponibles pour Linux (x86\_64), macOS (Apple Silicon et Intel) et Windows.
+
+### Première configuration (obligatoire)
+
+Après l'installation via l'une des méthodes ci-dessus, exécutez :
 
 ```bash
 alcove setup
 alcove --version
 alcove doctor
 ```
-
-**Dépendances optionnelles**
-
-| Outil | Objectif | Installation |
-|---|---|---|
-| `pdftotext` (poppler) | Extraction complète de texte PDF — requise pour la recherche PDF | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
-
-Sans `pdftotext`, Alcove se rabat sur un analyseur PDF intégré qui peut échouer sur certains fichiers. Exécutez `alcove doctor` pour vérifier votre installation.
-
-> **Note** : Les binaires précompilés sont disponibles pour Linux (x86\_64), macOS (Apple Silicon et Intel) et Windows.
 
 `setup` vous guide à travers tout de manière interactive :
 
@@ -200,6 +183,14 @@ Sans `pdftotext`, Alcove se rabat sur un analyseur PDF intégré qui peut échou
 6. Quels agents IA configurer (MCP + fichiers de compétences — Claude Code et Codex sont gérés par leurs systèmes de plugins)
 
 Relancez `alcove setup` à tout moment pour modifier les paramètres. Il se souvient de vos choix précédents.
+
+**Dépendances optionnelles**
+
+| Outil | Objectif | Installation |
+|---|---|---|
+| `pdftotext` (poppler) | Extraction complète de texte PDF — requise pour la recherche PDF | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+Sans `pdftotext`, Alcove se rabat sur un analyseur PDF intégré qui peut échouer sur certains fichiers. Exécutez `alcove doctor` pour vérifier votre installation.
 
 ## Utilisation
 
@@ -259,7 +250,7 @@ flowchart LR
     end
 
     subgraph Agents["Tout agent MCP"]
-        AG["Claude Code · Cursor\nAntigravity · Codex · Copilot\n+4 more"]
+        AG["Claude Code · Cursor\nCodex · Copilot\n+4 more"]
     end
 
     subgraph MCP["Serveur MCP Alcove"]
@@ -502,7 +493,6 @@ Tout est configuré interactivement via `alcove setup`. Vous pouvez aussi édite
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/config/mcp_config.json` | — |
 
 ## Langues supportées
 

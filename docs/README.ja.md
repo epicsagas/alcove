@@ -25,7 +25,7 @@
   <a href="https://buymeacoffee.com/epicsaga"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee" /></a>
 </p>
 
-Alcoveは、あらゆるAIコーディングエージェントにプライベートなプロジェクトドキュメントの読み取り・管理するアクセスを提供します — パブリックリポジトリへの漏洩を防ぎながら。
+Alcoveは、AIコーディングエージェントが必要に応じてプライベートなプロジェクトドキュメントにアクセスできるようにするMCPサーバーです — **BM25 + ベクターハイブリッド検索**で精度の高い検索、**tree-sitterコードインデックス**でエージェントがコードベース構造を理解、**ポリシー強制**でドキュメントの一貫性を維持。コンテキストの肥大化なし、パブリックリポジトリへの漏洩なし、エージェントごとのプロジェクト設定なし。
 
 PRD、アーキテクチャ決定、シークレットマップ、内部ランブックを一箇所に保管。すべてのMCP互換エージェントが同じツールを取得し、すべてのプロジェクトで動作し、プロジェクトごとの設定は不要です。
 
@@ -49,7 +49,7 @@ AIエージェントは毎回ゼロからセッションを開始します。
 
 ## Alcoveの解決方法
 
-Alcoveはすべてのプライベートドキュメントを**一つの共有リポジトリ**に、プロジェクトごとに整理して保管します。MCP互換のエージェントであれば、Claude Code、Cursor、Antigravity、Codexのいずれでも同じ方法でアクセスできます。
+Alcoveはすべてのプライベートドキュメントを**一つの共有リポジトリ**に、プロジェクトごとに整理して保管します。MCP互換のエージェントであれば、Claude Code、Cursor、Codexのいずれでも同じ方法でアクセスできます。
 
 ```
 ~/projects/my-app $ claude "認証はどう実装されている？"
@@ -83,7 +83,7 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 - **ドキュメント検証** — 不足ファイル、未記入テンプレート、必須セクションをチェック
 - **セマンティックLint** — 壊れたウィキリンク、孤立ファイル、古いWIP/DRAFTマーカー、2年以上前の日付表現を自動検出
 - **外部ボルトへの取り込み** — Obsidianなど外部ツールのノートをdoc-repoにワンコマンドで追加；ファイル名・内容に基づくプロジェクト自動ルーティング
-- **9つ以上のエージェントに対応** — Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity
+- **9つ以上のエージェントに対応** — Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot
 
 ## なぜAlcoveなのか
 
@@ -92,7 +92,8 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 | 内部ドキュメントがNotion、Google Docs、ローカルファイルに散在 | 一つのドキュメントリポジトリ、プロジェクトごとに構造化 |
 | 各AIエージェントごとにドキュメントアクセスを個別設定 | 一度の設定で、すべてのエージェントが同じアクセスを共有 |
 | プロジェクト切り替え時にドキュメントコンテキストが失われる | CWD自動検出で、即座にプロジェクト切り替え |
-| エージェント検索がランダムなマッチ行を返す | BM25ランキング検索 — 最適なマッチを優先、自動インデクシング |
+| エージェント検索がランダムなマッチ行を返す | ハイブリッド検索（BM25 + RAG） — エージェントが必要なものだけを関連度順に取得 |
+| エージェントはテキストドキュメントしか見えず、コード構造を理解しない | Tree-sitterコードインデックス — エージェントが12言語のモジュール、関数、型を理解 |
 | 「認証に関するノートをすべて検索」— 不可能 | グローバル検索で全プロジェクトを一括クエリ |
 | 機密ドキュメントがパブリックリポジトリに漏洩するリスク | プライベートドキュメントをプロジェクトリポジトリから物理的に分離 |
 | ドキュメント構造がプロジェクトやチームメンバーごとに異なる | `policy.toml`がすべてのプロジェクトに標準を強制 |
@@ -102,7 +103,7 @@ Alcoveはすべてのプライベートドキュメントを**一つの共有リ
 
 ## クイックスタート
 
-### Claude Code（推奨）
+### Claude Code
 
 ```
 /plugin marketplace add epicsagas/plugins
@@ -126,16 +127,6 @@ codex plugin marketplace add epicsagas/plugins
 ```
 
 スキルはすぐに利用可能です — 追加手順は不要です。
-
-### Antigravity
-
-```bash
-agy marketplace add epicsagas/plugins
-```
-
-スキルはすぐに利用可能です — 追加手順は不要です。
-
-> **注意**: Antigravity はまだサブエージェントをサポートしていません。Alcove MCP サーバーは `~/.gemini/config/mcp_config.json` に登録されます。
 
 ### macOS（Apple Silicon のみ）
 
@@ -172,23 +163,17 @@ cargo binstall alcove   # ビルド済みバイナリ（高速）
 cargo install alcove    # ソースからビルド
 ```
 
-その後、setupを実行してください:
+> **注意**: 事前ビルドバイナリはLinux（x86\_64）、macOS（Apple SiliconおよびIntel）、Windowsに提供されています。
+
+### 初回セットアップ（必須）
+
+上記のいずれかの方法でインストール後、以下を実行してください:
 
 ```bash
 alcove setup
 alcove --version
 alcove doctor
 ```
-
-**任意の依存関係**
-
-| ツール | 目的 | インストール |
-|---|---|---|
-| `pdftotext` (poppler) | PDF全文テキスト抽出 — PDF検索に必要 | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
-
-`pdftotext` がない場合、Alcoveは内蔵PDFパーサーにフォールバックしますが、一部のファイルでは失敗する可能性があります。`alcove doctor` でインストール状態を確認してください。
-
-> **注意**: 事前ビルドバイナリはLinux（x86\_64）、macOS（Apple SiliconおよびIntel）、Windowsに提供されています。
 
 `setup`は以下を対話的にガイドします:
 
@@ -200,6 +185,14 @@ alcove doctor
 6. 設定するAIエージェント（MCP + スキルファイル — Claude CodeとCodexはプラグインシステムで処理されます）
 
 設定を変更したいときはいつでも `alcove setup` を再実行できます。以前の選択内容を記憶しています。
+
+**任意の依存関係**
+
+| ツール | 目的 | インストール |
+|---|---|---|
+| `pdftotext` (poppler) | PDF全文テキスト抽出 — PDF検索に必要 | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+`pdftotext` がない場合、Alcoveは内蔵PDFパーサーにフォールバックしますが、一部のファイルでは失敗する可能性があります。`alcove doctor` でインストール状態を確認してください。
 
 ## 使い方
 
@@ -259,7 +252,7 @@ flowchart LR
     end
 
     subgraph Agents["任意のMCPエージェント"]
-        AG["Claude Code · Cursor\nAntigravity · Codex · Copilot\n+4 more"]
+        AG["Claude Code · Cursor\nCodex · Copilot\n+4 more"]
     end
 
     subgraph MCP["Alcove MCPサーバー"]
@@ -506,7 +499,6 @@ format = "mermaid"
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/config/mcp_config.json` | — |
 
 ## 対応言語
 

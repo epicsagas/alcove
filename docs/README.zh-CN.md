@@ -25,7 +25,7 @@
   <a href="https://buymeacoffee.com/epicsaga"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee" /></a>
 </p>
 
-Alcove 让任何 AI 编码代理都能读取和管理您的私有项目文档——不会将它们泄露到公共仓库中。
+Alcove 是一个 MCP 服务器，让 AI 编码代理按需访问您的私有项目文档 — **BM25 + 向量混合搜索**实现精准检索，**tree-sitter 代码索引**让代理理解您的代码库结构，**策略强制执行**确保文档一致性。无上下文膨胀，无文档泄露到公共仓库，无需为每个代理单独配置项目。
 
 将 PRD、架构决策、密钥映射和内部运维手册集中保管。每个 MCP 兼容的代理都获得相同的访问权限，跨所有项目，无需每个项目单独配置。
 
@@ -49,7 +49,7 @@ Alcove 让任何 AI 编码代理都能读取和管理您的私有项目文档—
 
 ## Alcove 如何解决这个问题
 
-Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织。任何兼容 MCP 的代理都以相同方式访问它们——无论您使用的是 Claude Code、Cursor、Antigravity 还是 Codex。
+Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织。任何兼容 MCP 的代理都以相同方式访问它们——无论您使用的是 Claude Code、Cursor 还是 Codex。
 
 ```
 ~/projects/my-app $ claude "认证是如何实现的？"
@@ -83,7 +83,7 @@ Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织
 - **文档验证** —— 检查缺失文件、未填充模板、必需章节
 - **语义检查** —— 自动检测失效的 Wiki 链接、孤立文件、过期 WIP/DRAFT 标记及 2 年以上的日期表述
 - **外部仓库引入** —— 一条命令将 Obsidian 等工具的笔记带入 doc-repo；根据文件名和内容自动路由到对应项目
-- **支持 9+ 个代理** —— Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot、Antigravity
+- **支持 9+ 个代理** —— Claude Code、Cursor、Claude Desktop、Cline、OpenCode、Codex、Copilot
 
 ## 为什么选择 Alcove
 
@@ -92,7 +92,8 @@ Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织
 | 内部文档分散在 Notion、Google Docs、本地文件中 | 一个文档仓库，按项目结构化 |
 | 每个 AI 代理需要单独配置文档访问 | 一次设置，所有代理共享相同的访问权限 |
 | 切换项目意味着丢失文档上下文 | CWD 自动检测，即时切换项目 |
-| 代理搜索返回随机匹配行 | BM25 排名搜索——最佳匹配优先，自动索引 |
+| 代理搜索返回随机匹配行 | 混合搜索（BM25 + RAG） — 代理只拉取所需内容，按相关度排序 |
+| 代理只能看到文本文档，不了解代码结构 | Tree-sitter 代码索引 — 代理理解 12 种语言的模块、函数和类型 |
 | "搜索所有关于认证的笔记"——不可能 | 全局搜索一次查询所有项目 |
 | 敏感文档有泄露到公共仓库的风险 | 私有文档与项目仓库物理隔离 |
 | 文档结构因项目和团队成员而异 | `policy.toml` 在所有项目中强制执行标准 |
@@ -102,7 +103,7 @@ Alcove 将所有私有文档保存在**一个共享仓库**中，按项目组织
 
 ## 快速开始
 
-### Claude Code（推荐）
+### Claude Code
 
 ```
 /plugin marketplace add epicsagas/plugins
@@ -126,16 +127,6 @@ codex plugin marketplace add epicsagas/plugins
 ```
 
 技能立即可用 — 无需额外步骤。
-
-### Antigravity
-
-```bash
-agy marketplace add epicsagas/plugins
-```
-
-技能立即可用 — 无需额外步骤。
-
-> **注意**：Antigravity 目前不支持子代理。Alcove MCP 服务器注册在 `~/.gemini/config/mcp_config.json`。
 
 ### macOS（仅限 Apple Silicon）
 
@@ -172,23 +163,17 @@ cargo binstall alcove   # 预构建二进制（快速）
 cargo install alcove    # 从源码构建
 ```
 
-然后运行 setup：
+> **注意**：预构建二进制文件适用于 Linux（x86\_64）、macOS（Apple Silicon 和 Intel）以及 Windows。
+
+### 首次设置（必选）
+
+通过上述任意方式安装后，运行：
 
 ```bash
 alcove setup
 alcove --version
 alcove doctor
 ```
-
-**可选依赖**
-
-| 工具 | 用途 | 安装 |
-|---|---|---|
-| `pdftotext` (poppler) | 完整 PDF 文本提取 — PDF 搜索所需 | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
-
-没有 `pdftotext` 时，Alcove 会回退到内置 PDF 解析器，但在某些文件上可能会失败。运行 `alcove doctor` 检查安装状态。
-
-> **注意**：预构建二进制文件适用于 Linux（x86\_64）、macOS（Apple Silicon 和 Intel）以及 Windows。
 
 `setup` 会以交互方式引导您完成所有配置：
 
@@ -200,6 +185,14 @@ alcove doctor
 6. 要配置的 AI 代理（MCP + 技能文件 — Claude Code 和 Codex 由其插件系统处理）
 
 随时重新运行 `alcove setup` 来更改设置。它会记住您之前的选择。
+
+**可选依赖**
+
+| 工具 | 用途 | 安装 |
+|---|---|---|
+| `pdftotext` (poppler) | 完整 PDF 文本提取 — PDF 搜索所需 | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+没有 `pdftotext` 时，Alcove 会回退到内置 PDF 解析器，但在某些文件上可能会失败。运行 `alcove doctor` 检查安装状态。
 
 ## 使用方法
 
@@ -259,7 +252,7 @@ flowchart LR
     end
 
     subgraph Agents["任意 MCP 代理"]
-        AG["Claude Code · Cursor\nAntigravity · Codex · Copilot\n+4 more"]
+        AG["Claude Code · Cursor\nCodex · Copilot\n+4 more"]
     end
 
     subgraph MCP["Alcove MCP 服务器"]
@@ -506,7 +499,6 @@ format = "mermaid"
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/config/mcp_config.json` | — |
 
 ## 支持的语言
 

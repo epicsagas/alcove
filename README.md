@@ -33,12 +33,12 @@
   <a href="https://buymeacoffee.com/epicsaga"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/buy_me_a_coffee-FFDD00?style=for-the-badge&labelColor=0d1117&logo=buymeacoffee&logoColor=black" /></a>
 </p>
 
-Alcove is an MCP server that gives AI coding agents on-demand access to your private project docs — without dumping everything into the context window, without leaking docs into public repos, and without per-project config for every agent you use.
+Alcove is an MCP server that gives AI coding agents on-demand access to your private project docs — **BM25 + vector hybrid search** for precision retrieval, **tree-sitter code indexing** so agents understand your codebase structure, and **policy enforcement** for doc consistency. No context bloat, no leaking docs into public repos, no per-project config for every agent.
 
 ## Demo
 
 ![Alcove agent demo](demo-agent.gif)
-> *Claude, Codex, Antigravity — search · switch projects · global search · validate & generate. One setup.*
+> *Claude, Codex — search · switch projects · global search · validate & generate. One setup.*
 
 <details>
 <summary>CLI demo</summary>
@@ -107,7 +107,8 @@ Agent config files                ← agent rules, coding conventions, recurring
 
 | Without a doc layer | With Alcove |
 |---------------------|-------------|
-| Docs in agent config bloat context on every run | BM25 search — agents pull only what they need |
+| Docs in agent config bloat context on every run | Hybrid search (BM25 + RAG) — agents pull only what they need, ranked by relevance |
+| Agent only sees text docs, not code structure | Tree-sitter code indexing — agents understand modules, functions, and types across 12 languages |
 | Internal docs scattered across Notion, Google Docs, local files | One doc-repo, structured by project |
 | Each AI agent configured separately for doc access | One setup, all agents share the same access |
 | Switching projects means re-explaining context | CWD auto-detection, instant project switch |
@@ -121,7 +122,7 @@ Agent config files                ← agent rules, coding conventions, recurring
 
 ## Quick start
 
-### Claude Code (recommended)
+### Claude Code
 
 ```
 /plugin marketplace add epicsagas/plugins
@@ -145,16 +146,6 @@ codex plugin marketplace add epicsagas/plugins
 ```
 
 Skills are available immediately — no further steps needed.
-
-### Antigravity
-
-```bash
-agy marketplace add epicsagas/plugins
-```
-
-Skills are available immediately — no further steps needed.
-
-> **Note**: Antigravity does not yet support subagents. The Alcove MCP server is registered at `~/.gemini/config/mcp_config.json`.
 
 ### macOS (Apple Silicon only)
 
@@ -191,23 +182,17 @@ cargo binstall alcove   # pre-built binary (fast)
 cargo install alcove    # build from source
 ```
 
-Then run setup:
+> **Note**: Pre-built binaries are available for Linux (x86\_64), macOS (Apple Silicon & Intel), and Windows.
+
+### First-time setup (required)
+
+After installing via any method above, run:
 
 ```bash
 alcove setup
 alcove --version
 alcove doctor
 ```
-
-**Optional dependencies**
-
-| Tool | Purpose | Install |
-|---|---|---|
-| `pdftotext` (poppler) | Full PDF text extraction — required for PDF search | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
-
-Without `pdftotext`, Alcove falls back to a built-in PDF parser which may fail on some files. Run `alcove doctor` to check your setup.
-
-> **Note**: Pre-built binaries are available for Linux (x86\_64), macOS (Apple Silicon & Intel), and Windows.
 
 `setup` walks you through everything interactively:
 
@@ -219,6 +204,14 @@ Without `pdftotext`, Alcove falls back to a built-in PDF parser which may fail o
 6. Which AI agents to configure (MCP + skill files — Claude Code and Codex are handled by their plugin systems)
 
 Re-run `alcove setup` anytime to change settings. It remembers your previous choices.
+
+**Optional dependencies**
+
+| Tool | Purpose | Install |
+|---|---|---|
+| `pdftotext` (poppler) | Full PDF text extraction — required for PDF search | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+Without `pdftotext`, Alcove falls back to a built-in PDF parser which may fail on some files. Run `alcove doctor` to check your setup.
 
 ### Troubleshooting
 
@@ -465,18 +458,11 @@ alcove model status
 
 | Model | Disk | Dim | Languages | Best for |
 |-------|------|-----|-----------|----------|
-| `SnowflakeArcticEmbedXSQ` | 15 MB | 384 | English | CI, resource-constrained environments |
-| `SnowflakeArcticEmbedXS` | 30 MB | 384 | English | Fast English-only indexing |
-| `SnowflakeArcticEmbedSQ` | 65 MB | 384 | English | Balanced quality + size (English) |
-| `SnowflakeArcticEmbedS` | 130 MB | 384 | English | Good English recall |
+| `AllMiniLML6V2` | 90 MB | 384 | English | Smallest footprint, fast English-only indexing |
 | **`MultilingualE5Small`** | **235 MB** | **384** | **100+ languages** | **Default — multilingual / mixed-language projects** |
-| `SnowflakeArcticEmbedMQ` | 200 MB | 768 | English | High quality, quantized |
-| `SnowflakeArcticEmbedM` | 400 MB | 768 | English | Best English recall |
 | `MultilingualE5Base` | 555 MB | 768 | 100+ languages | Better multilingual quality |
 | `MultilingualE5Large` | 2.2 GB | 1024 | 100+ languages | Maximum multilingual quality |
 | `BGEM3` | 2.3 GB | 1024 | 100+ languages | State-of-the-art multilingual |
-
-**Q (quantized) variants** use int8 quantization — ~50% smaller on disk, slightly lower recall, no meaningful accuracy loss for typical document search. Use the XSQ/SQ/MQ variants when memory is a constraint.
 
 Once a model is downloaded and ready, Alcove will automatically use Hybrid Search for both CLI search and agent-based MCP tools. This is particularly effective for multilingual projects and complex semantic queries.
 

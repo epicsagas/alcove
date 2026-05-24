@@ -25,7 +25,7 @@
   <a href="https://buymeacoffee.com/epicsaga"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee" /></a>
 </p>
 
-Alcove permite que cualquier agente de codificación con IA lea y gestione la documentación privada de tu proyecto, sin exponerla en repositorios públicos.
+Alcove es un servidor MCP que da a los agentes de codificación con IA acceso bajo demanda a la documentación privada de tu proyecto — **búsqueda híbrida BM25 + vectorial** para recuperación precisa, **indexación de código con tree-sitter** para que los agentes entiendan la estructura de tu código, y **aplicación de políticas** para consistencia documental. Sin inflar el contexto, sin filtrar documentos a repositorios públicos, sin configuración por proyecto para cada agente.
 
 Guarda PRDs, decisiones de arquitectura, mapas de secretos y runbooks internos en un solo lugar. Cada agente compatible con MCP obtiene las mismas herramientas, en todos los proyectos, sin configuración por proyecto.
 
@@ -92,7 +92,8 @@ Alcove mantiene toda tu documentación privada en **un único repositorio compar
 | Documentos internos dispersos en Notion, Google Docs, archivos locales | Un repositorio de documentos, estructurado por proyecto |
 | Cada agente de IA configurado por separado para acceder a documentos | Una configuración, todos los agentes comparten el mismo acceso |
 | Cambiar de proyecto significa perder el contexto documental | Detección automática por CWD, cambio instantáneo de proyecto |
-| Las búsquedas del agente devuelven líneas aleatorias | Búsqueda BM25 con ranking — mejores coincidencias primero, indexación automática |
+| Las búsquedas del agente devuelven líneas aleatorias | Búsqueda híbrida (BM25 + RAG) — los agentes extraen solo lo que necesitan, ordenado por relevancia |
+| El agente solo ve documentos de texto, no la estructura del código | Indexación de código con tree-sitter — los agentes entienden módulos, funciones y tipos en 12 lenguajes |
 | "Buscar todas mis notas sobre autenticación" — imposible | Búsqueda global en todos los proyectos en una sola consulta |
 | Documentos sensibles con riesgo de filtrarse en repositorios públicos | Documentos privados físicamente separados de los repositorios del proyecto |
 | La estructura de documentos varía por proyecto y miembro del equipo | `policy.toml` impone estándares en todos los proyectos |
@@ -102,7 +103,7 @@ Alcove mantiene toda tu documentación privada en **un único repositorio compar
 
 ## Inicio rápido
 
-### Claude Code (recomendado)
+### Claude Code
 
 ```
 /plugin marketplace add epicsagas/plugins
@@ -126,16 +127,6 @@ codex plugin marketplace add epicsagas/plugins
 ```
 
 Las skills están disponibles inmediatamente — no se necesitan más pasos.
-
-### Antigravity
-
-```bash
-agy marketplace add epicsagas/plugins
-```
-
-Las skills están disponibles inmediatamente — no se necesitan más pasos.
-
-> **Nota**: Antigravity aún no admite subagentes. El servidor MCP de Alcove se registra en `~/.gemini/config/mcp_config.json`.
 
 ### macOS (solo Apple Silicon)
 
@@ -172,23 +163,17 @@ cargo binstall alcove   # binario precompilado (rápido)
 cargo install alcove    # compilar desde el código fuente
 ```
 
-Luego ejecuta setup:
+> **Nota**: Los binarios precompilados están disponibles para Linux (x86\_64), macOS (Apple Silicon e Intel) y Windows.
+
+### Configuración inicial (obligatoria)
+
+Después de instalar con cualquier método anterior, ejecuta:
 
 ```bash
 alcove setup
 alcove --version
 alcove doctor
 ```
-
-**Dependencias opcionales**
-
-| Herramienta | Propósito | Instalación |
-|---|---|---|
-| `pdftotext` (poppler) | Extracción completa de texto PDF — requerida para búsqueda PDF | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
-
-Sin `pdftotext`, Alcove recurre a un parser PDF integrado que puede fallar en algunos archivos. Ejecuta `alcove doctor` para verificar tu instalación.
-
-> **Nota**: Los binarios precompilados están disponibles para Linux (x86\_64), macOS (Apple Silicon e Intel) y Windows.
 
 `setup` te guía interactivamente a través de todo:
 
@@ -200,6 +185,14 @@ Sin `pdftotext`, Alcove recurre a un parser PDF integrado que puede fallar en al
 6. Qué agentes de IA configurar (MCP + archivos de habilidades — Claude Code y Codex se gestionan mediante sus sistemas de plugins)
 
 Ejecuta `alcove setup` en cualquier momento para cambiar la configuración. Recuerda tus elecciones anteriores.
+
+**Dependencias opcionales**
+
+| Herramienta | Propósito | Instalación |
+|---|---|---|
+| `pdftotext` (poppler) | Extracción completa de texto PDF — requerida para búsqueda PDF | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
+
+Sin `pdftotext`, Alcove recurre a un parser PDF integrado que puede fallar en algunos archivos. Ejecuta `alcove doctor` para verificar tu instalación.
 
 ## Uso
 
