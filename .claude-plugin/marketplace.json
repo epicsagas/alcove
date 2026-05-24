@@ -5,7 +5,7 @@
     "url": "https://github.com/epicsagas"
   },
   "metadata": {
-    "description": "MCP documentation server with hybrid search and background RAG."
+    "description": "Local-first MCP memory server with hybrid BM25+vector search."
   },
   "plugins": [
     {
