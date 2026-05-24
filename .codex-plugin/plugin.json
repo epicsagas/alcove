@@ -1,7 +1,7 @@
 {
   "name": "alcove",
-  "version": "0.9.0",
-  "description": "MCP documentation server — hybrid BM25+vector search, code structure indexing, lint, and launchd lifecycle for project docs.",
+  "version": "0.10.2",
+  "description": "Local-first MCP memory server — hybrid BM25+vector search, vault management, lint, and launchd lifecycle for project knowledge.",
   "author": {
     "name": "epicsagas",
     "url": "https://github.com/epicsagas"
@@ -11,18 +11,20 @@
   "license": "Apache-2.0",
   "keywords": [
     "mcp",
-    "documentation",
+    "memory",
+    "knowledge",
     "search",
     "rag",
     "bm25",
     "vector",
+    "vault",
     "lint",
     "launchd"
   ],
   "interface": {
     "displayName": "Alcove",
-    "shortDescription": "MCP documentation server with hybrid BM25+vector search.",
-    "longDescription": "Alcove is a local-first MCP documentation server with hybrid BM25+vector search, code structure indexing, lint, and launchd lifecycle management for project docs.",
+    "shortDescription": "MCP memory server with hybrid BM25+vector search for project knowledge.",
+    "longDescription": "Alcove is a local-first MCP memory server that manages project knowledge through hybrid BM25+vector search, structured vaults, documentation indexing, lint, and launchd lifecycle. It provides persistent context for AI agents beyond conversation windows.",
     "developerName": "epicsagas",
     "category": "Productivity",
     "capabilities": ["Read"],
