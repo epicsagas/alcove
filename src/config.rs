@@ -243,7 +243,7 @@ fn default_embedding_cache_dir() -> String {
 #[cfg(feature = "embed-candle")]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EmbeddingConfig {
-    /// Model name (e.g., "MultilingualE5Small", "SnowflakeArcticEmbedXS")
+    /// Model name (e.g., "MultilingualE5Small", "BGEM3")
     #[serde(default = "default_embedding_model")]
     pub model: String,
     /// Auto-download model on first search

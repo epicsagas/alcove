@@ -283,30 +283,35 @@ fn print_step_header(step: &Step) {
 #[cfg(feature = "embed-candle")]
 const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
     (
+        "AllMiniLML6V2",
+        "Default, fast & lightweight (~80MB)",
+        384,
+        80,
+    ),
+    (
         "MultilingualE5Small",
-        "Default, balanced (100+ langs, ~235MB)",
+        "Balanced multilingual (100+ langs, ~470MB)",
         384,
-        235,
+        470,
     ),
     (
-        "SnowflakeArcticEmbedXS",
-        "Smallest, fastest (~30MB)",
-        384,
-        30,
+        "MultilingualE5Base",
+        "Large scale docs (~1100MB)",
+        768,
+        1100,
     ),
     (
-        "SnowflakeArcticEmbedXSQ",
-        "Quantized, minimal disk (~15MB)",
-        384,
-        15,
+        "MultilingualE5Large",
+        "Best quality, heavy (~2200MB)",
+        1024,
+        2200,
     ),
     (
-        "SnowflakeArcticEmbedS",
-        "Quality/size balance (~130MB)",
-        384,
-        130,
+        "BGEM3",
+        "Dense+Sparse+ColBERT (~2300MB)",
+        1024,
+        2300,
     ),
-    ("MultilingualE5Base", "Large scale docs (~555MB)", 768, 555),
     ("disabled", "Disable embedding (BM25 only)", 0, 0),
 ];
 

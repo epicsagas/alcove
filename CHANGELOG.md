@@ -5,6 +5,14 @@ All notable changes to alcove will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.4] — 2026-05-25
+
+### Fixed
+
+- Setup wizard embedding model list now matches actual supported models
+- Removed SnowflakeArcticEmbedXS/Q/S from setup (not in EmbeddingModelChoice)
+- Added AllMiniLML6V2, MultilingualE5Large, BGEM3 to setup wizard
+
 ## [0.10.3] — 2026-05-25
 
 ### Changed

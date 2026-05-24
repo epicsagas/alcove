@@ -230,7 +230,7 @@ enum ModelCommands {
     Remove,
     /// Set the embedding model (updates config.toml)
     Set {
-        /// Model name (e.g., MultilingualE5Small, SnowflakeArcticEmbedXS)
+        /// Model name (e.g., MultilingualE5Small, BGEM3)
         model: String,
     },
     /// Show current model status
