@@ -477,7 +477,7 @@ alcove index            # 빠름 — 변경 파일만 재임베딩
 **모델 변경:**
 
 ```bash
-alcove model set SnowflakeArcticEmbedS   # 모델 변경
+alcove model set BGEM3                     # 모델 변경
 alcove rebuild                            # 필수: 벡터는 모델별로 호환 불가
 ```
 

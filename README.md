@@ -510,7 +510,7 @@ alcove index            # fast — only re-embeds changed files
 **Switching models:**
 
 ```bash
-alcove model set SnowflakeArcticEmbedS   # change model
+alcove model set BGEM3                     # change model
 alcove rebuild                            # required: vectors are model-specific
 ```
 
