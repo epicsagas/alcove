@@ -306,12 +306,7 @@ const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
         1024,
         2200,
     ),
-    (
-        "BGEM3",
-        "Dense+Sparse+ColBERT (~2300MB)",
-        1024,
-        2300,
-    ),
+    ("BGEM3", "Dense+Sparse+ColBERT (~2300MB)", 1024, 2300),
     ("disabled", "Disable embedding (BM25 only)", 0, 0),
 ];
 
