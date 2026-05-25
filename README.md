@@ -124,7 +124,7 @@ Agent config files                ← agent rules, coding conventions, recurring
 
 > **Required**: Run `alcove setup` once after installation to configure your docs root and enable full functionality. Plugins seed the MCP connection automatically, but Alcove cannot search or index documents until `setup` has been run.
 >
-> **Using Obsidian?** See the [Ecosystem](#ecosystem) section for the recommended docs structure and vault configuration.
+> **Using Obsidian?** See the [Ecosystem](#ecosystem) section for the docs structure and vault configuration.
 
 ### Claude Code
 
@@ -497,7 +497,7 @@ Understanding when to run `alcove index` vs `alcove rebuild`:
 # Step 1: BM25 search is ready immediately after setup
 alcove index            # builds full-text index (no model needed)
 
-# Step 2: Enable Hybrid Search (optional but recommended)
+# Step 2: Enable Hybrid Search (optional)
 alcove model set MultilingualE5Small
 alcove model download   # ~235 MB download
 
