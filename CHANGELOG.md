@@ -51,6 +51,280 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed Codex marketplace plugin definition
 - Synced plugin skill tool table with actual MCP tools (added `list_vaults`, `search_vault`, `backup_vault`; removed nonexistent `index_code_structure`)
 
+## [0.9.1] — 2026-05-21
+
+### Changed
+
+- Removed code-index feature flag — tree-sitter is now included in core builds
+- Updated CI actions to latest stable versions
+
+## [0.9.0] — 2026-05-19
+
+### Changed
+
+- Tracked Cargo.lock in git for reproducible builds
+- Updated macOS CI runner and synced dependencies
+
+## [0.8.12] — 2026-05-19
+
+### Changed
+
+- Applied cargo fmt to code-index module
+
+## [0.8.11] — 2026-05-19
+
+### Fixed
+
+- Switched llm-transpile from git dependency to crates.io
+
+## [0.8.10] — 2026-05-19
+
+### Added
+
+- Tree-sitter based code structure indexing for 12 languages
+- llm-transpile post-processing layer for search result optimization
+- Heading chunking, frontmatter exclusion, and parent-child search
+- Linux and Windows one-line installers in README
+- Codex plugin manifest with marketplace support
+- Plugin manifest now declares MCP + skill fields
+
+### Changed
+
+- Reframed README introduction around 2026 agent pain points
+- Upgraded badges to for-the-badge style with GitHub stats row
+- Compressed SKILL.md from 275 to 88 lines for token efficiency
+- Replaced fastembed with candle-transformers for cross-platform builds (#6)
+
+## [0.8.9] — 2026-05-12
+
+### Added
+
+- Binary downloader install script replacing source-build, with Windows support
+- Auto-update binary when plugin version is newer via SessionStart hook
+
+### Fixed
+
+- Removed duplicate hooks field and trailing comma in plugin.json
+- Corrected archive filename and extraction path in install script
+- Removed extra-artifacts from cargo-dist config
+
+## [0.8.8] — 2026-05-12
+
+### Added
+
+- `register` subcommand for non-interactive MCP seeding
+- Cross-platform Node.js installer replacing bash bootstrap in plugin hooks
+
+### Fixed
+
+- Added hooks path to plugin manifest
+- Aligned binstall metadata with cargo-dist 0.31.0 tar.xz output
+
+### Changed
+
+- Added marketplace add step and clarified setup requirement in README
+
+## [0.8.7] — 2026-05-11
+
+### Fixed
+
+- Restricted release targets to macOS + x86_64-linux (ort-sys/ONNX limitation)
+- Release pipeline: mapped Apple signing secrets, disabled pending codesign/notarize
+- Tests use home-based tempdir to avoid /tmp system path restriction
+
+### Changed
+
+- Migrated to dist-workspace.toml with macOS signing configuration
+- Unified CI workflow — check/test/audit/sbom jobs
+
+## [0.8.6] — 2026-05-10
+
+### Added
+
+- `backup_vault` MCP tool and CLI command
+- `alcove doctor` — MCP and API service status checks
+- Server lifecycle restructured into `mcp` and `api` subcommands
+- Launchd process lifecycle: enable/disable/start/stop/restart
+
+### Changed
+
+- Restructured as Cargo workspace
+- Updated CLI commands and obsidian-forge integration guide across all READMEs
+
+## [0.8.5] — 2026-05-07
+
+### Added
+
+- `init_project` now generates GitHub community standard files
+
+### Fixed
+
+- Resolved all clippy warnings and unused-import warnings
+
+## [0.8.4] — 2026-05-06
+
+### Added
+
+- Search benchmark framework for performance and quality measurement
+- Multi-field boosting, title indexing, and project diversity in search
+
+### Changed
+
+- Decomposed index.rs into 7 submodules with IndexSchema struct
+- Split cli.rs into agents/setup/commands submodules
+- FileReader trait registry for extensible document parsing
+
+## [0.8.3] — 2026-04-30
+
+### Added
+
+- Per-agent env var syntax, token wizard, and shell rc seeding in setup
+
+### Fixed
+
+- Added type field to agent configs, support env var interpolation
+- Changed default port from 8080 to 57384
+
+## [0.8.2] — 2026-04-30
+
+### Added
+
+- PostHog + Sentry telemetry with opt-out consent
+- Telemetry events across MCP, serve, and setup commands
+
+### Fixed
+
+- Guarded unix-only `reap` command with cfg(unix) for Windows build
+- Plugged promote_document telemetry gap
+
+### Changed
+
+- Reduced parallel jobs and test threads to cap memory usage
+- Hoisted load_config out of project list loop
+
+## [0.8.1] — 2026-04-29
+
+### Added
+
+- `reap` command and SessionEnd hook to clean orphaned processes
+- Vault-level embedding config with hybrid vector search
+
+## [0.8.0] — 2026-04-17
+
+### Fixed
+
+- Patched rand unsound vulnerability (0.10.0→0.10.1, 0.9.2→0.9.4)
+
+### Changed
+
+- Allowed dirty Cargo.lock during cargo publish for release workflow
+
+## [0.7.12] — 2026-04-16
+
+### Added
+
+- Multi-vault knowledge base support with isolated caches and HTTP API
+- Vault CLI commands: list, search, backup via MCP tools
+- Hybrid MCP proxy mode with Claude plugin support
+- Launchd process lifecycle: enable/disable/start/stop/restart
+- `alcove lint` and `alcove promote` CLI commands
+- HTTP RAG server mode (alcove-server feature)
+- HNSW indexing for large-scale vector search
+- Hybrid search with BM25 + vector RRF fusion
+- Embedding module with lazy model download
+- Multi-format document parsing (PDF, code, etc.)
+- Per-IP rate limiting
+- Bearer token auth and localhost-only CORS
+- Query embedding cache with doctor diagnostics
+- Memory budget management and security hardening
+
+### Fixed
+
+- ABBA deadlock, SSRF whitelist, /mcp rate limit, and correctness patches
+- Path traversal and file size DoS in MCP tools
+- Symlink cycle infinite loop in vault file counting
+- TOML injection vulnerabilities in config
+- Security: blocked ALCOVE_HOME from system-sensitive directories
+- Cross-compilation failures for Linux musl and Darwin x86_64
+
+### Changed
+
+- Unified alcove home to `~/.alcove` (migrated from `~/.config/alcove`)
+- Embedding cache moved to `~/.alcove/models`
+- Cached IndexReader, eliminated double index open
+- Bounded embed memory with file-batch streaming (32 files at a time)
+- Background rebuild_index returns immediately
+- Reduced function arguments via FullConfigParams struct
+
+## [0.7.11] — 2026-04-07
+
+### Added
+
+- Glama MCP score badge and glama.json configuration
+- Behavioral transparency and usage guidelines in MCP tool descriptions
+
+### Changed
+
+- Exposed alcove as a library crate
+
+## [0.7.10] — 2026-03-25
+
+### Changed
+
+- Bumped lz4_flex dependency (dependabot)
+
+## [0.7.9] — 2026-03-12
+
+### Added
+
+- Project-level configuration via `alcove.toml`
+- Configurable additional file extensions in search index
+
+## [0.7.8] — 2026-03-11
+
+### Added
+
+- CJK tokenizer support for improved search reliability
+
+### Changed
+
+- Reduced core complexity, improved type safety, added stale lock detection
+- Added Smithery registry listing (smithery.yaml, server-card.json)
+
+## [0.7.7] — 2026-03-10
+
+### Changed
+
+- Enhanced README with demo content and improved clarity
+- Updated SKILL documentation
+
+## [0.7.6] — 2026-03-09
+
+### Added
+
+- Homebrew and cargo-binstall install instructions
+
+### Fixed
+
+- Brew install command now uses fully qualified tap path
+
+## [0.7.4] — 2026-03-09
+
+### Changed
+
+- Updated install instructions for cargo-binstall support
+
+## [0.7.3] — 2026-03-09
+
+### Added
+
+- `alcove doctor` command and `check_doc_changes` MCP tool
+- Multi-platform release workflow and cargo-binstall support
+
+### Fixed
+
+- Spanish and Portuguese translation fixes
+
 ## [0.7.1] — 2026-03-08
 
 ### Fixed
