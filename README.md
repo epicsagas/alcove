@@ -71,7 +71,7 @@ Now multiply it across 5 projects and 3 agents. Every time you switch, you lose 
 Alcove doesn't inject your docs. **Agents search for what they need, when they need it.**
 
 ```
-~/projects/my-app $ claude "how is auth implemented?"
+~/projects/my-app $ claude "/alcove how is auth implemented?"
 
   → Alcove detects project: my-app
   → BM25 search: "auth" → ARCHITECTURE.md (score: 0.94), DECISIONS.md (score: 0.71)
@@ -79,7 +79,7 @@ Alcove doesn't inject your docs. **Agents search for what they need, when they n
 ```
 
 ```
-~/projects/my-api $ codex "review the API design"
+~/projects/my-api $ codex "/alcove review the API design"
 
   → Alcove detects project: my-api
   → Same doc structure, same access pattern
@@ -266,7 +266,7 @@ AI coding agents use Alcove through **MCP tools**. You don't usually need to cal
 | **Audit** | `audit_project` | Check for missing docs or inconsistencies between code and docs. |
 
 **Example agent interaction:**
-> **User:** "How do I add a new API endpoint?"
+> **User:** "/alcove How do I add a new API endpoint?"
 > **Agent:** (calls `search_project_docs(query="add api endpoint")`)
 > **Agent:** (reads the most relevant doc via `get_doc_file`)
 > **Agent:** "According to `ARCHITECTURE.md`, you need to..."

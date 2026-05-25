@@ -52,7 +52,7 @@ Multiplícalo por 5 proyectos y 3 agentes. Cada vez que cambias, pierdes el cont
 Alcove mantiene toda tu documentación privada en **un único repositorio compartido**, organizado por proyecto. Cualquier agente compatible con MCP accede de la misma manera — ya sea Claude Code, Cursor, Antigravity o Codex.
 
 ```
-~/projects/my-app $ claude "¿cómo está implementada la autenticación?"
+~/projects/my-app $ claude "/alcove ¿cómo está implementada la autenticación?"
 
   → Alcove detecta el proyecto: my-app
   → Lee ~/documents/my-app/ARCHITECTURE.md
@@ -60,7 +60,7 @@ Alcove mantiene toda tu documentación privada en **un único repositorio compar
 ```
 
 ```
-~/projects/my-api $ codex "revisa el diseño de la API"
+~/projects/my-api $ codex "/alcove revisa el diseño de la API"
 
   → Alcove detecta el proyecto: my-api
   → Misma estructura de documentos, mismo patrón de acceso
@@ -237,7 +237,7 @@ Los agentes de codificación de IA utilizan Alcove a través de las **herramient
 | **Auditar** | `audit_project` | Comprueba si faltan documentos o si hay incoherencias entre el código y los documentos. |
 
 **Ejemplo de interacción con el agente:**
-> **Usuario:** "¿Cómo añado un nuevo endpoint a la API?"
+> **Usuario:** "/alcove ¿Cómo añado un nuevo endpoint a la API?"
 > **Agente:** (llama a `search_project_docs(query="add api endpoint")`)
 > **Agente:** (lee el documento más relevante vía `get_doc_file`)
 > **Agente:** "Según `ARCHITECTURE.md`, necesitas..."

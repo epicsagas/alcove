@@ -52,7 +52,7 @@ Multipliziere das mit 5 Projekten und 3 Agenten. Jedes Mal wenn du wechselst, ve
 Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository**, organisiert nach Projekt. Jeder MCP-kompatible Agent greift auf dieselbe Weise darauf zu — egal ob du Claude Code, Cursor, Antigravity oder Codex verwendest.
 
 ```
-~/projects/my-app $ claude "Wie ist die Authentifizierung implementiert?"
+~/projects/my-app $ claude "/alcove Wie ist die Authentifizierung implementiert?"
 
   → Alcove erkennt Projekt: my-app
   → Liest ~/documents/my-app/ARCHITECTURE.md
@@ -60,7 +60,7 @@ Alcove speichert alle deine privaten Dokumente in **einem gemeinsamen Repository
 ```
 
 ```
-~/projects/my-api $ codex "Überprüfe das API-Design"
+~/projects/my-api $ codex "/alcove Überprüfe das API-Design"
 
   → Alcove erkennt Projekt: my-api
   → Gleiche Dokumentstruktur, gleiches Zugriffsmuster
@@ -235,7 +235,7 @@ KI-Codierungs-Agenten nutzen Alcove über **MCP-Tools**. Normalerweise müssen S
 | **Audit** | `audit_project` | Prüft auf fehlende Dokumente oder Inkonsistenzen zwischen Code und Dokumenten. |
 
 **Beispiel für die Interaktion mit dem Agenten:**
-> **Benutzer:** "Wie füge ich einen neuen API-Endpunkt hinzu?"
+> **Benutzer:** "/alcove Wie füge ich einen neuen API-Endpunkt hinzu?"
 > **Agent:** (ruft `search_project_docs(query="add api endpoint")` auf)
 > **Agent:** (liest das relevanteste Dokument über `get_doc_file`)
 > **Agent:** "Laut `ARCHITECTURE.md` müssen Sie..."
