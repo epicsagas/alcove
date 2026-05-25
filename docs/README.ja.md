@@ -128,7 +128,9 @@ alcove setup   # プラグインインストール後に一度実行
 codex plugin marketplace add epicsagas/plugins
 ```
 
-スキルはすぐに利用可能です — 追加手順は不要です。
+スキルを自動インストールし、MCPサーバーを登録します。すぐに利用可能です — 追加手順は不要です。
+
+`codex plugin update alcove@epicsagas` でアップデートします。
 
 ### macOS（Apple Silicon のみ）
 

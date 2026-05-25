@@ -130,7 +130,11 @@ alcove setup   # 插件安装后运行一次
 codex plugin marketplace add epicsagas/plugins
 ```
 
-技能立即可用 — 无需额外步骤。
+自动安装技能并注册 MCP 服务器。
+
+立即可用 — 无需额外步骤。
+
+使用 `codex plugin update alcove@epicsagas` 进行更新。
 
 ### macOS（仅限 Apple Silicon）
 

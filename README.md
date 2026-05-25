@@ -147,7 +147,9 @@ Updates with `claude plugin update alcove@epicsagas`.
 codex plugin marketplace add epicsagas/plugins
 ```
 
-Skills are available immediately — no further steps needed.
+Auto-installs the skill and registers the MCP server. Available immediately — no further steps needed.
+
+Updates with `codex plugin update alcove@epicsagas`.
 
 ### macOS (Apple Silicon only)
 
@@ -287,7 +289,7 @@ flowchart LR
     end
 
     subgraph Agents["Any MCP agent"]
-        AG["Claude Code · Cursor\nAntigravity · Codex · Copilot\n+4 more"]
+        AG["Claude Code · Cursor\nCodex · Copilot\n+4 more"]
     end
 
     subgraph MCP["Alcove MCP server"]
@@ -635,9 +637,6 @@ files = ["README.md", "CHANGELOG.md", "PRD.md"]  # PRD exposed as public for thi
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/config/mcp_config.json` | — |
-
-Agents with skill support activate Alcove automatically when you ask about project architecture, conventions, decisions, or status. They can also be invoked explicitly:
 
 ```
 /alcove                          Summarize current project docs and status

@@ -128,7 +128,9 @@ alcove setup   # 플러그인 설치 후 한 번 실행
 codex plugin marketplace add epicsagas/plugins
 ```
 
-스킬은 즉시 사용 가능합니다 — 추가 단계 불필요.
+스킬을 자동 설치하고 MCP 서버를 등록합니다. 즉시 사용 가능 — 추가 단계 불필요.
+
+`codex plugin update alcove@epicsagas`로 업데이트합니다.
 
 ### macOS (Apple Silicon 전용)
 

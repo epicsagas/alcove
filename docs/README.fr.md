@@ -128,7 +128,11 @@ Mises à jour avec `claude plugin update epicsagas/alcove`.
 codex plugin marketplace add epicsagas/plugins
 ```
 
-Les skills sont disponibles immédiatement — aucune étape supplémentaire nécessaire.
+Installe automatiquement la compétence et enregistre le serveur MCP.
+
+Disponible immédiatement — aucune étape supplémentaire nécessaire.
+
+Mises à jour avec `codex plugin update alcove@epicsagas`.
 
 ### macOS (Apple Silicon uniquement)
 

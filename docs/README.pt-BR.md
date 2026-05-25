@@ -130,7 +130,9 @@ Atualizações com `claude plugin update epicsagas/alcove`.
 codex plugin marketplace add epicsagas/plugins
 ```
 
-As skills estão disponíveis imediatamente — nenhum passo adicional necessário.
+Instala automaticamente a skill e registra o servidor MCP. As skills estão disponíveis imediatamente — nenhum passo adicional necessário.
+
+Atualizações com `codex plugin update alcove@epicsagas`.
 
 ### macOS (somente Apple Silicon)
 
@@ -256,7 +258,7 @@ flowchart LR
     end
 
     subgraph Agents["Qualquer agente MCP"]
-        AG["Claude Code · Cursor\nAntigravity · Codex · Copilot\n+4 more"]
+        AG["Claude Code · Cursor\nCodex · Copilot\n+4 more"]
     end
 
     subgraph MCP["Servidor MCP Alcove"]
@@ -499,7 +501,6 @@ Tudo isso é configurado interativamente via `alcove setup`. Você também pode 
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/config/mcp_config.json` | — |
 
 ## Idiomas suportados
 
