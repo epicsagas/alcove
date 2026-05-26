@@ -585,7 +585,7 @@ max_hnsw_cache     = 3    # 동시에 메모리에 유지할 최대 HNSW 그래�
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | ~/.gemini/antigravity-cli/plugins/ | — |
+| Antigravity | `agy plugins install` | — |
 
 ## 지원 언어
 

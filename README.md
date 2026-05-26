@@ -653,7 +653,7 @@ files = ["README.md", "CHANGELOG.md", "PRD.md"]  # PRD exposed as public for thi
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `~/.gemini/antigravity-cli/plugins/` | — |
+| Antigravity | `agy plugins install` | — |
 
 ```
 /alcove                          Summarize current project docs and status

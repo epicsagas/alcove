@@ -713,7 +713,7 @@ pub fn cmd_uninstall() -> Result<()> {
     println!("    OpenCode:       ~/.config/opencode/opencode.json");
     println!("    Codex:          ~/.codex/config.toml");
     println!("    Copilot CLI:    ~/.copilot/mcp-config.json");
-    println!("    Antigravity:    ~/.gemini/config/mcp_config.json");
+    println!("    Antigravity:    agy plugins install https://github.com/epicsagas/alcove");
     println!();
 
     Ok(())

@@ -9,7 +9,7 @@ use anyhow::Result;
 
 /// How an agent references environment variables in its MCP config.
 pub(crate) enum EnvVarSyntax {
-    /// `"${VAR}"` — Claude Code, Claude Desktop, Gemini CLI, Copilot, Antigravity, Codex
+    /// `"${VAR}"` — Claude Code, Claude Desktop, Copilot, Codex
     DollarBrace,
     /// `"${env:VAR}"` — Cursor, Cline
     DollarEnvColon,
@@ -109,16 +109,6 @@ pub(crate) fn agents() -> Vec<AgentDef> {
                 omit_type: false,
             },
             skill_dir: Some("~/.copilot/skills/alcove"),
-            env_syntax: EnvVarSyntax::DollarBrace,
-        },
-        AgentDef {
-            name: "Antigravity",
-            mcp_config: McpConfig::Json {
-                path: "~/.gemini/config/mcp_config.json",
-                server_key: "mcpServers",
-                omit_type: false,
-            },
-            skill_dir: None,
             env_syntax: EnvVarSyntax::DollarBrace,
         },
     ]
@@ -429,7 +419,6 @@ mod tests {
         assert!(names.contains(&"Cline (VS Code)"));
         assert!(names.contains(&"OpenCode"));
         assert!(names.contains(&"Copilot CLI"));
-        assert!(names.contains(&"Antigravity"));
     }
 
     #[test]

@@ -513,7 +513,7 @@ Tout est configuré interactivement via `alcove setup`. Vous pouvez aussi édite
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | ~/.gemini/antigravity-cli/plugins/ | — |
+| Antigravity | `agy plugins install` | — |
 
 ## Langues supportées
 
