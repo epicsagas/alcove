@@ -163,19 +163,13 @@ irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | i
 ### Antigravity (Gemini CLI)
 
 ```bash
-agy plugin install alcove@epicsagas
+agy plugins install https://github.com/epicsagas/alcove
 ```
 
 플러그인(MCP 서버, 스킬, 훅)을 자동으로 설치하고 다음 세션 시작 시 등록합니다.
 
 ```bash
 alcove setup   # run once after plugin install
-```
-
-Claude Code에 이미 Alcove가 설정되어 있다면 바로 가져올 수도 있습니다:
-
-```bash
-agy plugin import claude
 ```
 
 ### Rust 툴체인
