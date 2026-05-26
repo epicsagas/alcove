@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "alcove --version || curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh"
+            "command": "node ~/.gemini/antigravity-cli/plugins/alcove/hooks/install.js"
           }
         ]
       }
