@@ -536,45 +536,25 @@ mod tests {
 
     // ── Consistency tests (compile-time validated via include_str!) ──
 
-    const HOOKS_CLAUDE: &str = include_str!("../hooks/hooks.json");
-    const HOOKS_ANTIGRAVITY: &str = include_str!("../integrations/antigravity/hooks.json");
+    const HOOKS_CLAUDE: &str = include_str!("../.claude-plugin/hooks.json");
     const PLUGIN_CLAUDE: &str = include_str!("../.claude-plugin/plugin.json");
-    const PLUGIN_ANTIGRAVITY: &str = include_str!("../.antigravity-plugin/plugin.json");
     const PLUGIN_CODEX: &str = include_str!("../.codex-plugin/plugin.json");
     const MCP_CONFIG: &str = include_str!("../registry/mcp.json");
 
     #[test]
     fn hooks_claude_valid() {
         let parsed: serde_json::Value =
-            serde_json::from_str(HOOKS_CLAUDE).expect("hooks/hooks.json must be valid JSON");
+            serde_json::from_str(HOOKS_CLAUDE).expect(".claude-plugin/hooks.json must be valid JSON");
         let hooks = &parsed["hooks"];
         assert!(hooks.get("SessionStart").is_some(), "missing SessionStart");
         assert!(hooks.get("SessionEnd").is_some(), "missing SessionEnd");
 
-        // SessionEnd uses TOOL guard pattern
         let session_end_cmd = hooks["SessionEnd"][0]["hooks"][0]["command"]
             .as_str()
             .expect("missing SessionEnd command");
         assert!(
             session_end_cmd.contains("TOOL=$(command -v alcove"),
             "SessionEnd must use TOOL guard pattern"
-        );
-    }
-
-    #[test]
-    fn hooks_antigravity_valid() {
-        let parsed: serde_json::Value = serde_json::from_str(HOOKS_ANTIGRAVITY)
-            .expect("integrations/antigravity/hooks.json must be valid JSON");
-        let root = parsed
-            .as_object()
-            .expect("root must be an object")
-            .keys()
-            .next()
-            .expect("must have a plugin key");
-        let events = &parsed[root];
-        assert!(
-            events.get("PreInvocation").is_some(),
-            "missing PreInvocation"
         );
     }
 
@@ -586,13 +566,6 @@ mod tests {
         assert!(parsed["skills"].is_string(), "missing skills reference");
         assert!(parsed["hooks"].is_string(), "missing hooks reference");
         assert!(parsed["mcpServers"].is_string(), "missing mcpServers reference");
-    }
-
-    #[test]
-    fn plugin_antigravity_valid() {
-        let parsed: serde_json::Value = serde_json::from_str(PLUGIN_ANTIGRAVITY)
-            .expect(".antigravity-plugin/plugin.json must be valid JSON");
-        assert_eq!(parsed["name"].as_str(), Some("alcove"));
     }
 
     #[test]
@@ -619,20 +592,6 @@ mod tests {
         assert!(
             cmd.contains("install.cjs"),
             "SessionStart must reference install.cjs"
-        );
-    }
-
-    #[test]
-    fn hooks_antigravity_references_install_js() {
-        let parsed: serde_json::Value = serde_json::from_str(HOOKS_ANTIGRAVITY)
-            .expect("invalid JSON");
-        let root = parsed.as_object().unwrap().keys().next().unwrap();
-        let cmd = parsed[root]["PreInvocation"][0]["hooks"][0]["command"]
-            .as_str()
-            .expect("missing command");
-        assert!(
-            cmd.contains("install.cjs"),
-            "PreInvocation must reference install.cjs"
         );
     }
 }

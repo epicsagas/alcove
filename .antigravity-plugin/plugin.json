@@ -1,5 +1,0 @@
-{
-  "name": "alcove",
-  "hooks": "./integrations/antigravity/hooks.json",
-  "mcpServers": "./.antigravity-plugin/mcp_config.json"
-}

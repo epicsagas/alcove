@@ -22,6 +22,6 @@
     "launchd"
   ],
   "skills": "./registry/skills/",
-  "hooks": "./hooks/hooks.json",
+  "hooks": "./.codex-plugin/hooks.json",
   "mcpServers": "./registry/mcp.json"
 }
