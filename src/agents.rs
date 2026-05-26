@@ -543,8 +543,8 @@ mod tests {
 
     #[test]
     fn hooks_claude_valid() {
-        let parsed: serde_json::Value =
-            serde_json::from_str(HOOKS_CLAUDE).expect(".claude-plugin/hooks.json must be valid JSON");
+        let parsed: serde_json::Value = serde_json::from_str(HOOKS_CLAUDE)
+            .expect(".claude-plugin/hooks.json must be valid JSON");
         let hooks = &parsed["hooks"];
         assert!(hooks.get("SessionStart").is_some(), "missing SessionStart");
         assert!(hooks.get("SessionEnd").is_some(), "missing SessionEnd");
@@ -565,7 +565,10 @@ mod tests {
         assert!(parsed["name"].is_string(), "missing name");
         assert!(parsed["skills"].is_string(), "missing skills reference");
         assert!(parsed["hooks"].is_string(), "missing hooks reference");
-        assert!(parsed["mcpServers"].is_string(), "missing mcpServers reference");
+        assert!(
+            parsed["mcpServers"].is_string(),
+            "missing mcpServers reference"
+        );
     }
 
     #[test]
@@ -584,8 +587,7 @@ mod tests {
 
     #[test]
     fn hooks_claude_references_install_js() {
-        let parsed: serde_json::Value =
-            serde_json::from_str(HOOKS_CLAUDE).expect("invalid JSON");
+        let parsed: serde_json::Value = serde_json::from_str(HOOKS_CLAUDE).expect("invalid JSON");
         let cmd = parsed["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             .as_str()
             .expect("missing command");

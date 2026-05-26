@@ -7,8 +7,7 @@ use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
 use rust_i18n::t;
 
 use crate::agents::{
-    McpConfig, agents, expand_path, install_skill_to, write_json_mcp,
-    write_opencode_mcp,
+    McpConfig, agents, expand_path, install_skill_to, write_json_mcp, write_opencode_mcp,
 };
 use crate::config::{
     CategoryConfig, DOC_REPO_REQUIRED, DOC_REPO_SUPPLEMENTARY, DiagramConfig, DocConfig,
