@@ -22,6 +22,6 @@
     "launchd"
   ],
   "skills": "./registry/skills/",
-  "hooks": "./.claude-code/hooks.json",
+  "hooks": "./.claude-plugin/hooks.json",
   "mcpServers": "./registry/mcp.json"
 }
