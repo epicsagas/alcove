@@ -164,35 +164,20 @@ irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | i
 
 ### Antigravity (Gemini CLI)
 
-Se você já tem o Alcove configurado para o Claude Code, pode importá-lo diretamente:
+```bash
+agy plugin install alcove@epicsagas
+```
+
+Instala automaticamente o plugin (servidor MCP, skill, hooks) e o registra no próximo início de sessão.
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+Se você já tem o Alcove configurado no Claude Code, também pode importar diretamente:
 
 ```bash
 agy plugin import claude
-```
-
-Ou instale o plugin do Alcove manualmente:
-
-```bash
-# Plugin global (todos os workspaces)
-mkdir -p ~/.gemini/antigravity-cli/plugins/alcove
-echo '{ "name": "alcove" }' > ~/.gemini/antigravity-cli/plugins/alcove/plugin.json
-echo '{
-  "mcpServers": {
-    "alcove": { "command": "alcove", "args": [] }
-  }
-}' > ~/.gemini/antigravity-cli/plugins/alcove/mcp_config.json
-
-# Plugin de workspace (por projeto)
-mkdir -p .agents/plugins/alcove
-echo '{ "name": "alcove" }' > .agents/plugins/alcove/plugin.json
-echo '{
-  "mcpServers": {
-    "alcove": { "command": "alcove", "args": [] }
-  }
-}' > .agents/plugins/alcove/mcp_config.json
-
-# Executar o setup (se ainda não fez)
-alcove setup
 ```
 
 ### Via cadeia de ferramentas Rust
