@@ -774,6 +774,24 @@ Now your agents have structured access:
 
 You can verify the physical storage mapping by checking the symlinks in `~/.alcove/vaults/`.
 
+## FAQ
+
+### Why not just use ripgrep as an MCP tool?
+
+Ripgrep returns entire files. If your agent searches for "auth" and hits 5 files averaging 200 lines each, that's ~10K tokens injected into context — most of it irrelevant. Alcove chunks documents, ranks the chunks, and returns only the most relevant passages. It also provides semantic search (vector embeddings) that ripgrep cannot — a query like "how is the deployment pipeline structured" won't match any keyword in your DEPLOYMENT.md, but Alcove's vector search will find it.
+
+### Does this replace CLAUDE.md / AGENTS.md?
+
+No — they serve different purposes. Agent config files (CLAUDE.md, AGENTS.md) define **behavioral rules**: commit style, language preferences, safety constraints. Alcove manages **institutional knowledge**: architecture decisions, progress tracking, coding conventions, code structure. Agent config is for *how the agent should act*. Alcove is for *what the agent should know*.
+
+### Why Rust?
+
+Single binary, no runtime dependency. Tantivy is best-in-class BM25. candle-transformers gives us local vector embeddings without ONNX or Python. One `cargo install` or curl — no Docker, no Node.js, no virtualenv.
+
+### What about context windows getting bigger?
+
+Bigger windows don't solve the relevance problem. Even a 200K-token window filled with irrelevant docs degrades agent output quality — Anthropic's own documentation warns that bloated config files cause agents to ignore actual instructions. The goal isn't more context, it's the right context at the right time.
+
 ## Roadmap
 
 - **Multi-user remote access** — REST API for team doc sharing over LAN/VPN (bearer token auth, rate limiting already implemented). Requires: write API, concurrent index coordination, project lifecycle management.

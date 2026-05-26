@@ -353,14 +353,16 @@ impl CandleSession {
         let session = if model_choice.is_xlm_roberta() {
             let config: XlmRobertaConfig = serde_json::from_str(&config_str)
                 .context("Failed to parse XLM-RoBERTa config.json")?;
+            let vb_prefix = vb.pp("roberta");
+            // Check if weights already have the roberta prefix built-in.
             // BGE-M3's pytorch_model.bin stores keys without the "roberta." prefix
-            // (e.g. "encoder.layer.0..."), while some safetensors releases include it.
-            let vb_xlm = if vb.contains_tensor("roberta.encoder.layer.0.attention.output.dense.weight")
-            {
-                vb.pp("roberta")
-            } else {
-                vb
-            };
+            // (e.g. "encoder.layer.0..."), while safetensors releases may include it.
+            let vb_xlm =
+                if vb_prefix.contains_tensor("encoder.layer.0.attention.output.dense.weight") {
+                    vb_prefix
+                } else {
+                    vb
+                };
             let model = XLMRobertaModel::new(&config, vb_xlm)
                 .context("Failed to load XLM-RoBERTa model")?;
             ModelSession::XlmRoberta { model, tokenizer }
