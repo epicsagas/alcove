@@ -67,15 +67,20 @@ pub enum EmbeddingModelChoice {
     MultilingualE5Base,
     MultilingualE5Large,
     BGEM3,
+    ArcticEmbedXS,
+    ArcticEmbedS,
+    ArcticEmbedM,
+    ArcticEmbedL,
 }
 
 impl EmbeddingModelChoice {
     /// Get embedding dimension for this model
     pub fn dimension(&self) -> usize {
         match self {
-            Self::AllMiniLML6V2 | Self::MultilingualE5Small => 384,
-            Self::MultilingualE5Base => 768,
-            Self::MultilingualE5Large | Self::BGEM3 => 1024,
+            Self::AllMiniLML6V2 | Self::MultilingualE5Small | Self::ArcticEmbedXS
+            | Self::ArcticEmbedS => 384,
+            Self::MultilingualE5Base | Self::ArcticEmbedM => 768,
+            Self::MultilingualE5Large | Self::BGEM3 | Self::ArcticEmbedL => 1024,
         }
     }
 
@@ -87,6 +92,10 @@ impl EmbeddingModelChoice {
             Self::MultilingualE5Base => 1100,
             Self::MultilingualE5Large => 2200,
             Self::BGEM3 => 2300,
+            Self::ArcticEmbedXS => 90,
+            Self::ArcticEmbedS => 130,
+            Self::ArcticEmbedM => 430,
+            Self::ArcticEmbedL => 1300,
         }
     }
 
@@ -97,6 +106,10 @@ impl EmbeddingModelChoice {
             "MultilingualE5Base" => Some(Self::MultilingualE5Base),
             "MultilingualE5Large" => Some(Self::MultilingualE5Large),
             "BGEM3" => Some(Self::BGEM3),
+            "ArcticEmbedXS" => Some(Self::ArcticEmbedXS),
+            "ArcticEmbedS" => Some(Self::ArcticEmbedS),
+            "ArcticEmbedM" => Some(Self::ArcticEmbedM),
+            "ArcticEmbedL" => Some(Self::ArcticEmbedL),
             _ => None,
         }
     }
@@ -108,6 +121,10 @@ impl EmbeddingModelChoice {
             Self::MultilingualE5Base => "MultilingualE5Base",
             Self::MultilingualE5Large => "MultilingualE5Large",
             Self::BGEM3 => "BGEM3",
+            Self::ArcticEmbedXS => "ArcticEmbedXS",
+            Self::ArcticEmbedS => "ArcticEmbedS",
+            Self::ArcticEmbedM => "ArcticEmbedM",
+            Self::ArcticEmbedL => "ArcticEmbedL",
         }
     }
 
@@ -118,6 +135,10 @@ impl EmbeddingModelChoice {
             Self::MultilingualE5Base,
             Self::MultilingualE5Large,
             Self::BGEM3,
+            Self::ArcticEmbedXS,
+            Self::ArcticEmbedS,
+            Self::ArcticEmbedM,
+            Self::ArcticEmbedL,
         ]
     }
 
@@ -128,6 +149,10 @@ impl EmbeddingModelChoice {
             Self::MultilingualE5Base => "intfloat/multilingual-e5-base",
             Self::MultilingualE5Large => "intfloat/multilingual-e5-large",
             Self::BGEM3 => "BAAI/bge-m3",
+            Self::ArcticEmbedXS => "Snowflake/snowflake-arctic-embed-xs",
+            Self::ArcticEmbedS => "Snowflake/snowflake-arctic-embed-s",
+            Self::ArcticEmbedM => "Snowflake/snowflake-arctic-embed-m",
+            Self::ArcticEmbedL => "Snowflake/snowflake-arctic-embed-l",
         }
     }
 
@@ -135,6 +160,12 @@ impl EmbeddingModelChoice {
         match self {
             Self::MultilingualE5Small | Self::MultilingualE5Base | Self::MultilingualE5Large => {
                 Some("query: ")
+            }
+            Self::ArcticEmbedXS
+            | Self::ArcticEmbedS
+            | Self::ArcticEmbedM
+            | Self::ArcticEmbedL => {
+                Some("Represent this sentence for searching relevant passages: ")
             }
             Self::AllMiniLML6V2 | Self::BGEM3 => None,
         }
@@ -733,6 +764,10 @@ mod tests {
             assert_eq!(EmbeddingModelChoice::MultilingualE5Base.dimension(), 768);
             assert_eq!(EmbeddingModelChoice::MultilingualE5Large.dimension(), 1024);
             assert_eq!(EmbeddingModelChoice::BGEM3.dimension(), 1024);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedXS.dimension(), 384);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedS.dimension(), 384);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedM.dimension(), 768);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedL.dimension(), 1024);
         }
     }
 
@@ -754,6 +789,17 @@ mod tests {
 
             assert_eq!(EmbeddingModelChoice::BGEM3.query_prefix(), None);
             assert_eq!(EmbeddingModelChoice::BGEM3.doc_prefix(), None);
+
+            let arctic_query_prefix = "Represent this sentence for searching relevant passages: ";
+            for m in [
+                EmbeddingModelChoice::ArcticEmbedXS,
+                EmbeddingModelChoice::ArcticEmbedS,
+                EmbeddingModelChoice::ArcticEmbedM,
+                EmbeddingModelChoice::ArcticEmbedL,
+            ] {
+                assert_eq!(m.query_prefix(), Some(arctic_query_prefix), "{:?} query prefix", m);
+                assert_eq!(m.doc_prefix(), None, "{:?} doc prefix", m);
+            }
         }
     }
 
@@ -770,6 +816,10 @@ mod tests {
                 Some(EmbeddingModelChoice::BGEM3)
             );
             assert_eq!(EmbeddingModelChoice::parse("InvalidModel"), None);
+            assert_eq!(EmbeddingModelChoice::parse("ArcticEmbedXS"), Some(EmbeddingModelChoice::ArcticEmbedXS));
+            assert_eq!(EmbeddingModelChoice::parse("ArcticEmbedS"), Some(EmbeddingModelChoice::ArcticEmbedS));
+            assert_eq!(EmbeddingModelChoice::parse("ArcticEmbedM"), Some(EmbeddingModelChoice::ArcticEmbedM));
+            assert_eq!(EmbeddingModelChoice::parse("ArcticEmbedL"), Some(EmbeddingModelChoice::ArcticEmbedL));
         }
     }
 
@@ -792,6 +842,10 @@ mod tests {
         {
             assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.size_mb(), 80);
             assert_eq!(EmbeddingModelChoice::BGEM3.size_mb(), 2300);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedXS.size_mb(), 90);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedS.size_mb(), 130);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedM.size_mb(), 430);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedL.size_mb(), 1300);
         }
     }
 
@@ -802,6 +856,14 @@ mod tests {
             assert!(EmbeddingModelChoice::BGEM3.is_xlm_roberta());
             assert!(!EmbeddingModelChoice::AllMiniLML6V2.is_xlm_roberta());
             assert!(!EmbeddingModelChoice::MultilingualE5Large.is_xlm_roberta());
+            for m in [
+                EmbeddingModelChoice::ArcticEmbedXS,
+                EmbeddingModelChoice::ArcticEmbedS,
+                EmbeddingModelChoice::ArcticEmbedM,
+                EmbeddingModelChoice::ArcticEmbedL,
+            ] {
+                assert!(!m.is_xlm_roberta(), "{:?} should not be xlm_roberta", m);
+            }
         }
     }
 

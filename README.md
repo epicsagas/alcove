@@ -467,6 +467,10 @@ alcove model status
 | `MultilingualE5Base` | 555 MB | 768 | 100+ languages | Better multilingual quality |
 | `MultilingualE5Large` | 2.2 GB | 1024 | 100+ languages | Maximum multilingual quality |
 | `BGEM3` | 2.3 GB | 1024 | 100+ languages | State-of-the-art multilingual |
+| `ArcticEmbedXS` | 90 MB | 384 | English | Snowflake — best quality at 384 dim |
+| `ArcticEmbedS` | 130 MB | 384 | English | Snowflake — improved retrieval at small size |
+| `ArcticEmbedM` | 430 MB | 768 | English | Snowflake — workhorse retrieval quality |
+| `ArcticEmbedL` | 1.3 GB | 1024 | English | Snowflake — competitive with closed-source APIs |
 
 Once a model is downloaded and ready, Alcove will automatically use Hybrid Search for both CLI search and agent-based MCP tools. This is particularly effective for multilingual projects and complex semantic queries.
 

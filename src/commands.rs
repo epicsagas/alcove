@@ -769,6 +769,10 @@ fn cmd_model_list() -> Result<()> {
             EmbeddingModelChoice::MultilingualE5Base => "Large scale docs",
             EmbeddingModelChoice::MultilingualE5Large => "Best quality, heavy",
             EmbeddingModelChoice::BGEM3 => "Dense+Sparse+ColBERT",
+            EmbeddingModelChoice::ArcticEmbedXS => "Snowflake XS, best 384-dim quality",
+            EmbeddingModelChoice::ArcticEmbedS => "Snowflake S, improved small retrieval",
+            EmbeddingModelChoice::ArcticEmbedM => "Snowflake M, workhorse retrieval",
+            EmbeddingModelChoice::ArcticEmbedL => "Snowflake L, top retrieval quality",
         };
         println!(
             "{:<30} {:<8} {:<10} {}{}",

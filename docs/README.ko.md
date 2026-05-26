@@ -434,6 +434,10 @@ alcove model status
 | `MultilingualE5Base` | 555 MB | 768 | 100+ 언어 | 다국어 품질 향상 |
 | `MultilingualE5Large` | 2.2 GB | 1024 | 100+ 언어 | 최고 다국어 품질 |
 | `BGEM3` | 2.3 GB | 1024 | 100+ 언어 | 최첨단 다국어 |
+| `ArcticEmbedXS` | 90 MB | 384 | English | Snowflake — 384 차원에서 최고 품질 |
+| `ArcticEmbedS` | 130 MB | 384 | English | Snowflake — 소형 크기에서 향상된 검색 |
+| `ArcticEmbedM` | 430 MB | 768 | English | Snowflake — 실무급 검색 품질 |
+| `ArcticEmbedL` | 1.3 GB | 1024 | English | Snowflake — 클로즈드 소스 API와 경쟁하는 품질 |
 
 모델이 준비되면 Alcove는 CLI 검색과 에이전트 기반 MCP 도구 모두에서 자동으로 하이브리드 검색을 사용합니다. 이는 다국어 프로젝트나 복잡한 의미론적 쿼리에 특히 효과적입니다.
 
