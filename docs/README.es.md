@@ -29,6 +29,19 @@ Alcove es un servidor MCP que da a los agentes de codificación con IA acceso ba
 
 Guarda PRDs, decisiones de arquitectura, mapas de secretos y runbooks internos en un solo lugar. Cada agente compatible con MCP obtiene las mismas herramientas, en todos los proyectos, sin configuración por proyecto.
 
+## Demostración
+
+![Demo de agente Alcove](../demo-agent.gif)
+> *Claude, Codex — búsqueda · cambio de proyecto · búsqueda global · validar y generar. Una sola configuración.*
+
+<details>
+<summary>Demo CLI</summary>
+
+![Demo CLI de Alcove](../demo.gif)
+> *`alcove search` · cambio de proyecto · `--scope global` · `alcove validate`*
+
+</details>
+
 ## El problema
 
 Tu agente de IA empieza cada sesión desde cero.
@@ -213,6 +226,20 @@ Ejecuta `alcove setup` en cualquier momento para cambiar la configuración. Recu
 | `pdftotext` (poppler) | Extracción completa de texto PDF — requerida para búsqueda PDF | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
 
 Sin `pdftotext`, Alcove recurre a un parser PDF integrado que puede fallar en algunos archivos. Ejecuta `alcove doctor` para verificar tu instalación.
+
+### Solución de problemas
+
+**El agente no encuentra las herramientas de Alcove**
+Ejecuta `alcove setup` de nuevo — vuelve a registrar el servidor MCP para todos los agentes configurados. Luego inicia una nueva sesión del agente (el registro surte efecto en el próximo inicio de sesión).
+
+**La búsqueda no devuelve resultados**
+Es posible que el índice aún no esté construido. Ejecuta `alcove index` para construirlo e inténtalo de nuevo.
+
+**403 Unauthorized del servidor en segundo plano**
+`ALCOVE_TOKEN` no está configurado en tu shell. Ejecuta `alcove token` para mostrarlo, luego añade `export ALCOVE_TOKEN="..."` a tu perfil de shell y recarga.
+
+**`alcove doctor` reporta problemas**
+Sigue las sugerencias mostradas por `doctor` — verifica la ubicación del binario, el registro MCP, el estado del índice y dependencias opcionales como `pdftotext`.
 
 ## Uso
 

@@ -29,6 +29,19 @@ Alcove ist ein MCP-Server, der KI-Codierungs-Agenten bedarfsgesteuerten Zugriff 
 
 Speichere PRDs, Architekturentscheidungen, Secret-Maps und interne Runbooks an einem Ort. Jeder MCP-kompatible Agent erhält dieselben Tools, über alle Projekte hinweg, ohne Konfiguration pro Projekt.
 
+## Demo
+
+![Alcove-Agenten-Demo](../demo-agent.gif)
+> *Claude, Codex — Suche · Projektwechsel · globale Suche · Validierung & Generierung. Ein Setup.*
+
+<details>
+<summary>CLI-Demo</summary>
+
+![Alcove-CLI-Demo](../demo.gif)
+> *`alcove search` · Projektwechsel · `--scope global` · `alcove validate`*
+
+</details>
+
 ## Das Problem
 
 Dein KI-Agent startet jede Session von null.
@@ -211,6 +224,20 @@ Führe `alcove setup` jederzeit erneut aus, um Einstellungen zu ändern. Es merk
 | `pdftotext` (poppler) | Vollständige PDF-Textextraktion — erforderlich für PDF-Suche | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
 
 Ohne `pdftotext` fällt Alcove auf einen integrierten PDF-Parser zurück, der bei einigen Dateien fehlschlagen kann. Führe `alcove doctor` aus, um deine Installation zu überprüfen.
+
+### Problembehebung
+
+**Agent findet Alcove-Tools nicht**
+Führen Sie `alcove setup` erneut aus — es registriert den MCP-Server für alle konfigurierten Agenten neu. Starten Sie dann eine neue Agentensitzung (die Registrierung wird beim nächsten Sitzungsstart wirksam).
+
+**Suche liefert keine Ergebnisse**
+Der Index wurde möglicherweise noch nicht erstellt. Führen Sie `alcove index` aus und versuchen Sie es erneut.
+
+**403 Unauthorized vom Hintergrundserver**
+`ALCOVE_TOKEN` ist in Ihrer Shell nicht gesetzt. Führen Sie `alcove token` aus, um es anzuzeigen, fügen Sie dann `export ALCOVE_TOKEN="..."` zu Ihrem Shell-Profil hinzu und laden Sie es neu.
+
+**`alcove doctor` meldet Probleme**
+Befolgen Sie die von `doctor` ausgegebenen Vorschläge — es prüft Binärdatei-Speicherort, MCP-Registrierung, Index-Status und optionale Abhängigkeiten wie `pdftotext`.
 
 ## Verwendung
 

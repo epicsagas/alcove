@@ -29,6 +29,19 @@ O Alcove é um servidor MCP que dá a agentes de codificação com IA acesso sob
 
 Mantenha PRDs, decisões de arquitetura, mapas de segredos e runbooks internos em um só lugar. Todo agente compatível com MCP recebe as mesmas ferramentas, em todos os projetos, sem configuração por projeto.
 
+## Demonstração
+
+![Demo do agente Alcove](../demo-agent.gif)
+> *Claude, Codex — busca · troca de projeto · busca global · validar e gerar. Uma única configuração.*
+
+<details>
+<summary>Demo CLI</summary>
+
+![Demo CLI do Alcove](../demo.gif)
+> *`alcove search` · troca de projeto · `--scope global` · `alcove validate`*
+
+</details>
+
 ## O problema
 
 Seu agente de IA começa cada sessão do zero.
@@ -211,6 +224,20 @@ Execute `alcove setup` novamente a qualquer momento para alterar as configuraç�
 | `pdftotext` (poppler) | Extração completa de texto PDF — necessária para busca em PDF | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
 
 Sem `pdftotext`, o Alcove recorre a um parser PDF integrado que pode falhar em alguns arquivos. Execute `alcove doctor` para verificar sua instalação.
+
+### Solução de problemas
+
+**O agente não encontra as ferramentas do Alcove**
+Execute `alcove setup` novamente — ele recadastra o servidor MCP para todos os agentes configurados. Depois inicie uma nova sessão do agente (o registro entra em vigor no próximo início de sessão).
+
+**A busca não retorna resultados**
+O índice pode ainda não ter sido construído. Execute `alcove index` para construí-lo e tente novamente.
+
+**403 Unauthorized do servidor em segundo plano**
+`ALCOVE_TOKEN` não está definido no seu shell. Execute `alcove token` para exibi-lo, adicione `export ALCOVE_TOKEN="..."` ao seu perfil de shell e recarregue.
+
+**`alcove doctor` relata problemas**
+Siga as sugestões exibidas por `doctor` — ele verifica a localização do binário, registro MCP, estado do índice e dependências opcionais como `pdftotext`.
 
 ## Uso
 

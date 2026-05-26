@@ -29,6 +29,19 @@ Alcoveは、AIコーディングエージェントが必要に応じてプライ
 
 PRD、アーキテクチャ決定、シークレットマップ、内部ランブックを一箇所に保管。すべてのMCP互換エージェントが同じツールを取得し、すべてのプロジェクトで動作し、プロジェクトごとの設定は不要です。
 
+## デモ
+
+![Alcove エージェント デモ](../demo-agent.gif)
+> *Claude、Codex — 検索 · プロジェクト切替 · グローバル検索 · 検証 & 生成。ワンセットアップ。*
+
+<details>
+<summary>CLI デモ</summary>
+
+![Alcove CLI デモ](../demo.gif)
+> *`alcove search` · プロジェクト切替 · `--scope global` · `alcove validate`*
+
+</details>
+
 ## 課題
 
 AIエージェントは毎回ゼロからセッションを開始します。
@@ -209,6 +222,20 @@ alcove doctor
 | `pdftotext` (poppler) | PDF全文テキスト抽出 — PDF検索に必要 | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
 
 `pdftotext` がない場合、Alcoveは内蔵PDFパーサーにフォールバックしますが、一部のファイルでは失敗する可能性があります。`alcove doctor` でインストール状態を確認してください。
+
+### トラブルシューティング
+
+**エージェントが Alcove ツールを見つけられない**
+`alcove setup` を再実行してください — 設定済みの全エージェントの MCP サーバーを再登録します。その後、新しいエージェントセッションを開始してください（登録は次回セッション開始時に反映されます）。
+
+**検索結果が返らない**
+インデックスがまだ構築されていない可能性があります。`alcove index` を実行してから再試行してください。
+
+**バックグラウンドサーバーで 403 Unauthorized**
+シェルに `ALCOVE_TOKEN` が設定されていません。`alcove token` でトークンを表示し、シェルプロファイルに `export ALCOVE_TOKEN="..."` を追加して再読み込みしてください。
+
+**`alcove doctor` が問題を報告**
+`doctor` の提案に従ってください — バイナリの場所、MCP 登録、インデックス状態、`pdftotext` などのオプション依存関係を確認します。
 
 ## 使い方
 

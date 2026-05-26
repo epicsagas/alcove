@@ -27,6 +27,19 @@
 
 Alcove est un serveur MCP qui donne aux agents de codage IA un accès à la demande à la documentation privée de votre projet — **recherche hybride BM25 + vectorielle** pour une récupération précise, **indexation de code tree-sitter** pour que les agents comprennent la structure de votre codebase, et **application de politiques** pour la cohérence des documents. Pas de gonflement de contexte, pas de fuite de documents dans les dépôts publics, pas de configuration par projet pour chaque agent.
 
+## Démonstration
+
+![Démo agent Alcove](../demo-agent.gif)
+> *Claude, Codex — recherche · changement de projet · recherche globale · validation et génération. Une seule configuration.*
+
+<details>
+<summary>Démo CLI</summary>
+
+![Démo CLI Alcove](../demo.gif)
+> *`alcove search` · changement de projet · `--scope global` · `alcove validate`*
+
+</details>
+
 ## Le problème
 
 Votre agent IA commence chaque session à zéro.
@@ -211,6 +224,20 @@ Relancez `alcove setup` à tout moment pour modifier les paramètres. Il se souv
 | `pdftotext` (poppler) | Extraction complète de texte PDF — requise pour la recherche PDF | macOS: `brew install poppler` · Debian/Ubuntu: `apt install poppler-utils` · Fedora: `dnf install poppler-utils` · Windows: [poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases) |
 
 Sans `pdftotext`, Alcove se rabat sur un analyseur PDF intégré qui peut échouer sur certains fichiers. Exécutez `alcove doctor` pour vérifier votre installation.
+
+### Résolution des problèmes
+
+**L'agent ne trouve pas les outils Alcove**
+Exécutez à nouveau `alcove setup` — il réenregistre le serveur MCP pour tous les agents configurés. Démarrez ensuite une nouvelle session d'agent (l'enregistrement prend effet au prochain démarrage de session).
+
+**La recherche ne renvoie aucun résultat**
+L'index n'est peut-être pas encore construit. Exécutez `alcove index` pour le construire, puis réessayez.
+
+**403 Unauthorized du serveur en arrière-plan**
+`ALCOVE_TOKEN` n'est pas défini dans votre shell. Exécutez `alcove token` pour l'afficher, ajoutez `export ALCOVE_TOKEN="..."` à votre profil shell et rechargez.
+
+**`alcove doctor` signale des problèmes**
+Suivez les suggestions affichées par `doctor` — il vérifie l'emplacement du binaire, l'enregistrement MCP, l'état de l'index et les dépendances optionnelles comme `pdftotext`.
 
 ## Utilisation
 
