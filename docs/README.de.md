@@ -470,6 +470,23 @@ Der Index wird automatisch im Hintergrund erstellt, wenn der MCP-Server startet,
 
 **Wie es für Agenten funktioniert:** Agenten rufen einfach `search_project_docs` mit einer Abfrage auf. Alcove kümmert sich um den Rest — Ranking, Deduplizierung (ein Ergebnis pro Datei), projektübergreifende Suche und Fallback. Der Agent muss nie einen Suchmodus wählen.
 
+### Embedding-Modell wählen
+
+| Modell | Festplatte | Dim | Sprachen | Am besten für | Peak-RAM |
+|--------|------------|-----|----------|---------------|----------|
+| `AllMiniLML6V2` | 90 MB | 384 | Englisch | Kleinster Footprint, schnelle englische Indexierung | ~400 MB |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ Sprachen** | **Standard — mehrsprachige / gemischte Projekte** | **~700 MB** |
+| `MultilingualE5Base` | 555 MB | 768 | 100+ Sprachen | Bessere mehrsprachige Qualität | ~2 GB |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ Sprachen | Maximale mehrsprachige Qualität | ~7 GB |
+| `BGEM3` | 2.3 GB | 1024 | 100+ Sprachen | Modernste mehrsprachige Unterstützung | ~8 GB |
+| `ArcticEmbedXS` | 90 MB | 384 | Englisch | Snowflake — beste Qualität bei 384 dim | ~400 MB |
+| `ArcticEmbedS` | 130 MB | 384 | Englisch | Snowflake — verbesserte Suche bei kleiner Größe | ~500 MB |
+| `ArcticEmbedM` | 430 MB | 768 | Englisch | Snowflake — zuverlässige Suchqualität | ~1.5 GB |
+| `ArcticEmbedL` | 1.3 GB | 1024 | Englisch | Snowflake — konkurrenzfähig mit Closed-Source-APIs | ~5 GB |
+
+**Speicherbedarf beim Rebuild:**
+Die Peak-RAM variiert je nach Modell — siehe die Spalte "Peak-RAM" in der Tabelle oben. Große Modelle (BGEM3, MultilingualE5Large, ArcticEmbedL) können während des Rebuilds 5-10 GB verwenden. Nach Abschluss des Rebuilds sinkt der Ruhezustand auf ~50-200 MB je nach Ihrer `[memory]`-Konfiguration. Sie können den Ruhezustand weiter reduzieren mit niedrigerem `max_hnsw_cache` und kürzerem `model_unload_secs`.
+
 ## Projekterkennung
 
 Standardmäßig erkennt Alcove das aktuelle Projekt aus dem Arbeitsverzeichnis deines Terminals (CWD). Du kannst dies mit der Umgebungsvariable `MCP_PROJECT_NAME` überschreiben:

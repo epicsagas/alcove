@@ -461,6 +461,37 @@ Cuando el servidor en segundo plano está en ejecución, el proceso stdio actúa
 
 Alcove selecciona automáticamente la mejor estrategia de búsqueda. Cuando el índice de búsqueda existe, usa **búsqueda BM25 con ranking** (impulsada por [tantivy](https://github.com/quickwit-oss/tantivy)) para resultados ordenados por relevancia. Cuando no existe, recurre a grep. No necesitas preocuparte por ello.
 
+### Búsqueda híbrida (RAG)
+
+Alcove soporta **Búsqueda Híbrida** que combina BM25 con **Búsqueda de Similitud Vectorial** (impulsada por [fastembed](https://github.com/ankane/fastembed-rs)).
+
+Durante `alcove setup`, puedes elegir un modelo de embeddings y descargarlo inmediatamente. También puedes gestionar modelos manualmente:
+
+```bash
+# Establecer y descargar un modelo de embeddings
+alcove model set MultilingualE5Small
+alcove model download
+
+# Verificar estado del modelo
+alcove model status
+```
+
+#### Elección de modelo
+
+| Modelo | Disco | Dim | Idiomas | Mejor para | RAM pico |
+|--------|-------|-----|---------|------------|----------|
+| `AllMiniLML6V2` | 90 MB | 384 | Inglés | Huella mínima, indexación rápida solo en inglés | ~400 MB |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ idiomas** | **Predeterminado — proyectos multilingües / mixtos** | **~700 MB** |
+| `MultilingualE5Base` | 555 MB | 768 | 100+ idiomas | Mejor calidad multilingüe | ~2 GB |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ idiomas | Máxima calidad multilingüe | ~7 GB |
+| `BGEM3` | 2.3 GB | 1024 | 100+ idiomas | Multilingüe de última generación | ~8 GB |
+| `ArcticEmbedXS` | 90 MB | 384 | Inglés | Snowflake — mejor calidad a 384 dim | ~400 MB |
+| `ArcticEmbedS` | 130 MB | 384 | Inglés | Snowflake — recuperación mejorada en tamaño pequeño | ~500 MB |
+| `ArcticEmbedM` | 430 MB | 768 | Inglés | Snowflake — calidad de recuperación de trabajo | ~1.5 GB |
+| `ArcticEmbedL` | 1.3 GB | 1024 | Inglés | Snowflake — competitivo con APIs de código cerrado | ~5 GB |
+
+Una vez que un modelo está descargado y listo, Alcove usará automáticamente Búsqueda Híbrida tanto para búsqueda CLI como para herramientas MCP de agentes. Esto es particularmente efectivo para proyectos multilingües y consultas semánticas complejas.
+
 ```bash
 # Buscar en el proyecto actual (auto-detectado desde CWD)
 alcove search "authentication flow"
@@ -475,6 +506,9 @@ alcove search "FR-023" --mode grep
 El índice se construye automáticamente en segundo plano cuando el servidor MCP se inicia, y se reconstruye cuando detecta cambios en los archivos. Sin cron jobs, sin pasos manuales.
 
 **Cómo funciona para agentes:** los agentes simplemente llaman a `search_project_docs` con una consulta. Alcove se encarga del resto — ranking, deduplicación (un resultado por archivo), búsqueda entre proyectos y fallback. El agente nunca necesita elegir un modo de búsqueda.
+
+**Memoria durante rebuild:**
+La RAM pico varía según el modelo — consulta la columna "RAM pico" en la tabla anterior. Modelos grandes (BGEM3, MultilingualE5Large, ArcticEmbedL) pueden usar 5-10 GB durante rebuild. Después de rebuild, el estado estable baja a ~50-200 MB según tu configuración `[memory]`. Puedes reducir aún más con un `max_hnsw_cache` más bajo y un `model_unload_secs` más corto.
 
 ## Detección de proyecto
 

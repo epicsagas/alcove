@@ -472,17 +472,17 @@ alcove model status
 
 #### Choosing a model
 
-| Model | Disk | Dim | Languages | Best for |
-|-------|------|-----|-----------|----------|
-| `AllMiniLML6V2` | 90 MB | 384 | English | Smallest footprint, fast English-only indexing |
-| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ languages** | **Default — multilingual / mixed-language projects** |
-| `MultilingualE5Base` | 555 MB | 768 | 100+ languages | Better multilingual quality |
-| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ languages | Maximum multilingual quality |
-| `BGEM3` | 2.3 GB | 1024 | 100+ languages | State-of-the-art multilingual |
-| `ArcticEmbedXS` | 90 MB | 384 | English | Snowflake — best quality at 384 dim |
-| `ArcticEmbedS` | 130 MB | 384 | English | Snowflake — improved retrieval at small size |
-| `ArcticEmbedM` | 430 MB | 768 | English | Snowflake — workhorse retrieval quality |
-| `ArcticEmbedL` | 1.3 GB | 1024 | English | Snowflake — competitive with closed-source APIs |
+| Model | Disk | Dim | Languages | Best for | Peak RAM |
+|-------|------|-----|-----------|----------|----------|
+| `AllMiniLML6V2` | 90 MB | 384 | English | Smallest footprint, fast English-only indexing | ~400 MB |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ languages** | **Default — multilingual / mixed-language projects** | **~700 MB** |
+| `MultilingualE5Base` | 555 MB | 768 | 100+ languages | Better multilingual quality | ~2 GB |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ languages | Maximum multilingual quality | ~7 GB |
+| `BGEM3` | 2.3 GB | 1024 | 100+ languages | State-of-the-art multilingual | ~8 GB |
+| `ArcticEmbedXS` | 90 MB | 384 | English | Snowflake — best quality at 384 dim | ~400 MB |
+| `ArcticEmbedS` | 130 MB | 384 | English | Snowflake — improved retrieval at small size | ~500 MB |
+| `ArcticEmbedM` | 430 MB | 768 | English | Snowflake — workhorse retrieval quality | ~1.5 GB |
+| `ArcticEmbedL` | 1.3 GB | 1024 | English | Snowflake — competitive with closed-source APIs | ~5 GB |
 
 Once a model is downloaded and ready, Alcove will automatically use Hybrid Search for both CLI search and agent-based MCP tools. This is particularly effective for multilingual projects and complex semantic queries.
 
@@ -532,8 +532,8 @@ alcove model set BGEM3                     # change model
 alcove rebuild                            # required: vectors are model-specific
 ```
 
-**Memory during rebuild:**  
-Peak RAM = model size + all document vectors held in RAM while building the HNSW graph. For `MultilingualE5Small` with ~3,500 docs, expect ~700 MB peak. This is structural — after rebuild completes, steady-state drops to ~50–200 MB depending on your `[memory]` config. You can reduce steady-state further with lower `max_hnsw_cache` and shorter `model_unload_secs`.
+**Memory during rebuild:**
+Peak RAM varies by model — see the "Peak RAM" column in the table above. Larger models (BGEM3, MultilingualE5Large, ArcticEmbedL) can use 5–10 GB during rebuild. After rebuild completes, steady-state drops to ~50–200 MB depending on your `[memory]` config. You can reduce steady-state further with lower `max_hnsw_cache` and shorter `model_unload_secs`.
 
 ### Global search
 

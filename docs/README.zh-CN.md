@@ -461,12 +461,40 @@ alcove mcp disable          # 禁用并移除登录项
 
 Alcove 自动选择最佳搜索策略。当搜索索引存在时，使用 **BM25 排名搜索**（基于 [tantivy](https://github.com/quickwit-oss/tantivy)）返回按相关度评分排序的结果。当索引不存在时，回退到 grep。您无需关心这些。
 
+### 混合搜索 (RAG)
+
+Alcove 支持将 BM25 与**向量相似度搜索**（基于 [fastembed](https://github.com/ankane/fastembed-rs)）相结合的**混合搜索**。
+
+在 `alcove setup` 过程中，您可以选择嵌入模型并立即下载。也可以手动管理模型：
+
+```bash
+# 设置并下载嵌入模型
+alcove model set MultilingualE5Small
+alcove model download
+
+# 检查模型状态
+alcove model status
+```
+
+#### 模型选择
+
+| 模型 | 磁盘 | 维度 | 语言 | 推荐用途 | 峰值 RAM |
+|------|------|------|------|----------|----------|
+| `AllMiniLML6V2` | 90 MB | 384 | 英语 | 最小占用，快速英语索引 | ~400 MB |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ 语言** | **默认 — 多语言/混合语言项目** | **~700 MB** |
+| `MultilingualE5Base` | 555 MB | 768 | 100+ 语言 | 更好的多语言质量 | ~2 GB |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ 语言 | 最高多语言质量 | ~7 GB |
+| `BGEM3` | 2.3 GB | 1024 | 100+ 语言 | 最先进的多语言模型 | ~8 GB |
+| `ArcticEmbedXS` | 90 MB | 384 | 英语 | Snowflake — 384维最佳质量 | ~400 MB |
+| `ArcticEmbedS` | 130 MB | 384 | 英语 | Snowflake — 小尺寸改进检索 | ~500 MB |
+| `ArcticEmbedM` | 430 MB | 768 | 英语 | Snowflake — 实用级检索质量 | ~1.5 GB |
+| `ArcticEmbedL` | 1.3 GB | 1024 | 英语 | Snowflake — 可与闭源API竞争的质量 | ~5 GB |
+
+模型下载并准备就绪后，Alcove 会在 CLI 搜索和基于代理的 MCP 工具中自动使用混合搜索。这对多语言项目和复杂的语义查询尤其有效。
+
 ```bash
 # 搜索当前项目（从 CWD 自动检测）
 alcove search "authentication flow"
-
-# 搜索所有项目——您的个人知识库
-alcove search "OAuth token refresh" --scope global
 
 # 需要精确子串匹配时强制使用 grep 模式
 alcove search "FR-023" --mode grep
@@ -475,6 +503,51 @@ alcove search "FR-023" --mode grep
 索引在 MCP 服务器启动时在后台自动构建，检测到文件变化时自动重建。无需 cron 任务，无需手动操作。
 
 **代理使用方式：** 代理只需用查询调用 `search_project_docs`。Alcove 处理其余一切——排名、去重（每个文件一个结果）、跨项目搜索和回退。代理永远不需要选择搜索模式。
+
+#### 索引生命周期
+
+`alcove index` 与 `alcove rebuild` 的区别：
+
+| 命令 | 行为 | 使用时机 |
+|------|------|----------|
+| `alcove index` | 增量更新 — 仅处理新增/修改的文件 | 默认：添加或编辑文档后使用 |
+| `alcove rebuild` | 完全重建 — 删除并重新创建所有索引数据 | 更改嵌入模型后，或索引损坏时 |
+
+**首次设置：**
+
+```bash
+# 步骤 1：设置后 BM25 搜索立即可用
+alcove index            # 构建全文索引（无需模型）
+
+# 步骤 2：启用混合搜索（可选但推荐）
+alcove model set MultilingualE5Small
+alcove model download   # ~235 MB 下载
+
+# 步骤 3：为所有现有文档构建向量索引
+alcove rebuild          # 首次完全重建
+                        # ⚠ 峰值 RAM = 模型大小 + 语料向量（见下方说明）
+
+# 之后：增量更新即可
+alcove index            # 快速 — 仅重新嵌入已更改的文件
+```
+
+**切换模型：**
+
+```bash
+alcove model set BGEM3                     # 更改模型
+alcove rebuild                            # 必须：向量是模型特定的
+```
+
+**rebuild 时的内存：**
+峰值 RAM 因模型而异 — 参见上表的"峰值 RAM"列。大型模型（BGEM3、MultilingualE5Large、ArcticEmbedL）在 rebuild 期间可能使用 5-10 GB。rebuild 完成后，稳态内存根据 `[memory]` 配置降至 50-200 MB。通过降低 `max_hnsw_cache` 和缩短 `model_unload_secs` 可进一步减少稳态内存。
+
+### 全局搜索
+
+所有架构决策、所有运维手册、所有项目笔记 — 跨所有项目一次性搜索。
+
+```bash
+# 跨所有项目搜索
+alcove search "rate limiting patterns" --scope global
 
 ## 项目检测
 

@@ -457,12 +457,40 @@ alcove mcp disable          # 無効化してログイン項目を削除
 
 Alcoveは自動的に最適な検索戦略を選択します。検索インデックスが存在する場合、**BM25ランキング検索**（[tantivy](https://github.com/quickwit-oss/tantivy)搭載）で関連度スコア付きの結果を返します。インデックスがない場合はgrepにフォールバックします。ユーザーが気にする必要はありません。
 
+### ハイブリッド検索 (RAG)
+
+AlcoveはBM25と**ベクター類似度検索**（[fastembed](https://github.com/ankane/fastembed-rs)搭載）を組み合わせた**ハイブリッド検索**をサポートしています。
+
+`alcove setup`の過程で埋め込みモデルを選択し、すぐにダウンロードできます。手動でモデルを管理することも可能です：
+
+```bash
+# 埋め込みモデルの設定とダウンロード
+alcove model set MultilingualE5Small
+alcove model download
+
+# モデルの状態を確認
+alcove model status
+```
+
+#### モデル選択
+
+| モデル | ディスク | 次元 | 言語 | 推奨用途 | ピーク RAM |
+|--------|----------|------|------|----------|------------|
+| `AllMiniLML6V2` | 90 MB | 384 | 英語 | 最小フットプリント、高速な英語専用インデックス | ~400 MB |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ 言語** | **デフォルト — 多言語・混合言語プロジェクト** | **~700 MB** |
+| `MultilingualE5Base` | 555 MB | 768 | 100+ 言語 | より高品質な多言語対応 | ~2 GB |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ 言語 | 最高品質の多言語対応 | ~7 GB |
+| `BGEM3` | 2.3 GB | 1024 | 100+ 言語 |最先端の多言語対応 | ~8 GB |
+| `ArcticEmbedXS` | 90 MB | 384 | 英語 | Snowflake — 384次元で最高品質 | ~400 MB |
+| `ArcticEmbedS` | 130 MB | 384 | 英語 | Snowflake — 小型サイズで向上した検索 | ~500 MB |
+| `ArcticEmbedM` | 430 MB | 768 | 英語 | Snowflake — 実用的な検索品質 | ~1.5 GB |
+| `ArcticEmbedL` | 1.3 GB | 1024 | 英語 | Snowflake — クローズドソースAPIに匹敵する品質 | ~5 GB |
+
+モデルがダウンロードされ準備が整うと、AlcoveはCLI検索とエージェントベースのMCPツールの両方で自動的にハイブリッド検索を使用します。多言語プロジェクトや複雑なセマンティッククエリに特に効果的です。
+
 ```bash
 # 現在のプロジェクトを検索（CWDから自動検出）
 alcove search "authentication flow"
-
-# すべてのプロジェクトを一括検索 — パーソナルナレッジベース
-alcove search "OAuth token refresh" --scope global
 
 # 完全一致の部分文字列マッチングが必要な場合はgrepモードを強制
 alcove search "FR-023" --mode grep
@@ -471,6 +499,51 @@ alcove search "FR-023" --mode grep
 インデックスはMCPサーバー起動時にバックグラウンドで自動的にビルドされ、ファイルの変更を検出すると自動的にリビルドします。cronジョブも手動操作も不要です。
 
 **エージェントでの使い方:** エージェントはクエリで`search_project_docs`を呼び出すだけです。Alcoveがランキング、重複排除（ファイルごとに1結果）、クロスプロジェクト検索、フォールバックをすべて処理します。エージェントが検索モードを選択する必要はありません。
+
+#### インデックスライフサイクル
+
+`alcove index`と`alcove rebuild`の違い：
+
+| コマンド | 動作 | 使用タイミング |
+|----------|------|----------------|
+| `alcove index` | 増分更新 — 新規・変更ファイルのみ処理 | デフォルト: ドキュメントの追加・編集後 |
+| `alcove rebuild` | 完全再構築 — 全インデックスデータを削除して再生成 | 埋め込みモデル変更後、インデックス破損時 |
+
+**初回セットアップ:**
+
+```bash
+# ステップ1: セットアップ直後、BM25検索がすぐに利用可能
+alcove index            # 全文検索インデックスをビルド（モデル不要）
+
+# ステップ2: ハイブリッド検索を有効化（オプションですが推奨）
+alcove model set MultilingualE5Small
+alcove model download   # ~235 MB ダウンロード
+
+# ステップ3: 既存ドキュメント全体のベクターインデックスをビルド
+alcove rebuild          # 初回の完全リビルド
+                        # ⚠ ピーク RAM = モデルサイズ + コーパスベクター（下記参照）
+
+# その後: 増分更新で十分
+alcove index            # 高速 — 変更ファイルのみ再埋め込み
+```
+
+**モデルの切り替え:**
+
+```bash
+alcove model set BGEM3                     # モデルを変更
+alcove rebuild                            # 必須: ベクターはモデル固有です
+```
+
+**rebuild時のメモリ:**
+ピーク RAM はモデルにより異なります — 上記テーブルの「ピーク RAM」列を参照してください。大型モデル（BGEM3、MultilingualE5Large、ArcticEmbedL）はrebuild中に5〜10 GB使用することがあります。rebuild完了後、定常状態では `[memory]` 設定に応じて50〜200 MBに低下します。`max_hnsw_cache` を下げ、`model_unload_secs` を短くすることで、定常メモリをさらに削減できます。
+
+### グローバル検索
+
+すべてのアーキテクチャ決定、すべてのランブック、すべてのプロジェクトノート — すべてのプロジェクトを横断して一括検索できます。
+
+```bash
+# 全プロジェクトを検索
+alcove search "rate limiting patterns" --scope global
 
 ## プロジェクト検出
 

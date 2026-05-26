@@ -466,17 +466,17 @@ alcove model status
 
 #### 모델 선택
 
-| 모델 | 디스크 | 차원 | 언어 지원 | 추천 용도 |
-|------|--------|------|-----------|-----------|
-| `AllMiniLML6V2` | 90 MB | 384 | 영어 | 최소 풋프린트, 빠른 영어 전용 인덱싱 |
-| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ 언어** | **기본값 — 다국어·혼합 언어 프로젝트** |
-| `MultilingualE5Base` | 555 MB | 768 | 100+ 언어 | 다국어 품질 향상 |
-| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ 언어 | 최고 다국어 품질 |
-| `BGEM3` | 2.3 GB | 1024 | 100+ 언어 | 최첨단 다국어 |
-| `ArcticEmbedXS` | 90 MB | 384 | English | Snowflake — 384 차원에서 최고 품질 |
-| `ArcticEmbedS` | 130 MB | 384 | English | Snowflake — 소형 크기에서 향상된 검색 |
-| `ArcticEmbedM` | 430 MB | 768 | English | Snowflake — 실무급 검색 품질 |
-| `ArcticEmbedL` | 1.3 GB | 1024 | English | Snowflake — 클로즈드 소스 API와 경쟁하는 품질 |
+| 모델 | 디스크 | 차원 | 언어 지원 | 추천 용도 | 피크 RAM |
+|------|--------|------|-----------|-----------|----------|
+| `AllMiniLML6V2` | 90 MB | 384 | 영어 | 최소 풋프린트, 빠른 영어 전용 인덱싱 | ~400 MB |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ 언어** | **기본값 — 다국어·혼합 언어 프로젝트** | **~700 MB** |
+| `MultilingualE5Base` | 555 MB | 768 | 100+ 언어 | 다국어 품질 향상 | ~2 GB |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ 언어 | 최고 다국어 품질 | ~7 GB |
+| `BGEM3` | 2.3 GB | 1024 | 100+ 언어 | 최첨단 다국어 | ~8 GB |
+| `ArcticEmbedXS` | 90 MB | 384 | English | Snowflake — 384 차원에서 최고 품질 | ~400 MB |
+| `ArcticEmbedS` | 130 MB | 384 | English | Snowflake — 소형 크기에서 향상된 검색 | ~500 MB |
+| `ArcticEmbedM` | 430 MB | 768 | English | Snowflake — 실무급 검색 품질 | ~1.5 GB |
+| `ArcticEmbedL` | 1.3 GB | 1024 | English | Snowflake — 클로즈드 소스 API와 경쟁하는 품질 | ~5 GB |
 
 모델이 준비되면 Alcove는 CLI 검색과 에이전트 기반 MCP 도구 모두에서 자동으로 하이브리드 검색을 사용합니다. 이는 다국어 프로젝트나 복잡한 의미론적 쿼리에 특히 효과적입니다.
 
@@ -526,8 +526,8 @@ alcove model set BGEM3                     # 모델 변경
 alcove rebuild                            # 필수: 벡터는 모델별로 호환 불가
 ```
 
-**rebuild 시 메모리:**  
-피크 RAM = 모델 크기 + HNSW 그래프 구성을 위해 RAM에 올라가는 모든 문서 벡터. `MultilingualE5Small` 기준 ~3,500개 문서 기준 피크 약 700 MB. 구조적으로 불가피하며, rebuild 완료 후 `[memory]` 설정에 따라 평상시 50–200 MB로 감소합니다.
+**rebuild 시 메모리:**
+피크 RAM은 모델에 따라 다릅니다 — 위 테이블의 "피크 RAM" 컬럼을 참조하세요. 대형 모델(BGEM3, MultilingualE5Large, ArcticEmbedL)은 rebuild 중 5-10 GB를 사용할 수 있습니다. rebuild 완료 후 평상시 메모리는 `[memory]` 설정에 따라 50-200 MB 수준으로 감소합니다. `max_hnsw_cache`를 낮추고 `model_unload_secs`를 짧게 설정하면 평상시 메모리를 더 줄일 수 있습니다.
 
 ## 프로젝트 감지
 

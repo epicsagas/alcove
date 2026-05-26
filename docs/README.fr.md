@@ -470,6 +470,23 @@ L'index se construit automatiquement en arrière-plan au démarrage du serveur M
 
 **Comment ça marche pour les agents :** les agents appellent simplement `search_project_docs` avec une requête. Alcove gère le reste — classement, déduplication (un résultat par fichier), recherche inter-projets et fallback. L'agent n'a jamais besoin de choisir un mode de recherche.
 
+### Choisir un modèle d'embedding
+
+| Modèle | Disque | Dim | Langues | Recommandé pour | RAM de pointe |
+|--------|--------|-----|---------|-----------------|---------------|
+| `AllMiniLML6V2` | 90 MB | 384 | Anglais | Emploi minimal, indexation rapide anglais uniquement | ~400 MB |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ langues** | **Par défaut — projets multilingues / mixtes** | **~700 MB** |
+| `MultilingualE5Base` | 555 MB | 768 | 100+ langues | Meilleure qualité multilingue | ~2 GB |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ langues | Qualité multilingue maximale | ~7 GB |
+| `BGEM3` | 2.3 GB | 1024 | 100+ langues | Multilingue de pointe | ~8 GB |
+| `ArcticEmbedXS` | 90 MB | 384 | Anglais | Snowflake — meilleure qualité en 384 dim | ~400 MB |
+| `ArcticEmbedS` | 130 MB | 384 | Anglais | Snowflake — recherche améliorée en petite taille | ~500 MB |
+| `ArcticEmbedM` | 430 MB | 768 | Anglais | Snowflake — qualité de recherche robuste | ~1.5 GB |
+| `ArcticEmbedL` | 1.3 GB | 1024 | Anglais | Snowflake — concurrentiel avec les APIs propriétaires | ~5 GB |
+
+**Mémoire pendant le rebuild :**
+La RAM de pointe varie selon le modèle — consultez la colonne "RAM de pointe" dans le tableau ci-dessus. Les modèles volumineux (BGEM3, MultilingualE5Large, ArcticEmbedL) peuvent utiliser 5-10 Go pendant le rebuild. Une fois le rebuild terminé, l'état stationnaire chute à ~50-200 Mo selon votre configuration `[memory]`. Vous pouvez réduire davantage avec un `max_hnsw_cache` plus bas et un `model_unload_secs` plus court.
+
 ## Détection de projet
 
 Par défaut, Alcove détecte le projet actuel à partir du répertoire de travail de votre terminal (CWD). Vous pouvez le remplacer avec la variable d'environnement `MCP_PROJECT_NAME` :
