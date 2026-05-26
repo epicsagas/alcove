@@ -472,17 +472,21 @@ alcove model status
 
 #### Choosing a model
 
-| Model | Disk | Dim | Languages | Best for | Peak RAM |
-|-------|------|-----|-----------|----------|----------|
-| `AllMiniLML6V2` | 90 MB | 384 | English | Smallest footprint, fast English-only indexing | ~400 MB |
-| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ languages** | **Default — multilingual / mixed-language projects** | **~700 MB** |
-| `MultilingualE5Base` | 555 MB | 768 | 100+ languages | Better multilingual quality | ~2 GB |
-| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ languages | Maximum multilingual quality | ~7 GB |
-| `BGEM3` | 2.3 GB | 1024 | 100+ languages | State-of-the-art multilingual | ~8 GB |
-| `ArcticEmbedXS` | 90 MB | 384 | English | Snowflake — best quality at 384 dim | ~400 MB |
-| `ArcticEmbedS` | 130 MB | 384 | English | Snowflake — improved retrieval at small size | ~500 MB |
-| `ArcticEmbedM` | 430 MB | 768 | English | Snowflake — workhorse retrieval quality | ~1.5 GB |
-| `ArcticEmbedL` | 1.3 GB | 1024 | English | Snowflake — competitive with closed-source APIs | ~5 GB |
+| Model | Disk | Dim | Tokens | Pooling | Prefix | Languages | Best for | Peak RAM |
+|-------|------|-----|--------|---------|--------|-----------|----------|----------|
+| `AllMiniLML6V2` | 90 MB | 384 | 256 | Mean | — | English | Smallest footprint, fast English-only indexing | ~400 MB |
+| **`MultilingualE5Small`** | **235 MB** | **384** | **512** | **Mean** | **`query:`/`passage:`** | **100+** | **Default — multilingual / mixed-language projects** | **~700 MB** |
+| `MultilingualE5Base` | 555 MB | 768 | 512 | Mean | `query:`/`passage:` | 100+ | Better multilingual quality | ~2 GB |
+| `MultilingualE5Large` | 2.2 GB | 1024 | 512 | Mean | `query:`/`passage:` | 100+ | Maximum multilingual quality | ~7 GB |
+| `BGEM3` | 2.3 GB | 1024 | 8192 | CLS | — | 100+ | State-of-the-art multilingual | ~8 GB |
+| `ArcticEmbedXS` | 90 MB | 384 | 512 | CLS | `Represent…` | English | Snowflake — best quality at 384 dim | ~400 MB |
+| `ArcticEmbedS` | 130 MB | 384 | 512 | CLS | `Represent…` | English | Snowflake — improved retrieval at small size | ~500 MB |
+| `ArcticEmbedM` | 430 MB | 768 | 512 | CLS | `Represent…` | English | Snowflake — workhorse retrieval quality | ~1.5 GB |
+| `ArcticEmbedL` | 1.3 GB | 1024 | 512 | CLS | `Represent…` | English | Snowflake — competitive with closed-source APIs | ~5 GB |
+
+**Key:** *Tokens* = max input sequence length. *Pooling* = how the final embedding is extracted (CLS = first token, Mean = mask-weighted average). *Prefix* = automatic input prefix prepended for asymmetric retrieval (queries vs documents).
+
+Chunk sizes are automatically derived from the model's token limit (~2 chars/token for CJK, 75% utilization). No manual tuning required.
 
 Once a model is downloaded and ready, Alcove will automatically use Hybrid Search for both CLI search and agent-based MCP tools. This is particularly effective for multilingual projects and complex semantic queries.
 

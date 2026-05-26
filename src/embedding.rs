@@ -179,6 +179,33 @@ impl EmbeddingModelChoice {
         }
     }
 
+    /// Maximum sequence length (tokens) supported by the model.
+    pub fn max_seq_length(self) -> usize {
+        match self {
+            Self::AllMiniLML6V2 => 256,
+            Self::MultilingualE5Small
+            | Self::MultilingualE5Base
+            | Self::MultilingualE5Large
+            | Self::ArcticEmbedXS
+            | Self::ArcticEmbedS
+            | Self::ArcticEmbedM
+            | Self::ArcticEmbedL => 512,
+            Self::BGEM3 => 8192,
+        }
+    }
+
+    /// BGEM3 and ArcticEmbed use CLS token pooling; E5/MiniLM use mean pooling.
+    pub fn uses_cls_pooling(self) -> bool {
+        matches!(
+            self,
+            Self::BGEM3
+                | Self::ArcticEmbedXS
+                | Self::ArcticEmbedS
+                | Self::ArcticEmbedM
+                | Self::ArcticEmbedL
+        )
+    }
+
     pub fn is_xlm_roberta(self) -> bool {
         matches!(self, Self::BGEM3)
     }
@@ -254,6 +281,7 @@ enum ModelSession {
 #[cfg(feature = "embed-candle")]
 struct CandleSession {
     session: ModelSession,
+    cls_pooling: bool,
 }
 
 #[cfg(feature = "embed-candle")]
@@ -284,6 +312,12 @@ impl CandleSession {
             .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
         tokenizer.with_padding(Some(tokenizers::PaddingParams {
             strategy: tokenizers::PaddingStrategy::BatchLongest,
+            ..Default::default()
+        }));
+        let _ = tokenizer.with_truncation(Some(tokenizers::TruncationParams {
+            strategy: tokenizers::TruncationStrategy::LongestFirst,
+            max_length: model_choice.max_seq_length(),
+            stride: 0,
             ..Default::default()
         }));
 
@@ -372,7 +406,10 @@ impl CandleSession {
             ModelSession::Bert { model, tokenizer }
         };
 
-        Ok(Self { session })
+        Ok(Self {
+            session,
+            cls_pooling: model_choice.uses_cls_pooling(),
+        })
     }
 
     /// Embed a batch of texts, returning one Vec<f32> per text.
@@ -420,12 +457,16 @@ impl CandleSession {
             )?,
         };
 
-        // Mean pooling with attention mask
-        let mask_f = attention_mask.to_dtype(DTYPE)?.unsqueeze(2)?;
-        let sum_mask = mask_f.sum(1)?;
-        let pooled = (embeddings.broadcast_mul(&mask_f)?)
-            .sum(1)?
-            .broadcast_div(&sum_mask)?;
+        // Pooling: CLS (first token) or mean (mask-weighted average)
+        let pooled = if self.cls_pooling {
+            embeddings.narrow(1, 0, 1)?.squeeze(1)?
+        } else {
+            let mask_f = attention_mask.to_dtype(DTYPE)?.unsqueeze(2)?;
+            let sum_mask = mask_f.sum(1)?;
+            (embeddings.broadcast_mul(&mask_f)?)
+                .sum(1)?
+                .broadcast_div(&sum_mask)?
+        };
 
         // L2 normalize
         let normalized = pooled.broadcast_div(&pooled.sqr()?.sum_keepdim(1)?.sqrt()?)?;

@@ -13,7 +13,7 @@ pub(crate) const SCHEMA_VERSION: u32 = 3;
 /// Current chunking strategy version. Increment when the chunking algorithm changes
 /// to force a full rebuild and prevent stale char-based chunks from mixing with
 /// heading-based chunks in the same index.
-pub(crate) const CHUNK_STRATEGY_VERSION: u32 = 1;
+pub(crate) const CHUNK_STRATEGY_VERSION: u32 = 2;
 
 /// All Tantivy schema fields in one place.
 pub struct IndexSchema {

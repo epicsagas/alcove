@@ -6,18 +6,58 @@ pub(crate) fn is_markdown_ext(ext: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Chunking
+// Chunking config
 // ---------------------------------------------------------------------------
 
-pub(crate) const CHUNK_SIZE: usize = 1500; // chars per chunk (prose / markdown)
-pub(crate) const CHUNK_OVERLAP: usize = 300; // overlap between chunks (prose)
+/// Model-aware chunk sizing parameters.
+///
+/// Derives safe character limits from the embedding model's max token count,
+/// using a conservative ~2 chars/token ratio (covers multilingual text).
+pub(crate) struct ChunkConfig {
+    pub(crate) prose_size: usize,
+    pub(crate) prose_overlap: usize,
+    pub(crate) code_size: usize,
+    pub(crate) code_overlap: usize,
+    pub(crate) md_heading_max: usize,
+}
 
-/// Maximum chars for a single `##`-bounded section before secondary splitting.
+impl ChunkConfig {
+    /// Derive chunk sizes from a model's max sequence length (tokens).
+    ///
+    /// Uses ~2.0 chars/token (conservative for CJK) with 75% utilization
+    /// to leave headroom for special tokens, prefix, and overlap.
+    #[cfg(feature = "embed-candle")]
+    pub(crate) fn for_max_tokens(max_tokens: usize) -> Self {
+        let safe_chars = (max_tokens as f64 * 2.0 * 0.75) as usize;
+        let prose_size = safe_chars.min(2000);
+        let prose_overlap = (prose_size as f64 * 0.2) as usize;
+        let code_size = (prose_size as f64 * 0.6) as usize;
+        let code_overlap = (code_size as f64 * 0.2) as usize;
+        let md_heading_max = (prose_size as f64 * 1.3) as usize;
+        Self {
+            prose_size,
+            prose_overlap,
+            code_size,
+            code_overlap,
+            md_heading_max,
+        }
+    }
+}
+
+// Default constants (used by BM25-only path without embedding model).
+pub(crate) const CHUNK_SIZE: usize = 1500;
+pub(crate) const CHUNK_OVERLAP: usize = 300;
 pub(crate) const MD_HEADING_MAX_CHARS: usize = 2400;
-
-/// Smaller limits for source-code files — keeps chunks inside function boundaries.
 pub(crate) const CODE_CHUNK_SIZE: usize = 800;
 pub(crate) const CODE_CHUNK_OVERLAP: usize = 150;
+
+const DEFAULT_CHUNK_CONFIG: ChunkConfig = ChunkConfig {
+    prose_size: CHUNK_SIZE,
+    prose_overlap: CHUNK_OVERLAP,
+    code_size: CODE_CHUNK_SIZE,
+    code_overlap: CODE_CHUNK_OVERLAP,
+    md_heading_max: MD_HEADING_MAX_CHARS,
+};
 
 /// File extensions that receive code-aware (smaller) chunking.
 pub(crate) fn is_code_ext(ext: &str) -> bool {
@@ -56,22 +96,27 @@ pub(crate) struct Chunk {
     pub(crate) line_start: usize,
 }
 
-/// Chunk `content` using sensible size limits for the given file extension.
-///
-/// Markdown files (`md` / `markdown`) are routed through [`chunk_content_md`]
-/// which splits on `##` headings first.  Code files use smaller chunks
-/// (800 chars / 150 overlap) so function bodies are less likely to be split
-/// across chunk boundaries.  All other files use the default prose limits
-/// (1 500 / 300).
+/// Chunk `content` using default size limits (BM25-only path).
 pub(crate) fn chunk_content(content: &str, ext: &str) -> Vec<Chunk> {
+    chunk_content_with_config(content, ext, &DEFAULT_CHUNK_CONFIG)
+}
+
+/// Chunk `content` using model-aware size limits.
+///
+/// See [`ChunkConfig::for_max_tokens`] to derive config from a model's token limit.
+pub(crate) fn chunk_content_with_config(
+    content: &str,
+    ext: &str,
+    config: &ChunkConfig,
+) -> Vec<Chunk> {
     if is_markdown_ext(ext) {
-        return chunk_content_md(content);
+        return chunk_content_md_with_config(content, config);
     }
 
     let (chunk_size, overlap_size) = if is_code_ext(ext) {
-        (CODE_CHUNK_SIZE, CODE_CHUNK_OVERLAP)
+        (config.code_size, config.code_overlap)
     } else {
-        (CHUNK_SIZE, CHUNK_OVERLAP)
+        (config.prose_size, config.prose_overlap)
     };
 
     chunk_content_char_based(content, chunk_size, overlap_size, 0)
@@ -81,18 +126,22 @@ pub(crate) fn chunk_content(content: &str, ext: &str) -> Vec<Chunk> {
 // Markdown heading-aware chunking
 // ---------------------------------------------------------------------------
 
+/// Markdown chunker with default limits (used by tests).
+#[cfg(test)]
+fn chunk_content_md(content: &str) -> Vec<Chunk> {
+    chunk_content_md_with_config(content, &DEFAULT_CHUNK_CONFIG)
+}
+
 /// Chunk a markdown document by `##` (level-2) heading boundaries.
 ///
 /// Algorithm:
 /// 1. Scan lines; every `## ` line starts a new section.
 /// 2. Sections shorter than 50 chars are merged into the following section.
-/// 3. Sections longer than [`MD_HEADING_MAX_CHARS`] are sub-split with the
-///    same line-based algorithm used by [`chunk_content`] (prose limits).
-///    Each sub-chunk has `## {heading}\n` prepended so that [`extract_title`]
-///    can still find the parent heading.
+/// 3. Sections longer than `config.md_heading_max` are sub-split with the
+///    same line-based algorithm (prose limits from config).
 /// 4. If the document contains no `##` headings the function falls back to
-///    `chunk_content(content, "md")` (char-based prose splitting).
-pub(crate) fn chunk_content_md(content: &str) -> Vec<Chunk> {
+///    char-based prose splitting.
+fn chunk_content_md_with_config(content: &str, config: &ChunkConfig) -> Vec<Chunk> {
     const MIN_SECTION_CHARS: usize = 50;
 
     // ── 1. Split into raw sections at every `##` boundary ──────────────────
@@ -108,7 +157,7 @@ pub(crate) fn chunk_content_md(content: &str) -> Vec<Chunk> {
 
     // Fall back to char-based splitting when there are no `##` headings.
     if heading_indices.is_empty() {
-        return chunk_content_char_based(content, CHUNK_SIZE, CHUNK_OVERLAP, 0);
+        return chunk_content_char_based(content, config.prose_size, config.prose_overlap, 0);
     }
 
     // Build sections: each section is (line_start, heading_text, text).
@@ -211,7 +260,7 @@ pub(crate) fn chunk_content_md(content: &str) -> Vec<Chunk> {
     let mut chunks: Vec<Chunk> = Vec::new();
 
     for sec in merged {
-        if sec.text.chars().count() <= MD_HEADING_MAX_CHARS {
+        if sec.text.chars().count() <= config.md_heading_max {
             chunks.push(Chunk {
                 text: sec.text,
                 line_start: sec.line_start + 1,
@@ -224,8 +273,12 @@ pub(crate) fn chunk_content_md(content: &str) -> Vec<Chunk> {
             } else {
                 format!("## {}\n", sec.heading)
             };
-            let sub =
-                chunk_content_char_based(&sec.text, CHUNK_SIZE, CHUNK_OVERLAP, sec.line_start);
+            let sub = chunk_content_char_based(
+                &sec.text,
+                config.prose_size,
+                config.prose_overlap,
+                sec.line_start,
+            );
             for mut sub_chunk in sub {
                 if !prefix.is_empty() && !sub_chunk.text.starts_with("## ") {
                     sub_chunk.text = format!("{}{}", prefix, sub_chunk.text);

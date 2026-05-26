@@ -35,6 +35,8 @@ use crate::config::load_config;
 use crate::config::{effective_config, is_reserved_dir_name};
 
 use super::cache::{CacheCategory, invalidate_reader_cache};
+#[cfg(feature = "embed-candle")]
+use super::chunker::{ChunkConfig, chunk_content_with_config};
 use super::chunker::{chunk_content, extract_title};
 use super::frontmatter::parse_frontmatter_flags;
 use super::lock::{index_dir, is_locked, meta_path, release_lock, try_acquire_lock};
@@ -729,12 +731,16 @@ fn embed_files_in_batches(
     // Parallel file reads caused RSS spikes (large PDFs × N threads).
     // Bottleneck is ONNX inference, not I/O — sequential reads keep
     // memory bounded to one file's chunks at a time.
+    let chunk_cfg = ChunkConfig::for_max_tokens(model.max_seq_length());
     let mut pending: Vec<(String, String, u64, String)> = Vec::new();
     for (proj, rel, full) in to_embed {
         vpb.set_message(proj.clone());
         if let Ok(content) = read_file_content(full) {
             let file_ext = full.extension().and_then(|e| e.to_str()).unwrap_or("");
-            for (i, chunk) in chunk_content(&content, file_ext).into_iter().enumerate() {
+            for (i, chunk) in chunk_content_with_config(&content, file_ext, &chunk_cfg)
+                .into_iter()
+                .enumerate()
+            {
                 pending.push((proj.clone(), rel.clone(), i as u64, chunk.text));
                 if pending.len() >= embed_batch {
                     flush_embed_batch(&mut pending, service, store, model, counters);
@@ -1097,6 +1103,7 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                                 s if s <= 800 => 64,
                                 _ => 32,
                             };
+                            let chunk_cfg = ChunkConfig::for_max_tokens(model.max_seq_length());
                             let mut pending: Vec<(String, String, u64, String)> = Vec::new();
 
                             for fp in &to_embed {
@@ -1111,7 +1118,9 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                                     let file_ext =
                                         fp.extension().and_then(|e| e.to_str()).unwrap_or("");
                                     for (i, chunk) in
-                                        chunk_content(&content, file_ext).into_iter().enumerate()
+                                        chunk_content_with_config(&content, file_ext, &chunk_cfg)
+                                            .into_iter()
+                                            .enumerate()
                                     {
                                         pending.push((
                                             vault_name.clone(),
