@@ -21,7 +21,7 @@
     "lint",
     "launchd"
   ],
-  "skills": "./skills/",
+  "skills": "./registry/skills/",
   "hooks": "./hooks/hooks.json",
-  "mcpServers": "./.mcp.json"
+  "mcpServers": "./registry/mcp.json"
 }

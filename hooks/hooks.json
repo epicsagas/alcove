@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/install.js\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/install.cjs\"",
             "async": false
           }
         ],
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "alcove reap",
+            "command": "TOOL=$(command -v alcove 2>/dev/null); test -n \"$TOOL\" && \"$TOOL\" reap || echo '[alcove] not found, skipping'",
             "async": true
           }
         ],

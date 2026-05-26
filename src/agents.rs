@@ -44,9 +44,6 @@ pub(crate) enum McpConfig {
     },
     /// OpenCode format: { "mcp": { "alcove": { "type": "local", ... } } }
     OpenCode { path: &'static str },
-    /// Codex TOML format (retained for tests; Codex uses plugin install)
-    #[allow(dead_code)]
-    Codex { path: &'static str },
 }
 
 pub(crate) fn home() -> PathBuf {
@@ -126,7 +123,7 @@ pub(crate) fn expand_path(p: &str) -> PathBuf {
 // Skill file
 // ---------------------------------------------------------------------------
 
-const SKILL_CONTENT: &str = include_str!("../skills/alcove/SKILL.md");
+const SKILL_CONTENT: &str = include_str!("../registry/skills/alcove/SKILL.md");
 
 pub(crate) fn install_skill_to(dir: &Path) -> Result<()> {
     fs::create_dir_all(dir)?;
@@ -234,75 +231,6 @@ pub(crate) fn write_opencode_mcp(
     Ok(())
 }
 
-pub(crate) fn write_codex_mcp(
-    config_path: &Path,
-    binary: &Path,
-    docs_root: &Path,
-    server_url: Option<&str>,
-    token_ref: Option<&str>,
-) -> Result<()> {
-    let entry = if let Some(url) = server_url {
-        let url_toml = toml::Value::String(url.to_string()).to_string();
-        // Codex HTTP: bearer_token_env_var points to the env var holding the actual token
-        if token_ref.is_some() {
-            format!(
-                "\n[mcpServers.alcove]\ntype = \"http\"\nurl = {url_toml}\nbearer_token_env_var = \"ALCOVE_TOKEN\"\n"
-            )
-        } else {
-            format!("\n[mcpServers.alcove]\ntype = \"http\"\nurl = {url_toml}\n")
-        }
-    } else {
-        let binary_toml = toml::Value::String(binary.display().to_string()).to_string();
-        let docs_root_toml = toml::Value::String(docs_root.display().to_string()).to_string();
-        if let Some(ref_val) = token_ref {
-            let token_toml = toml::Value::String(ref_val.to_string()).to_string();
-            format!(
-                "\n[mcpServers.alcove]\ncommand = {binary_toml}\nargs = []\n\n[mcpServers.alcove.env]\nDOCS_ROOT = {docs_root_toml}\nALCOVE_TOKEN = {token_toml}\n"
-            )
-        } else {
-            format!(
-                "\n[mcpServers.alcove]\ncommand = {binary_toml}\nargs = []\n\n[mcpServers.alcove.env]\nDOCS_ROOT = {docs_root_toml}\n"
-            )
-        }
-    };
-
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    if config_path.exists() {
-        let content = fs::read_to_string(config_path)?;
-        if content.contains("[mcpServers.alcove]") {
-            // Replace existing [mcpServers.alcove] block (and its sub-tables)
-            // by removing everything from the header to the next top-level section.
-            let mut out = String::new();
-            let mut in_alcove = false;
-            for line in content.lines() {
-                if line.trim_start().starts_with("[mcpServers.alcove") {
-                    in_alcove = true;
-                    continue;
-                }
-                if in_alcove {
-                    // A new top-level or sibling section ends the alcove block
-                    if line.trim_start().starts_with('[') {
-                        in_alcove = false;
-                    } else {
-                        continue;
-                    }
-                }
-                out.push_str(line);
-                out.push('\n');
-            }
-            fs::write(config_path, format!("{out}{entry}"))?;
-        } else {
-            fs::write(config_path, format!("{content}{entry}"))?;
-        }
-    } else {
-        fs::write(config_path, entry)?;
-    }
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Agent registration check (used by cmd_doctor)
 // ---------------------------------------------------------------------------
@@ -313,7 +241,6 @@ pub(crate) fn check_agent_registration(agent: &AgentDef) -> (&'static str, Strin
     let path = match &agent.mcp_config {
         McpConfig::Json { path, .. } => *path,
         McpConfig::OpenCode { path } => *path,
-        McpConfig::Codex { path } => *path,
     };
     let expanded = expand_path(path);
 
@@ -352,7 +279,6 @@ pub(crate) fn check_agent_registration(agent: &AgentDef) -> (&'static str, Strin
                 false
             }
         }
-        McpConfig::Codex { .. } => content.contains("[mcpServers.alcove]"),
     };
 
     if has_alcove {
@@ -407,7 +333,7 @@ mod tests {
     #[test]
     fn agents_returns_expected_count() {
         let a = agents();
-        assert_eq!(a.len(), 6, "expected 6 agent definitions");
+        assert_eq!(a.len(), 5, "expected 5 agent definitions");
     }
 
     #[test]
@@ -433,7 +359,6 @@ mod tests {
                     assert!(!server_key.is_empty());
                 }
                 McpConfig::OpenCode { path } => assert!(!path.is_empty()),
-                McpConfig::Codex { path } => assert!(!path.is_empty()),
             }
         }
     }
@@ -609,137 +534,105 @@ mod tests {
         assert_eq!(parsed["mcp"]["alcove"]["type"], "local");
     }
 
-    // ── write_codex_mcp ──
+    // ── Consistency tests (compile-time validated via include_str!) ──
+
+    const HOOKS_CLAUDE: &str = include_str!("../hooks/hooks.json");
+    const HOOKS_ANTIGRAVITY: &str = include_str!("../integrations/antigravity/hooks.json");
+    const PLUGIN_CLAUDE: &str = include_str!("../.claude-plugin/plugin.json");
+    const PLUGIN_ANTIGRAVITY: &str = include_str!("../.antigravity-plugin/plugin.json");
+    const PLUGIN_CODEX: &str = include_str!("../.codex-plugin/plugin.json");
+    const MCP_CONFIG: &str = include_str!("../registry/mcp.json");
 
     #[test]
-    fn write_codex_mcp_creates_new_file() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let cfg = tmp.path().join("config.toml");
-        let bin = PathBuf::from("/bin/alcove");
-        let docs = PathBuf::from("/docs");
+    fn hooks_claude_valid() {
+        let parsed: serde_json::Value =
+            serde_json::from_str(HOOKS_CLAUDE).expect("hooks/hooks.json must be valid JSON");
+        let hooks = &parsed["hooks"];
+        assert!(hooks.get("SessionStart").is_some(), "missing SessionStart");
+        assert!(hooks.get("SessionEnd").is_some(), "missing SessionEnd");
 
-        let result = write_codex_mcp(&cfg, &bin, &docs, None, None);
-        assert!(result.is_ok());
-
-        let content = fs::read_to_string(&cfg).expect("failed to read");
-        assert!(content.contains("[mcpServers.alcove]"));
-        assert!(content.contains(r#"command = "/bin/alcove""#));
-        assert!(content.contains(r#"DOCS_ROOT = "/docs""#));
-    }
-
-    #[test]
-    fn write_codex_mcp_appends_to_existing() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let cfg = tmp.path().join("config.toml");
-
-        fs::write(&cfg, "[some_other_section]\nkey = \"value\"\n").expect("failed to write");
-
-        let result = write_codex_mcp(
-            &cfg,
-            &PathBuf::from("/bin/alcove"),
-            &PathBuf::from("/docs"),
-            None,
-            None,
-        );
-        assert!(result.is_ok());
-
-        let content = fs::read_to_string(&cfg).expect("failed to read");
-        assert!(content.contains("[some_other_section]"));
-        assert!(content.contains("[mcpServers.alcove]"));
-    }
-
-    #[test]
-    fn write_codex_mcp_replaces_existing_alcove_block() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let cfg = tmp.path().join("config.toml");
-
-        let original = "[some_section]\nkey = \"value\"\n\n[mcpServers.alcove]\ncommand = \"/old/bin\"\n\n[mcpServers.alcove.env]\nDOCS_ROOT = \"/old/docs\"\n";
-        fs::write(&cfg, original).expect("failed to write");
-
-        let result = write_codex_mcp(
-            &cfg,
-            &PathBuf::from("/new/bin"),
-            &PathBuf::from("/new/docs"),
-            None,
-            None,
-        );
-        assert!(result.is_ok());
-
-        let content = fs::read_to_string(&cfg).expect("failed to read");
-        // Other sections preserved
-        assert!(
-            content.contains("[some_section]"),
-            "other sections must be preserved"
-        );
-        assert!(
-            content.contains("key = \"value\""),
-            "other keys must be preserved"
-        );
-        // Alcove block updated
-        assert!(content.contains("/new/bin"), "new binary must be written");
-        assert!(
-            content.contains("/new/docs"),
-            "new docs_root must be written"
-        );
-        assert!(!content.contains("/old/bin"), "old binary must be removed");
-    }
-
-    #[test]
-    fn write_codex_mcp_http_mode_with_bearer() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let cfg = tmp.path().join("config.toml");
-        let bin = PathBuf::from("/bin/alcove");
-        let docs = PathBuf::from("/docs");
-
-        let result = write_codex_mcp(
-            &cfg,
-            &bin,
-            &docs,
-            Some("http://127.0.0.1:57384/mcp"),
-            Some("$ALCOVE_TOKEN"),
-        );
-        assert!(result.is_ok());
-
-        let content = fs::read_to_string(&cfg).expect("failed to read");
-        assert!(content.contains(r#"type = "http""#));
-        assert!(content.contains("http://127.0.0.1:57384/mcp"));
-        assert!(content.contains(r#"bearer_token_env_var = "ALCOVE_TOKEN""#));
-    }
-
-    #[test]
-    fn write_codex_mcp_escapes_binary_path() {
-        let dir = TempDir::new().expect("temp dir");
-        let cfg_path = dir.path().join("codex_config.toml");
-        let binary = std::path::PathBuf::from(r#"/usr/local/bin/al"cove"#);
-        let docs_root = dir.path().join("docs");
-
-        write_codex_mcp(&cfg_path, &binary, &docs_root, None, None).expect("write should succeed");
-
-        let written = fs::read_to_string(&cfg_path).expect("read back");
-        let parsed: toml::Value = toml::from_str(&written).expect("must be valid TOML");
-        let got = parsed["mcpServers"]["alcove"]["command"]
+        // SessionEnd uses TOOL guard pattern
+        let session_end_cmd = hooks["SessionEnd"][0]["hooks"][0]["command"]
             .as_str()
-            .expect("command is a string");
-        assert_eq!(got, binary.display().to_string());
+            .expect("missing SessionEnd command");
+        assert!(
+            session_end_cmd.contains("TOOL=$(command -v alcove"),
+            "SessionEnd must use TOOL guard pattern"
+        );
     }
 
     #[test]
-    fn write_codex_mcp_escapes_server_url() {
-        let dir = TempDir::new().expect("temp dir");
-        let cfg_path = dir.path().join("codex_config.toml");
-        let binary = dir.path().join("alcove");
-        let docs_root = dir.path().join("docs");
-        // URL with a quote — injection attempt.
-        let url = r#"http://localhost:57384/mcp"extra"#;
+    fn hooks_antigravity_valid() {
+        let parsed: serde_json::Value = serde_json::from_str(HOOKS_ANTIGRAVITY)
+            .expect("integrations/antigravity/hooks.json must be valid JSON");
+        let root = parsed
+            .as_object()
+            .expect("root must be an object")
+            .keys()
+            .next()
+            .expect("must have a plugin key");
+        let events = &parsed[root];
+        assert!(
+            events.get("PreInvocation").is_some(),
+            "missing PreInvocation"
+        );
+    }
 
-        write_codex_mcp(&cfg_path, &binary, &docs_root, Some(url), None)
-            .expect("write should succeed");
+    #[test]
+    fn plugin_claude_valid() {
+        let parsed: serde_json::Value = serde_json::from_str(PLUGIN_CLAUDE)
+            .expect(".claude-plugin/plugin.json must be valid JSON");
+        assert!(parsed["name"].is_string(), "missing name");
+        assert!(parsed["skills"].is_string(), "missing skills reference");
+        assert!(parsed["hooks"].is_string(), "missing hooks reference");
+        assert!(parsed["mcpServers"].is_string(), "missing mcpServers reference");
+    }
 
-        let written = fs::read_to_string(&cfg_path).expect("read back");
-        let parsed: toml::Value = toml::from_str(&written).expect("must be valid TOML");
-        let got = parsed["mcpServers"]["alcove"]["url"]
+    #[test]
+    fn plugin_antigravity_valid() {
+        let parsed: serde_json::Value = serde_json::from_str(PLUGIN_ANTIGRAVITY)
+            .expect(".antigravity-plugin/plugin.json must be valid JSON");
+        assert_eq!(parsed["name"].as_str(), Some("alcove"));
+    }
+
+    #[test]
+    fn plugin_codex_valid() {
+        let parsed: serde_json::Value = serde_json::from_str(PLUGIN_CODEX)
+            .expect(".codex-plugin/plugin.json must be valid JSON");
+        assert!(parsed["name"].is_string(), "missing name");
+    }
+
+    #[test]
+    fn mcp_config_valid() {
+        let parsed: serde_json::Value =
+            serde_json::from_str(MCP_CONFIG).expect("registry/mcp.json must be valid JSON");
+        assert!(parsed["mcpServers"]["alcove"]["command"].is_string());
+    }
+
+    #[test]
+    fn hooks_claude_references_install_js() {
+        let parsed: serde_json::Value =
+            serde_json::from_str(HOOKS_CLAUDE).expect("invalid JSON");
+        let cmd = parsed["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             .as_str()
-            .expect("url is a string");
-        assert_eq!(got, url);
+            .expect("missing command");
+        assert!(
+            cmd.contains("install.cjs"),
+            "SessionStart must reference install.cjs"
+        );
+    }
+
+    #[test]
+    fn hooks_antigravity_references_install_js() {
+        let parsed: serde_json::Value = serde_json::from_str(HOOKS_ANTIGRAVITY)
+            .expect("invalid JSON");
+        let root = parsed.as_object().unwrap().keys().next().unwrap();
+        let cmd = parsed[root]["PreInvocation"][0]["hooks"][0]["command"]
+            .as_str()
+            .expect("missing command");
+        assert!(
+            cmd.contains("install.cjs"),
+            "PreInvocation must reference install.cjs"
+        );
     }
 }

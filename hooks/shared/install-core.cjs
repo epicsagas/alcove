@@ -1,13 +1,12 @@
-#!/usr/bin/env node
-// Alcove Antigravity plugin bootstrap
-// Runs on PreInvocation to ensure alcove binary is available.
-// Uses only Node.js built-ins — no npm install needed.
+// Shared install core for alcove plugin bootstrap.
+// Used by Claude Code and Antigravity hooks.
+// Zero npm dependencies — Node.js built-ins only.
 
 "use strict";
 
 const { spawnSync } = require("child_process");
-const { createWriteStream, chmodSync, readFileSync } = require("fs");
-const { join, dirname } = require("path");
+const { createWriteStream, chmodSync } = require("fs");
+const { join } = require("path");
 const https = require("https");
 const os = require("os");
 
@@ -22,6 +21,18 @@ function log(msg) {
 function hasCommand(cmd) {
   const r = spawnSync(cmd, ["--version"], { stdio: "pipe", shell: false });
   return r.status === 0;
+}
+
+function getBinaryVersion() {
+  try {
+    const r = spawnSync(BINARY, ["--version"], { stdio: "pipe", shell: false });
+    if (r.status === 0) {
+      const output = r.stdout.toString().trim();
+      const match = output.match(/(\d+\.\d+\.\d+)/);
+      return match ? match[1] : null;
+    }
+  } catch (_) {}
+  return null;
 }
 
 function downloadFile(url, dest) {
@@ -61,29 +72,23 @@ async function install() {
   if (r.status !== 0) throw new Error("Shell installer failed");
 }
 
-async function main() {
-  // Antigravity hooks receive JSON on stdin — read and discard
-  let input = {};
-  try {
-    const chunks = [];
-    for await (const chunk of process.stdin) chunks.push(chunk);
-    input = JSON.parse(Buffer.concat(chunks).toString() || "{}");
-  } catch (_) {}
-
-  if (!hasCommand(BINARY)) {
-    log(`${BINARY} not found — installing...`);
-    try {
-      await install();
-    } catch (e) {
-      log(`Install failed: ${e.message}`);
-      log(`Install manually: https://github.com/${REPO}#installation`);
-    }
+function semverGt(a, b) {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] > pb[i]) return true;
+    if (pa[i] < pb[i]) return false;
   }
-
-  // Antigravity expects JSON on stdout for PreInvocation
-  process.stdout.write(JSON.stringify({ injectSteps: [], terminationBehavior: "" }));
+  return false;
 }
 
-main().catch(() => {
-  process.stdout.write(JSON.stringify({ injectSteps: [], terminationBehavior: "" }));
-});
+module.exports = {
+  REPO,
+  BINARY,
+  log,
+  hasCommand,
+  getBinaryVersion,
+  downloadFile,
+  install,
+  semverGt,
+};

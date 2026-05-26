@@ -1138,11 +1138,6 @@ pub fn cmd_register(tool: &str) -> Result<()> {
                 crate::agents::write_opencode_mcp(&p, &bin, &docs_root, None, None)?;
                 println!("  {} MCP registered → {}", style("✓").green(), path);
             }
-            crate::agents::McpConfig::Codex { path } => {
-                let p = expand_path(path);
-                crate::agents::write_codex_mcp(&p, &bin, &docs_root, None, None)?;
-                println!("  {} MCP registered → {}", style("✓").green(), path);
-            }
         }
 
         if let Some(skill_path) = agent.skill_dir {

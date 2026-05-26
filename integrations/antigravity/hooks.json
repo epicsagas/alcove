@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ~/.gemini/antigravity-cli/plugins/alcove/hooks/install.js"
+            "command": "node ~/.gemini/antigravity-cli/plugins/alcove/integrations/antigravity/hooks/install.cjs"
           }
         ]
       }

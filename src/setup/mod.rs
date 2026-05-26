@@ -7,7 +7,7 @@ use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
 use rust_i18n::t;
 
 use crate::agents::{
-    McpConfig, agents, expand_path, install_skill_to, write_codex_mcp, write_json_mcp,
+    McpConfig, agents, expand_path, install_skill_to, write_json_mcp,
     write_opencode_mcp,
 };
 use crate::config::{
@@ -1145,26 +1145,6 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
             McpConfig::OpenCode { path } => {
                 let p = expand_path(path);
                 write_opencode_mcp(
-                    &p,
-                    &bin,
-                    &docs_root,
-                    server_url.as_deref(),
-                    token_ref.as_deref(),
-                )?;
-                println!(
-                    "  {} {} ({})",
-                    style("✓").green(),
-                    t!("setup.mcp_set", path = path),
-                    if server_url.is_some() {
-                        "HTTP"
-                    } else {
-                        "stdio"
-                    }
-                );
-            }
-            McpConfig::Codex { path } => {
-                let p = expand_path(path);
-                write_codex_mcp(
                     &p,
                     &bin,
                     &docs_root,
