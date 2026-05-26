@@ -1,6 +1,6 @@
 {
   "name": "alcove",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "description": "Local-first MCP memory server — hybrid BM25+vector search, vault management, lint, and launchd lifecycle for project knowledge.",
   "author": {
     "name": "epicsagas",
