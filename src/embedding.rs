@@ -77,7 +77,9 @@ impl EmbeddingModelChoice {
     /// Get embedding dimension for this model
     pub fn dimension(&self) -> usize {
         match self {
-            Self::AllMiniLML6V2 | Self::MultilingualE5Small | Self::ArcticEmbedXS
+            Self::AllMiniLML6V2
+            | Self::MultilingualE5Small
+            | Self::ArcticEmbedXS
             | Self::ArcticEmbedS => 384,
             Self::MultilingualE5Base | Self::ArcticEmbedM => 768,
             Self::MultilingualE5Large | Self::BGEM3 | Self::ArcticEmbedL => 1024,
@@ -161,10 +163,7 @@ impl EmbeddingModelChoice {
             Self::MultilingualE5Small | Self::MultilingualE5Base | Self::MultilingualE5Large => {
                 Some("query: ")
             }
-            Self::ArcticEmbedXS
-            | Self::ArcticEmbedS
-            | Self::ArcticEmbedM
-            | Self::ArcticEmbedL => {
+            Self::ArcticEmbedXS | Self::ArcticEmbedS | Self::ArcticEmbedM | Self::ArcticEmbedL => {
                 Some("Represent this sentence for searching relevant passages: ")
             }
             Self::AllMiniLML6V2 | Self::BGEM3 => None,
@@ -797,7 +796,12 @@ mod tests {
                 EmbeddingModelChoice::ArcticEmbedM,
                 EmbeddingModelChoice::ArcticEmbedL,
             ] {
-                assert_eq!(m.query_prefix(), Some(arctic_query_prefix), "{:?} query prefix", m);
+                assert_eq!(
+                    m.query_prefix(),
+                    Some(arctic_query_prefix),
+                    "{:?} query prefix",
+                    m
+                );
                 assert_eq!(m.doc_prefix(), None, "{:?} doc prefix", m);
             }
         }
@@ -816,10 +820,22 @@ mod tests {
                 Some(EmbeddingModelChoice::BGEM3)
             );
             assert_eq!(EmbeddingModelChoice::parse("InvalidModel"), None);
-            assert_eq!(EmbeddingModelChoice::parse("ArcticEmbedXS"), Some(EmbeddingModelChoice::ArcticEmbedXS));
-            assert_eq!(EmbeddingModelChoice::parse("ArcticEmbedS"), Some(EmbeddingModelChoice::ArcticEmbedS));
-            assert_eq!(EmbeddingModelChoice::parse("ArcticEmbedM"), Some(EmbeddingModelChoice::ArcticEmbedM));
-            assert_eq!(EmbeddingModelChoice::parse("ArcticEmbedL"), Some(EmbeddingModelChoice::ArcticEmbedL));
+            assert_eq!(
+                EmbeddingModelChoice::parse("ArcticEmbedXS"),
+                Some(EmbeddingModelChoice::ArcticEmbedXS)
+            );
+            assert_eq!(
+                EmbeddingModelChoice::parse("ArcticEmbedS"),
+                Some(EmbeddingModelChoice::ArcticEmbedS)
+            );
+            assert_eq!(
+                EmbeddingModelChoice::parse("ArcticEmbedM"),
+                Some(EmbeddingModelChoice::ArcticEmbedM)
+            );
+            assert_eq!(
+                EmbeddingModelChoice::parse("ArcticEmbedL"),
+                Some(EmbeddingModelChoice::ArcticEmbedL)
+            );
         }
     }
 

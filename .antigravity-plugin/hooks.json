@@ -1,0 +1,14 @@
+{
+  "alcove-bootstrap": {
+    "PreInvocation": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "alcove --version || curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh"
+          }
+        ]
+      }
+    ]
+  }
+}

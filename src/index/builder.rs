@@ -388,14 +388,17 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
     let embedding_enabled_for_count = {
         #[cfg(feature = "embed-candle")]
         {
-            crate::config::load_config().embedding_config_with_defaults().enabled
+            crate::config::load_config()
+                .embedding_config_with_defaults()
+                .enabled
         }
         #[cfg(not(feature = "embed-candle"))]
         {
             false
         }
     };
-    let vector_skipped_projects = count_vector_skipped_projects(docs_root, embedding_enabled_for_count);
+    let vector_skipped_projects =
+        count_vector_skipped_projects(docs_root, embedding_enabled_for_count);
 
     let (vector_status, vectors_indexed, vector_errors, embedding_model) =
         run_vector_indexing(docs_root, skip_embedding, files_to_index)?;
@@ -862,7 +865,9 @@ fn count_vector_skipped_projects(docs_root: &Path, embedding_enabled: bool) -> u
             if is_reserved_dir_name(&name) {
                 return false;
             }
-            !effective_config(&path).vector_index.unwrap_or(embedding_enabled)
+            !effective_config(&path)
+                .vector_index
+                .unwrap_or(embedding_enabled)
         })
         .count() as u64
 }

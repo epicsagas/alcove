@@ -307,10 +307,30 @@ const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
         2200,
     ),
     ("BGEM3", "Dense+Sparse+ColBERT (~2300MB)", 1024, 2300),
-    ("ArcticEmbedXS", "Snowflake XS, best 384-dim quality (~90MB)", 384, 90),
-    ("ArcticEmbedS", "Snowflake S, improved retrieval (~130MB)", 384, 130),
-    ("ArcticEmbedM", "Snowflake M, workhorse retrieval (~430MB)", 768, 430),
-    ("ArcticEmbedL", "Snowflake L, top retrieval quality (~1300MB)", 1024, 1300),
+    (
+        "ArcticEmbedXS",
+        "Snowflake XS, best 384-dim quality (~90MB)",
+        384,
+        90,
+    ),
+    (
+        "ArcticEmbedS",
+        "Snowflake S, improved retrieval (~130MB)",
+        384,
+        130,
+    ),
+    (
+        "ArcticEmbedM",
+        "Snowflake M, workhorse retrieval (~430MB)",
+        768,
+        430,
+    ),
+    (
+        "ArcticEmbedL",
+        "Snowflake L, top retrieval quality (~1300MB)",
+        1024,
+        1300,
+    ),
     ("disabled", "Disable embedding (BM25 only)", 0, 0),
 ];
 
