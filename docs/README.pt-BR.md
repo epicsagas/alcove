@@ -628,6 +628,24 @@ Agora seus agentes têm acesso estruturado:
 
 Você pode verificar o mapeamento do armazenamento físico verificando os links simbólicos em `~/.alcove/vaults/`.
 
+## FAQ
+
+### Por que não usar apenas o ripgrep como ferramenta MCP?
+
+O ripgrep retorna arquivos inteiros. Se o seu agente busca por "auth" e encontra 5 arquivos com uma média de 200 linhas cada, isso injeta cerca de 10K tokens no contexto — a maior parte irrelevante. O Alcove fragmenta os documentos, classifica os trechos e retorna apenas as passagens mais relevantes. Ele também oferece busca semântica (embeddings vetoriais) que o ripgrep não consegue — uma consulta como "como o pipeline de deploy é estruturado" não vai corresponder a nenhuma palavra-chave no seu DEPLOYMENT.md, mas a busca vetorial do Alcove vai encontrar.
+
+### Isso substitui o CLAUDE.md / AGENTS.md?
+
+Não — eles servem a propósitos diferentes. Arquivos de configuração do agente (CLAUDE.md, AGENTS.md) definem **regras comportamentais**: estilo de commit, preferências de idioma, restrições de segurança. O Alcove gerencia o **conhecimento institucional**: decisões de arquitetura, acompanhamento de progresso, convenções de codificação, estrutura do código. A configuração do agente serve para *como o agente deve agir*. O Alcove serve para *o que o agente deve saber*.
+
+### Por que Rust?
+
+Binário único, sem dependência de runtime. O Tantivy é o melhor BM25 da categoria. O candle-transformers nos oferece embeddings vetoriais locais sem ONNX ou Python. Um `cargo install` ou curl — sem Docker, sem Node.js, sem virtualenv.
+
+### E as janelas de contexto cada vez maiores?
+
+Janelas maiores não resolvem o problema de relevância. Mesmo uma janela de 200K tokens preenchida com documentos irrelevantes degrada a qualidade da saída do agente — a própria documentação da Anthropic alerta que arquivos de configuração inchados fazem os agentes ignorarem as instruções reais. O objetivo não é mais contexto, é o contexto certo no momento certo.
+
 ## Roteiro
 
 - **Acesso remoto multi-usuário** — API REST para compartilhamento de documentos da equipe via LAN/VPN (autenticação por bearer token, limitação de taxa já implementada). Necessário: API de escrita, coordenação de índice concorrente, gerenciamento do ciclo de vida do projeto.

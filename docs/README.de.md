@@ -628,6 +628,24 @@ Jetzt haben deine Agenten strukturierten Zugriff:
 
 Du kannst das physische Speicher-Mapping überprüfen, indem du die Symlinks in `~/.alcove/vaults/` kontrollierst.
 
+## FAQ
+
+### Warum nicht einfach ripgrep als MCP-Tool verwenden?
+
+Ripgrep liefert gesamte Dateien zurück. Wenn dein Agent nach „auth" sucht und 5 Dateien mit jeweils durchschnittlich 200 Zeilen trifft, werden ~10K Tokens in den Kontext injiziert — davon ist das meiste irrelevant. Alcove zerteilt Dokumente in Abschnitte, bewertet diese nach Relevanz und gibt nur die passendsten Passagen zurück. Zudem bietet Alcove eine semantische Suche (Vektor-Embeddings), die ripgrep nicht beherrscht — eine Anfrage wie „wie ist die Deployment-Pipeline strukturiert" wird keinen einzigen Begriff in deiner DEPLOYMENT.md treffen, aber Alcoves Vektorsuche findet es trotzdem.
+
+### Ersetzt dies CLAUDE.md / AGENTS.md?
+
+Nein — sie dienen unterschiedlichen Zwecken. Agent-Konfigurationsdateien (CLAUDE.md, AGENTS.md) definieren **Verhaltensregeln**: Commit-Stil, Spracheinstellungen, Sicherheitsrichtlinien. Alcove verwaltet **organisatorisches Wissen**: Architekturentscheidungen, Fortschrittsverfolgung, Coding-Konventionen, Code-Struktur. Die Agent-Konfiguration bestimmt, *wie der Agent handeln soll*. Alcove bestimmt, *was der Agent wissen soll*.
+
+### Warum Rust?
+
+Einzelnes Binary, keine Laufzeitabhängigkeiten. Tantivy ist die Referenzimplementierung für BM25. candle-transformers ermöglicht lokale Vektor-Embeddings ohne ONNX oder Python. Ein einfaches `cargo install` oder curl — kein Docker, kein Node.js, kein virtualenv.
+
+### Was ist mit immer größer werdenden Kontextfenstern?
+
+Größere Fenster lösen nicht das Relevanzproblem. Selbst ein 200K-Token-Fenster, das mit irrelevanten Dokumenten gefüllt ist, verschlechtert die Qualität der Agent-Ausgabe — Anthropic warnt in der eigenen Dokumentation davor, dass aufgeblähte Konfigurationsdateien dazu führen, dass Agenten tatsächliche Anweisungen ignorieren. Das Ziel ist nicht mehr Kontext, sondern der richtige Kontext zum richtigen Zeitpunkt.
+
 ## Fahrplan
 
 - **Multi-User-Fernzugriff** — REST-API für Team-Dokumentenfreigabe über LAN/VPN (Bearer-Token-Authentifizierung, Rate-Limiting bereits implementiert). Erforderlich: Schreib-API, gleichzeitige Index-Koordination, Projekt-Lebenszyklusverwaltung.

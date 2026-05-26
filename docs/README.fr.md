@@ -628,6 +628,24 @@ Désormais, vos agents disposent d'un accès structuré :
 
 Vous pouvez vérifier le mappage du stockage physique en consultant les liens symboliques dans `~/.alcove/vaults/`.
 
+## Foire aux questions
+
+### Pourquoi ne pas simplement utiliser ripgrep comme outil MCP ?
+
+Ripgrep renvoie des fichiers entiers. Si votre agent recherche « auth » et tombe sur 5 fichiers d'une moyenne de 200 lignes chacun, cela représente environ 10 000 tokens injectés dans le contexte — dont la plupart sont non pertinents. Alcove découpe les documents en fragments, les classe et ne renvoie que les passages les plus pertinents. Il offre également une recherche sémantique (embeddings vectoriels) que ripgrep ne peut pas fournir — une requête comme « comment le pipeline de déploiement est-il structuré » ne correspondra à aucun mot-clé dans votre DEPLOYMENT.md, mais la recherche vectorielle d'Alcove le trouvera.
+
+### Est-ce que cela remplace CLAUDE.md / AGENTS.md ?
+
+Non — ils servent des objectifs différents. Les fichiers de configuration d'agent (CLAUDE.md, AGENTS.md) définissent des **règles comportementales** : style de commit, préférences de langue, contraintes de sécurité. Alcove gère la **mémoire institutionnelle** : décisions d'architecture, suivi de progression, conventions de code, structure du code. La configuration d'agent concerne *comment l'agent doit agir*. Alcove concerne *ce que l'agent doit savoir*.
+
+### Pourquoi Rust ?
+
+Un seul binaire, aucune dépendance d'exécution. Tantivy offre le meilleur BM25 de sa catégorie. candle-transformers nous fournit des embeddings vectoriels locaux sans ONNX ni Python. Un simple `cargo install` ou curl — pas de Docker, pas de Node.js, pas de virtualenv.
+
+### Qu'en est-il de l'agrandissement des fenêtres de contexte ?
+
+Des fenêtres plus grandes ne résolvent pas le problème de pertinence. Même une fenêtre de 200 000 tokens remplie de documents non pertinents dégrade la qualité des résultats de l'agent — la propre documentation d'Anthropic avertit que des fichiers de configuration surchargés amènent les agents à ignorer les instructions réelles. L'objectif n'est pas d'avoir plus de contexte, mais le bon contexte au bon moment.
+
 ## Feuille de route
 
 - **Accès distant multi-utilisateur** — API REST pour le partage de documents d'équipe via LAN/VPN (authentification par jeton bearer, limitation de débit déjà implémentée). Requis : API d'écriture, coordination d'index concurrente, gestion du cycle de vie des projets.

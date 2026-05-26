@@ -634,6 +634,24 @@ Ahora tus agentes tienen acceso estructurado:
 
 Puedes verificar el mapeo de almacenamiento físico comprobando los enlaces simbólicos en `~/.alcove/vaults/`.
 
+## Preguntas frecuentes
+
+### ¿Por qué no usar simplemente ripgrep como herramienta MCP?
+
+Ripgrep devuelve archivos completos. Si tu agente busca "auth" y encuentra 5 archivos que promedian 200 líneas cada uno, se inyectan ~10K tokens en el contexto — la mayor parte irrelevante. Alcove fragmenta los documentos, clasifica los fragmentos y devuelve solo los pasajes más relevantes. También ofrece búsqueda semántica (embeddings vectoriales) que ripgrep no puede proporcionar — una consulta como "¿cómo está estructurada la canalización de despliegue?" no coincidirá con ninguna palabra clave en tu DEPLOYMENT.md, pero la búsqueda vectorial de Alcove la encontrará.
+
+### ¿Esto reemplaza a CLAUDE.md / AGENTS.md?
+
+No — cumplen propósitos diferentes. Los archivos de configuración del agente (CLAUDE.md, AGENTS.md) definen **reglas de comportamiento**: estilo de commits, preferencias de idioma, restricciones de seguridad. Alcove gestiona **conocimiento institucional**: decisiones de arquitectura, seguimiento de progreso, convenciones de código, estructura del código. La configuración del agente es para *cómo debe actuar el agente*. Alcove es para *qué debe saber el agente*.
+
+### ¿Por qué Rust?
+
+Un único binario, sin dependencias de tiempo de ejecución. Tantivy ofrece BM25 de mejor en su clase. candle-transformers nos proporciona embeddings vectoriales locales sin ONNX ni Python. Un solo `cargo install` o curl — sin Docker, sin Node.js, sin virtualenv.
+
+### ¿Qué pasa cuando las ventanas de contexto sean más grandes?
+
+Ventanas más grandes no resuelven el problema de la relevancia. Incluso una ventana de 200K tokens llena de documentos irrelevantes degrada la calidad de salida del agente — la propia documentación de Anthropic advierte que los archivos de configuración sobrecargados hacen que los agentes ignoren las instrucciones reales. El objetivo no es más contexto, sino el contexto correcto en el momento adecuado.
+
 ## Hoja de ruta
 
 - **Acceso remoto multiusuario** — API REST para compartir documentos del equipo por LAN/VPN (autenticación con token de portador, limitación de velocidad ya implementada). Requiere: API de escritura, coordinación de índices concurrentes, gestión del ciclo de vida de proyectos.
