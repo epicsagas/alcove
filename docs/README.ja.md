@@ -160,6 +160,39 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
 ```
 
+### Antigravity (Gemini CLI)
+
+すでにClaude CodeでAlcoveが設定されている場合は、そのままインポートできます：
+
+```bash
+agy plugin import claude
+```
+
+または手動でAlcoveプラグインをインストールしてください：
+
+```bash
+# グローバルプラグイン（すべてのワークスペース）
+mkdir -p ~/.gemini/antigravity-cli/plugins/alcove
+echo '{ "name": "alcove" }' > ~/.gemini/antigravity-cli/plugins/alcove/plugin.json
+echo '{
+  "mcpServers": {
+    "alcove": { "command": "alcove", "args": [] }
+  }
+}' > ~/.gemini/antigravity-cli/plugins/alcove/mcp_config.json
+
+# ワークスペースプラグイン（プロジェクトごと）
+mkdir -p .agents/plugins/alcove
+echo '{ "name": "alcove" }' > .agents/plugins/alcove/plugin.json
+echo '{
+  "mcpServers": {
+    "alcove": { "command": "alcove", "args": [] }
+  }
+}' > .agents/plugins/alcove/mcp_config.json
+
+# セットアップを実行（まだの場合）
+alcove setup
+```
+
 ### Rustツールチェーン
 
 ```bash
@@ -503,6 +536,7 @@ format = "mermaid"
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
+| Antigravity | ~/.gemini/antigravity-cli/plugins/ | — |
 
 ## 対応言語
 

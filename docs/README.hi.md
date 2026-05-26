@@ -156,6 +156,39 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
 ```
 
+### Antigravity (Gemini CLI)
+
+यदि आपने पहले ही Claude Code के लिए Alcove सेट कर लिया है, तो सीधे इंपोर्ट करें:
+
+```bash
+agy plugin import claude
+```
+
+या मैन्युअल रूप से Alcove प्लगइन इंस्टॉल करें:
+
+```bash
+# ग्लोबल प्लगइन (सभी वर्कस्पेस)
+mkdir -p ~/.gemini/antigravity-cli/plugins/alcove
+echo '{ "name": "alcove" }' > ~/.gemini/antigravity-cli/plugins/alcove/plugin.json
+echo '{
+  "mcpServers": {
+    "alcove": { "command": "alcove", "args": [] }
+  }
+}' > ~/.gemini/antigravity-cli/plugins/alcove/mcp_config.json
+
+# वर्कस्पेस प्लगइन (प्रति-प्रोजेक्ट)
+mkdir -p .agents/plugins/alcove
+echo '{ "name": "alcove" }' > .agents/plugins/alcove/plugin.json
+echo '{
+  "mcpServers": {
+    "alcove": { "command": "alcove", "args": [] }
+  }
+}' > .agents/plugins/alcove/mcp_config.json
+
+# सेटअप चलाएं (अगर अभी तक नहीं किया है)
+alcove setup
+```
+
 ### Rust टूलचेन
 
 ```bash
@@ -487,6 +520,7 @@ format = "mermaid"
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
+| Antigravity | ~/.gemini/antigravity-cli/plugins/ | — |
 
 ## समर्थित भाषाएं
 

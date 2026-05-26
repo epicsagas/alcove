@@ -162,6 +162,39 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
 ```
 
+### Antigravity (Gemini CLI)
+
+Se você já tem o Alcove configurado para o Claude Code, pode importá-lo diretamente:
+
+```bash
+agy plugin import claude
+```
+
+Ou instale o plugin do Alcove manualmente:
+
+```bash
+# Plugin global (todos os workspaces)
+mkdir -p ~/.gemini/antigravity-cli/plugins/alcove
+echo '{ "name": "alcove" }' > ~/.gemini/antigravity-cli/plugins/alcove/plugin.json
+echo '{
+  "mcpServers": {
+    "alcove": { "command": "alcove", "args": [] }
+  }
+}' > ~/.gemini/antigravity-cli/plugins/alcove/mcp_config.json
+
+# Plugin de workspace (por projeto)
+mkdir -p .agents/plugins/alcove
+echo '{ "name": "alcove" }' > .agents/plugins/alcove/plugin.json
+echo '{
+  "mcpServers": {
+    "alcove": { "command": "alcove", "args": [] }
+  }
+}' > .agents/plugins/alcove/mcp_config.json
+
+# Executar o setup (se ainda não fez)
+alcove setup
+```
+
 ### Via cadeia de ferramentas Rust
 
 ```bash
@@ -501,6 +534,7 @@ Tudo isso é configurado interativamente via `alcove setup`. Você também pode 
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
+| Antigravity | ~/.gemini/antigravity-cli/plugins/ | — |
 
 ## Idiomas suportados
 

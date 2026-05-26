@@ -385,7 +385,17 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
     )?;
 
     // Count projects that opted out of vector indexing (vector_index = false).
-    let vector_skipped_projects = count_vector_skipped_projects(docs_root);
+    let embedding_enabled_for_count = {
+        #[cfg(feature = "embed-candle")]
+        {
+            crate::config::load_config().embedding_config_with_defaults().enabled
+        }
+        #[cfg(not(feature = "embed-candle"))]
+        {
+            false
+        }
+    };
+    let vector_skipped_projects = count_vector_skipped_projects(docs_root, embedding_enabled_for_count);
 
     let (vector_status, vectors_indexed, vector_errors, embedding_model) =
         run_vector_indexing(docs_root, skip_embedding, files_to_index)?;
@@ -779,16 +789,17 @@ fn run_full_vector_indexing(
         vector_errors: 0,
     };
 
+    let embedding_enabled = emb_cfg.enabled;
     if !files_to_index.is_empty() {
-        // Filter: skip projects where vector_index resolves to false.
-        // Projects inherit vector_index from global config unless overridden locally.
+        // Filter: skip projects where vector_index is explicitly false.
+        // When vector_index is unset (None), inherit from embedding.enabled.
         // Also skip files already present in the vector store (incremental indexing).
         let to_embed: Vec<ProjectFile> = files_to_index
             .into_iter()
             .filter(|(proj, rel, _)| {
                 let proj_path = docs_root.join(proj);
                 let proj_cfg = effective_config(&proj_path);
-                if !proj_cfg.vector_index.unwrap_or(false) {
+                if !proj_cfg.vector_index.unwrap_or(embedding_enabled) {
                     return false;
                 }
                 !matches!(store.has_file(proj, rel), Ok(true))
@@ -831,8 +842,8 @@ fn run_full_vector_indexing(
 }
 
 /// Count how many project directories under `docs_root` have `vector_index = false`.
-/// Projects with `vector_index = true` will be embedded; those without are skipped.
-fn count_vector_skipped_projects(docs_root: &Path) -> u64 {
+/// When `vector_index` is unset (None), `embedding_enabled` is used as the default.
+fn count_vector_skipped_projects(docs_root: &Path, embedding_enabled: bool) -> u64 {
     let Ok(entries) = std::fs::read_dir(docs_root) else {
         return 0;
     };
@@ -851,8 +862,7 @@ fn count_vector_skipped_projects(docs_root: &Path) -> u64 {
             if is_reserved_dir_name(&name) {
                 return false;
             }
-            // A project is "skipped" when vector_index is false (the default).
-            !effective_config(&path).vector_index.unwrap_or(false)
+            !effective_config(&path).vector_index.unwrap_or(embedding_enabled)
         })
         .count() as u64
 }
