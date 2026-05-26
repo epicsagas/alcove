@@ -854,8 +854,14 @@ mod tests {
             assert!(EmbeddingModelChoice::BGEM3.is_xlm_roberta());
             assert!(!EmbeddingModelChoice::AllMiniLML6V2.is_xlm_roberta());
             assert!(!EmbeddingModelChoice::MultilingualE5Large.is_xlm_roberta());
-            assert!(!EmbeddingModelChoice::ArcticEmbedXS.is_xlm_roberta());
-            assert!(!EmbeddingModelChoice::ArcticEmbedL.is_xlm_roberta());
+            for m in [
+                EmbeddingModelChoice::ArcticEmbedXS,
+                EmbeddingModelChoice::ArcticEmbedS,
+                EmbeddingModelChoice::ArcticEmbedM,
+                EmbeddingModelChoice::ArcticEmbedL,
+            ] {
+                assert!(!m.is_xlm_roberta(), "{:?} should not be xlm_roberta", m);
+            }
         }
     }
 
