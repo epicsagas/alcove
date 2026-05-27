@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/integrations/claude/install.cjs\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/registry/scripts/install.js\"",
             "async": false
           }
         ],
