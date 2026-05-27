@@ -592,8 +592,8 @@ mod tests {
             .as_str()
             .expect("missing command");
         assert!(
-            cmd.contains("install.cjs"),
-            "SessionStart must reference install.cjs"
+            cmd.contains("install.js"),
+            "SessionStart must reference install.js"
         );
     }
 }
