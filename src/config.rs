@@ -1182,48 +1182,41 @@ mod tests {
 
     #[test]
     fn resolved_docs_roots_uses_docs_roots_vec() {
-        // docs_roots should be used when no DOCS_ROOT env var and no docs_root field.
-        // We set docs_root to a non-existent path so the legacy branch is skipped,
-        // which forces the docs_roots vec to be evaluated.
+        // Use a tempdir under ~/.alcove/test-* so paths are outside /tmp
+        // and pass is_blocked_system_path.
+        let base = alcove_home().join(format!("test-multi-root-{}", std::process::id()));
+        let oss_path = base.join("oss");
+        let work_path = base.join("work");
+        std::fs::create_dir_all(&oss_path).unwrap();
+        std::fs::create_dir_all(&work_path).unwrap();
+
+        // docs_root takes precedence over docs_roots.
         let cfg = DocConfig {
-            docs_root: Some("/tmp/nonexistent-alcove-test-root-xyz".into()),
-            docs_roots: Some(vec![
-                DocRootEntry {
-                    name: "oss".into(),
-                    path: "/tmp/oss".into(),
-                    #[cfg(feature = "embed-candle")]
-                    embedding: None,
-                },
-                DocRootEntry {
-                    name: "work".into(),
-                    path: "/tmp/work".into(),
-                    #[cfg(feature = "embed-candle")]
-                    embedding: None,
-                },
-            ]),
+            docs_root: Some(oss_path.to_string_lossy().to_string()),
+            docs_roots: Some(vec![DocRootEntry {
+                name: "work".into(),
+                path: work_path.to_string_lossy().to_string(),
+                #[cfg(feature = "embed-candle")]
+                embedding: None,
+            }]),
             ..DocConfig::default()
         };
-        // docs_root takes precedence over docs_roots — verify the field works at all.
         let roots = cfg.resolved_docs_roots();
-        // docs_root field is set → that single root wins.
-        assert_eq!(roots.len(), 1);
-        assert_eq!(
-            roots[0].path,
-            PathBuf::from("/tmp/nonexistent-alcove-test-root-xyz")
-        );
+        assert_eq!(roots.len(), 1, "docs_root must win over docs_roots");
+        assert_eq!(roots[0].path, oss_path);
 
-        // Now test docs_roots alone (no docs_root field).
+        // docs_roots alone (no docs_root field).
         let cfg2 = DocConfig {
             docs_roots: Some(vec![
                 DocRootEntry {
                     name: "oss".into(),
-                    path: "/tmp/oss".into(),
+                    path: oss_path.to_string_lossy().to_string(),
                     #[cfg(feature = "embed-candle")]
                     embedding: None,
                 },
                 DocRootEntry {
                     name: "work".into(),
-                    path: "/tmp/work".into(),
+                    path: work_path.to_string_lossy().to_string(),
                     #[cfg(feature = "embed-candle")]
                     embedding: None,
                 },
@@ -1231,26 +1224,25 @@ mod tests {
             ..DocConfig::default()
         };
         let roots2 = cfg2.resolved_docs_roots();
-        // Should have exactly 2 entries (docs_roots) — unless the default ~/.alcove/docs
-        // happens to exist on the test machine, in which case it falls through to fallback.
-        // Just assert the names are correct when len == 2.
-        if roots2.len() == 2 {
-            assert_eq!(roots2[0].name, "oss");
-            assert_eq!(roots2[1].name, "work");
-        } else {
-            // Default dir exists on this machine; can't isolate without temp dir tricks.
-            // Accept any non-zero count.
-            assert!(!roots2.is_empty());
-        }
+        assert_eq!(roots2.len(), 2);
+        assert_eq!(roots2[0].name, "oss");
+        assert_eq!(roots2[1].name, "work");
+
+        let _ = std::fs::remove_dir_all(&base); // cleanup
     }
 
     #[test]
     fn resolved_docs_roots_legacy_takes_precedence_over_vec() {
+        let base = alcove_home().join(format!("test-legacy-root-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
         let cfg = DocConfig {
-            docs_root: Some("/tmp/legacy".into()),
+            docs_root: Some(base.to_string_lossy().to_string()),
             docs_roots: Some(vec![DocRootEntry {
                 name: "oss".into(),
-                path: "/tmp/oss".into(),
+                path: alcove_home()
+                    .join("test-oss-root")
+                    .to_string_lossy()
+                    .to_string(),
                 #[cfg(feature = "embed-candle")]
                 embedding: None,
             }]),
@@ -1259,7 +1251,9 @@ mod tests {
         // legacy docs_root takes precedence
         let roots = cfg.resolved_docs_roots();
         assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0].path, PathBuf::from("/tmp/legacy"));
+        assert_eq!(roots[0].path, base);
+
+        let _ = std::fs::remove_dir_all(&base); // cleanup
     }
 
     #[test]
