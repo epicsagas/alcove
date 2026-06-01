@@ -808,8 +808,9 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         if is_global {
             // Multi-root global search: try indexed search across all roots in parallel,
             // fall back to grep-based global search on the primary root.
-            if !force_grep && let Ok(v) =
-                tools::tool_search_global_multi(&all_roots, call.arguments.clone(), limit)
+            if !force_grep
+                && let Ok(v) =
+                    tools::tool_search_global_multi(&all_roots, call.arguments.clone(), limit)
             {
                 let matches = v["matches"].as_array();
                 if matches.is_some_and(|m| !m.is_empty()) {
@@ -819,9 +820,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             // Grep fallback: try each root until we get results.
             for root in &all_roots {
                 if let Ok(v) = tools::tool_search_global(&root.path, call.arguments.clone()) {
-                    let has_matches = v["matches"]
-                        .as_array()
-                        .is_some_and(|m| !m.is_empty());
+                    let has_matches = v["matches"].as_array().is_some_and(|m| !m.is_empty());
                     if has_matches {
                         return ok!(v);
                     }

@@ -790,9 +790,7 @@ pub fn tool_search_global_multi(
     let per_root: Vec<Value> = roots
         .par_iter()
         .filter(|r| crate::index::index_exists(&r.path))
-        .filter_map(|r| {
-            crate::index::search_indexed(&r.path, &query, limit, None).ok()
-        })
+        .filter_map(|r| crate::index::search_indexed(&r.path, &query, limit, None).ok())
         .collect();
 
     if per_root.is_empty() {

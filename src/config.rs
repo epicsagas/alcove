@@ -383,7 +383,9 @@ pub struct ResolvedDocRoot {
 
 impl DocRootEntry {
     fn expand_path(&self) -> PathBuf {
-        if self.path.starts_with("~/") && let Some(home) = dirs::home_dir() {
+        if self.path.starts_with("~/")
+            && let Some(home) = dirs::home_dir()
+        {
             return home.join(&self.path[2..]);
         }
         PathBuf::from(&self.path)
@@ -1205,7 +1207,10 @@ mod tests {
         let roots = cfg.resolved_docs_roots();
         // docs_root field is set → that single root wins.
         assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0].path, PathBuf::from("/tmp/nonexistent-alcove-test-root-xyz"));
+        assert_eq!(
+            roots[0].path,
+            PathBuf::from("/tmp/nonexistent-alcove-test-root-xyz")
+        );
 
         // Now test docs_roots alone (no docs_root field).
         let cfg2 = DocConfig {
