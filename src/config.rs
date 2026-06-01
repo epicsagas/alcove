@@ -377,6 +377,7 @@ pub struct ResolvedDocRoot {
     pub path: PathBuf,
     /// Per-root embedding override, if configured.
     #[cfg(feature = "embed-candle")]
+    #[allow(dead_code)]
     pub embedding: Option<EmbeddingConfig>,
 }
 
