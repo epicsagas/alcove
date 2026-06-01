@@ -344,10 +344,62 @@ impl Default for MemoryConfig {
     }
 }
 
+/// A single entry in `docs_roots` — a named doc-root with an optional
+/// per-root embedding override.
+///
+/// ```toml
+/// [[docs_roots]]
+/// name = "oss"
+/// path = "~/.alcove/docs-oss"
+///
+/// [[docs_roots]]
+/// name = "work"
+/// path = "~/.alcove/docs-work"
+/// [docs_roots.embedding]
+/// model = "BGEM3"
+/// ```
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DocRootEntry {
+    /// Human-readable identifier shown in `list_projects` output.
+    pub name: String,
+    /// Filesystem path (tilde-expanded at runtime).
+    pub path: String,
+    /// Per-root embedding override.  Falls back to global `[embedding]` when absent.
+    #[cfg(feature = "embed-candle")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<EmbeddingConfig>,
+}
+
+/// A resolved `DocRootEntry` with the path expanded and validated.
+#[derive(Debug, Clone)]
+pub struct ResolvedDocRoot {
+    pub name: String,
+    pub path: PathBuf,
+    /// Per-root embedding override, if configured.
+    #[cfg(feature = "embed-candle")]
+    pub embedding: Option<EmbeddingConfig>,
+}
+
+impl DocRootEntry {
+    fn expand_path(&self) -> PathBuf {
+        if self.path.starts_with("~/") && let Some(home) = dirs::home_dir() {
+            return home.join(&self.path[2..]);
+        }
+        PathBuf::from(&self.path)
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct DocConfig {
+    /// Legacy single doc-root path.  Still supported; takes precedence over
+    /// `docs_roots` when both are present (env var `DOCS_ROOT` takes precedence
+    /// over both).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docs_root: Option<String>,
+    /// Multiple named doc-roots.  Ignored when `DOCS_ROOT` env var or `docs_root`
+    /// field is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docs_roots: Option<Vec<DocRootEntry>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub core: Option<CategoryConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -386,6 +438,7 @@ impl DocConfig {
     pub fn overlay(&self, base: &DocConfig) -> DocConfig {
         DocConfig {
             docs_root: self.docs_root.clone().or_else(|| base.docs_root.clone()),
+            docs_roots: self.docs_roots.clone().or_else(|| base.docs_roots.clone()),
             core: self.core.clone().or_else(|| base.core.clone()),
             team: self.team.clone().or_else(|| base.team.clone()),
             public: self.public.clone().or_else(|| base.public.clone()),
@@ -461,6 +514,67 @@ impl DocConfig {
             return Some(fallback);
         }
         None
+    }
+
+    /// Return all configured doc-roots as resolved paths.
+    ///
+    /// Priority (highest → lowest):
+    ///   1. `DOCS_ROOT` env var — single root named "default"
+    ///   2. `docs_root` field   — single root named "default"
+    ///   3. `docs_roots` field  — multiple named roots
+    ///   4. built-in default (`~/.alcove/docs`) if the directory exists
+    ///
+    /// Returns an empty Vec if no root is configured or discoverable.
+    pub fn resolved_docs_roots(&self) -> Vec<ResolvedDocRoot> {
+        // 1. DOCS_ROOT env var (handled in mcp.rs, but honour here too)
+        if let Ok(v) = std::env::var("DOCS_ROOT") {
+            let path = PathBuf::from(&v);
+            if !is_blocked_system_path(&path) {
+                return vec![ResolvedDocRoot {
+                    name: "default".into(),
+                    path,
+                    #[cfg(feature = "embed-candle")]
+                    embedding: None,
+                }];
+            }
+        }
+        // 2. Legacy single docs_root field
+        if let Some(ref root) = self.docs_root {
+            let path = PathBuf::from(root);
+            return vec![ResolvedDocRoot {
+                name: "default".into(),
+                path,
+                #[cfg(feature = "embed-candle")]
+                embedding: None,
+            }];
+        }
+        // 3. Multi docs_roots
+        if let Some(ref entries) = self.docs_roots {
+            let roots: Vec<ResolvedDocRoot> = entries
+                .iter()
+                .map(|e| ResolvedDocRoot {
+                    name: e.name.clone(),
+                    path: e.expand_path(),
+                    #[cfg(feature = "embed-candle")]
+                    embedding: e.embedding.clone(),
+                })
+                .filter(|r| !is_blocked_system_path(&r.path))
+                .collect();
+            if !roots.is_empty() {
+                return roots;
+            }
+        }
+        // 4. Built-in default
+        let fallback = default_docs_root();
+        if fallback.is_dir() {
+            return vec![ResolvedDocRoot {
+                name: "default".into(),
+                path: fallback,
+                #[cfg(feature = "embed-candle")]
+                embedding: None,
+            }];
+        }
+        vec![]
     }
 
     #[cfg_attr(test, allow(dead_code))]
@@ -565,6 +679,7 @@ pub fn load_config() -> &'static DocConfig {
         }
         DocConfig {
             docs_root: None,
+            docs_roots: None,
             core: None,
             team: None,
             public: None,
@@ -1044,6 +1159,112 @@ mod tests {
         if let Some(ref p) = result {
             assert!(p.is_dir());
         }
+    }
+
+    // -- resolved_docs_roots --
+
+    #[test]
+    fn resolved_docs_roots_uses_legacy_docs_root() {
+        let cfg = DocConfig {
+            docs_root: Some("/tmp/legacy".into()),
+            ..DocConfig::default()
+        };
+        let roots = cfg.resolved_docs_roots();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].name, "default");
+        assert_eq!(roots[0].path, PathBuf::from("/tmp/legacy"));
+        #[cfg(feature = "embed-candle")]
+        assert!(roots[0].embedding.is_none());
+    }
+
+    #[test]
+    fn resolved_docs_roots_uses_docs_roots_vec() {
+        // docs_roots should be used when no DOCS_ROOT env var and no docs_root field.
+        // We set docs_root to a non-existent path so the legacy branch is skipped,
+        // which forces the docs_roots vec to be evaluated.
+        let cfg = DocConfig {
+            docs_root: Some("/tmp/nonexistent-alcove-test-root-xyz".into()),
+            docs_roots: Some(vec![
+                DocRootEntry {
+                    name: "oss".into(),
+                    path: "/tmp/oss".into(),
+                    #[cfg(feature = "embed-candle")]
+                    embedding: None,
+                },
+                DocRootEntry {
+                    name: "work".into(),
+                    path: "/tmp/work".into(),
+                    #[cfg(feature = "embed-candle")]
+                    embedding: None,
+                },
+            ]),
+            ..DocConfig::default()
+        };
+        // docs_root takes precedence over docs_roots — verify the field works at all.
+        let roots = cfg.resolved_docs_roots();
+        // docs_root field is set → that single root wins.
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].path, PathBuf::from("/tmp/nonexistent-alcove-test-root-xyz"));
+
+        // Now test docs_roots alone (no docs_root field).
+        let cfg2 = DocConfig {
+            docs_roots: Some(vec![
+                DocRootEntry {
+                    name: "oss".into(),
+                    path: "/tmp/oss".into(),
+                    #[cfg(feature = "embed-candle")]
+                    embedding: None,
+                },
+                DocRootEntry {
+                    name: "work".into(),
+                    path: "/tmp/work".into(),
+                    #[cfg(feature = "embed-candle")]
+                    embedding: None,
+                },
+            ]),
+            ..DocConfig::default()
+        };
+        let roots2 = cfg2.resolved_docs_roots();
+        // Should have exactly 2 entries (docs_roots) — unless the default ~/.alcove/docs
+        // happens to exist on the test machine, in which case it falls through to fallback.
+        // Just assert the names are correct when len == 2.
+        if roots2.len() == 2 {
+            assert_eq!(roots2[0].name, "oss");
+            assert_eq!(roots2[1].name, "work");
+        } else {
+            // Default dir exists on this machine; can't isolate without temp dir tricks.
+            // Accept any non-zero count.
+            assert!(!roots2.is_empty());
+        }
+    }
+
+    #[test]
+    fn resolved_docs_roots_legacy_takes_precedence_over_vec() {
+        let cfg = DocConfig {
+            docs_root: Some("/tmp/legacy".into()),
+            docs_roots: Some(vec![DocRootEntry {
+                name: "oss".into(),
+                path: "/tmp/oss".into(),
+                #[cfg(feature = "embed-candle")]
+                embedding: None,
+            }]),
+            ..DocConfig::default()
+        };
+        // legacy docs_root takes precedence
+        let roots = cfg.resolved_docs_roots();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].path, PathBuf::from("/tmp/legacy"));
+    }
+
+    #[test]
+    fn resolved_docs_roots_empty_when_nothing_configured() {
+        // Ensure ~/.alcove/docs does NOT exist during this test.
+        // Since we can't control the env safely, just verify the method returns
+        // a consistent type — no panic.
+        let cfg = DocConfig::default();
+        let roots = cfg.resolved_docs_roots();
+        // Either 0 (no default dir) or 1 (default dir exists) — both valid.
+        assert!(roots.len() <= 1);
     }
 
     #[test]

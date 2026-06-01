@@ -1,10 +1,9 @@
-use std::path::PathBuf;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::config::{is_blocked_system_path, is_reserved_dir_name, load_config};
+use crate::config::{is_reserved_dir_name, load_config};
 use crate::telemetry::{FailureClass, ResultSizeBucket, Telemetry, Tool};
 use crate::tools;
 
@@ -625,26 +624,17 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         }};
     }
 
-    let docs_root = match std::env::var("DOCS_ROOT") {
-        Ok(v) => {
-            let path = PathBuf::from(&v);
-            if is_blocked_system_path(&path) {
-                return err!(
-                    -32000,
-                    "DOCS_ROOT points to a restricted system directory.".into()
-                );
-            }
-            path
-        }
-        Err(_) => {
-            match load_config().docs_root() {
-                Some(p) if p.is_dir() => p,
-                _ => {
-                    return err!(-32000, "DOCS_ROOT environment variable is not set and config.toml has no docs_root.".into());
-                }
-            }
-        }
-    };
+    // Resolve all configured doc-roots (multi-root aware).
+    // DOCS_ROOT env var → single legacy root; otherwise use config.
+    let all_roots = load_config().resolved_docs_roots();
+    if all_roots.is_empty() {
+        return err!(
+            -32000,
+            "No doc-root configured. Set DOCS_ROOT env var, or add docs_root / [[docs_roots]] to config.toml.".into()
+        );
+    }
+    // Primary root: first entry (DOCS_ROOT env var, docs_root field, or first docs_roots entry).
+    let docs_root = all_roots[0].path.clone();
 
     // lint_project and promote_document operate on docs_root directly
     if call.name == "lint_project" {
@@ -758,7 +748,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
 
     // list_projects and init_project don't need a resolved project
     if call.name == "list_projects" {
-        return match tools::tool_list_projects(&docs_root) {
+        return match tools::tool_list_projects_multi(&all_roots) {
             Ok(v) => ok!(v),
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
@@ -773,9 +763,11 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         };
     }
     if call.name == "rebuild_index" {
-        let docs_root_clone = docs_root.clone();
+        let roots_clone: Vec<_> = all_roots.iter().map(|r| r.path.clone()).collect();
         std::thread::spawn(move || {
-            let _ = crate::index::build_index(&docs_root_clone);
+            for root in &roots_clone {
+                let _ = crate::index::build_index(root);
+            }
         });
         return ok!(json!({
             "status": "started",
@@ -813,14 +805,35 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
 
         let force_grep = mode_override == Some("grep");
 
+        if is_global {
+            // Multi-root global search: try indexed search across all roots in parallel,
+            // fall back to grep-based global search on the primary root.
+            if !force_grep && let Ok(v) =
+                tools::tool_search_global_multi(&all_roots, call.arguments.clone(), limit)
+            {
+                let matches = v["matches"].as_array();
+                if matches.is_some_and(|m| !m.is_empty()) {
+                    return ok!(v);
+                }
+            }
+            // Grep fallback: try each root until we get results.
+            for root in &all_roots {
+                if let Ok(v) = tools::tool_search_global(&root.path, call.arguments.clone()) {
+                    let has_matches = v["matches"]
+                        .as_array()
+                        .is_some_and(|m| !m.is_empty());
+                    if has_matches {
+                        return ok!(v);
+                    }
+                }
+            }
+            return ok!(json!({"query": "", "matches": [], "truncated": false, "mode": "grep"}));
+        }
+
         if !force_grep {
             let index_dir = docs_root.join(".alcove").join("index");
             if index_dir.exists() || crate::index::ensure_index_fresh(&docs_root) {
-                let project_filter = if is_global {
-                    None
-                } else {
-                    tools::resolve_project(&docs_root).map(|r| r.name)
-                };
+                let project_filter = tools::resolve_project(&docs_root).map(|r| r.name);
                 if let Ok(v) = crate::index::search_indexed(
                     &docs_root,
                     query,
@@ -834,44 +847,52 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                 }
             }
         }
-
-        if is_global {
-            return match tools::tool_search_global(&docs_root, call.arguments) {
-                Ok(v) => ok!(v),
-                Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
-            };
-        }
     }
 
-    // All other tools require a resolved project
-    let resolved = match tools::resolve_project(&docs_root) {
-        Some(r) => r,
-        None => {
-            let available: Vec<String> = std::fs::read_dir(&docs_root)
-                .ok()
-                .map(|rd| {
-                    rd.filter_map(std::result::Result::ok)
-                        .filter(|e| e.path().is_dir())
-                        .filter_map(|e| {
-                            let name = e.file_name().to_string_lossy().to_string();
-                            if is_reserved_dir_name(&name) {
-                                None
-                            } else {
-                                Some(name)
-                            }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            return err!(
-                -32001,
-                format!(
-                    "Could not detect project. CWD does not match any project in DOCS_ROOT. \
-                     Available projects: [{}]. \
-                     Set MCP_PROJECT_NAME env var or run from within a project directory.",
-                    available.join(", ")
-                )
-            );
+    // All other tools require a resolved project.
+    // For multi-root: find the root whose CWD match resolves the project.
+    let (docs_root, resolved) = {
+        let mut found = None;
+        for root in &all_roots {
+            if let Some(r) = tools::resolve_project(&root.path) {
+                found = Some((root.path.clone(), r));
+                break;
+            }
+        }
+        match found {
+            Some(pair) => pair,
+            None => {
+                let available: Vec<String> = all_roots
+                    .iter()
+                    .flat_map(|root| {
+                        std::fs::read_dir(&root.path)
+                            .ok()
+                            .map(|rd| {
+                                rd.filter_map(std::result::Result::ok)
+                                    .filter(|e| e.path().is_dir())
+                                    .filter_map(|e| {
+                                        let name = e.file_name().to_string_lossy().to_string();
+                                        if is_reserved_dir_name(&name) {
+                                            None
+                                        } else {
+                                            Some(name)
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                return err!(
+                    -32001,
+                    format!(
+                        "Could not detect project. CWD does not match any project in DOCS_ROOT. \
+                         Available projects: [{}]. \
+                         Set MCP_PROJECT_NAME env var or run from within a project directory.",
+                        available.join(", ")
+                    )
+                );
+            }
         }
     };
 

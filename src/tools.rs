@@ -686,54 +686,138 @@ pub fn tool_get_file(project_root: &Path, args_value: Value) -> Result<Value> {
 // ---------------------------------------------------------------------------
 
 pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
-    let mut projects = Vec::new();
+    let single = crate::config::ResolvedDocRoot {
+        name: "default".into(),
+        path: docs_root.to_path_buf(),
+        #[cfg(feature = "embed-candle")]
+        embedding: None,
+    };
+    // Strip the `root` field for single-root callers to preserve the existing API shape.
+    let mut result = tool_list_projects_multi(std::slice::from_ref(&single))?;
+    if let Some(arr) = result["projects"].as_array_mut() {
+        for proj in arr.iter_mut() {
+            if let Some(obj) = proj.as_object_mut() {
+                obj.remove("root");
+            }
+        }
+    }
+    Ok(result)
+}
 
-    let entries = std::fs::read_dir(docs_root).context("Failed to read DOCS_ROOT directory")?;
+/// Multi-root variant of `tool_list_projects`.
+///
+/// Aggregates projects from all configured doc-roots, adding a `root` field
+/// to each entry so callers can distinguish which root a project belongs to.
+pub fn tool_list_projects_multi(roots: &[crate::config::ResolvedDocRoot]) -> Result<Value> {
+    let mut projects = Vec::new();
     let core_files = load_config().core_files();
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
+    for root in roots {
+        let entries = match std::fs::read_dir(&root.path) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            if is_reserved_dir_name(&name) {
+                continue;
+            }
+
+            let doc_count = WalkDir::new(&path)
+                .into_iter()
+                .filter_map(Result::ok)
+                .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
+                .count();
+
+            let internal_present: Vec<String> = core_files
+                .iter()
+                .filter(|f| path.join(f).exists())
+                .cloned()
+                .collect();
+
+            let internal_missing: Vec<String> = core_files
+                .iter()
+                .filter(|f| !path.join(f).exists())
+                .cloned()
+                .collect();
+
+            projects.push(json!({
+                "name": name,
+                "root": root.name,
+                "total_docs": doc_count,
+                "internal_required_present": internal_present,
+                "internal_required_missing": internal_missing,
+            }));
         }
-
-        let name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-
-        if is_reserved_dir_name(&name) {
-            continue;
-        }
-
-        let doc_count = WalkDir::new(&path)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
-            .count();
-
-        let internal_present: Vec<String> = core_files
-            .iter()
-            .filter(|f| path.join(f).exists())
-            .cloned()
-            .collect();
-
-        let internal_missing: Vec<String> = core_files
-            .iter()
-            .filter(|f| !path.join(f).exists())
-            .cloned()
-            .collect();
-
-        projects.push(json!({
-            "name": name,
-            "total_docs": doc_count,
-            "internal_required_present": internal_present,
-            "internal_required_missing": internal_missing,
-        }));
     }
 
     Ok(json!({ "projects": projects }))
+}
+
+/// Multi-root global search using Rayon for parallel indexed search.
+///
+/// Searches all roots in parallel, merges results, and re-ranks by score.
+/// Falls back to the single-root behaviour when Rayon is unavailable or
+/// an individual root has no index.
+pub fn tool_search_global_multi(
+    roots: &[crate::config::ResolvedDocRoot],
+    args_value: Value,
+    limit: usize,
+) -> Result<Value> {
+    use rayon::prelude::*;
+
+    let query = args_value
+        .get("query")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    if query.is_empty() {
+        anyhow::bail!("Query must not be empty");
+    }
+
+    // Parallel search across all roots that have an index.
+    let per_root: Vec<Value> = roots
+        .par_iter()
+        .filter(|r| crate::index::index_exists(&r.path))
+        .filter_map(|r| {
+            crate::index::search_indexed(&r.path, &query, limit, None).ok()
+        })
+        .collect();
+
+    if per_root.is_empty() {
+        anyhow::bail!("No indexed roots found");
+    }
+
+    // Merge and re-rank by score descending.
+    let mut merged: Vec<Value> = per_root
+        .into_iter()
+        .flat_map(|v| v["matches"].as_array().cloned().unwrap_or_default())
+        .collect();
+
+    merged.sort_by(|a, b| {
+        let sa = a["score"].as_f64().unwrap_or(0.0);
+        let sb = b["score"].as_f64().unwrap_or(0.0);
+        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    merged.truncate(limit);
+
+    Ok(json!({
+        "query": query,
+        "matches": merged,
+        "truncated": false,
+        "mode": "ranked",
+    }))
 }
 
 // ---------------------------------------------------------------------------
