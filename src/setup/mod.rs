@@ -1130,16 +1130,6 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                     token_ref.as_deref(),
                     *omit_type,
                 )?;
-                println!(
-                    "  {} {} ({})",
-                    style("✓").green(),
-                    t!("setup.mcp_set", path = path),
-                    if server_url.is_some() {
-                        "HTTP"
-                    } else {
-                        "stdio"
-                    }
-                );
             }
             McpConfig::OpenCode { path } => {
                 let p = expand_path(path);
@@ -1150,16 +1140,6 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                     server_url.as_deref(),
                     token_ref.as_deref(),
                 )?;
-                println!(
-                    "  {} {} ({})",
-                    style("✓").green(),
-                    t!("setup.mcp_set", path = path),
-                    if server_url.is_some() {
-                        "HTTP"
-                    } else {
-                        "stdio"
-                    }
-                );
             }
         }
 

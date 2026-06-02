@@ -1131,12 +1131,10 @@ pub fn cmd_register(tool: &str) -> Result<()> {
             } => {
                 let p = expand_path(path);
                 write_json_mcp(&p, server_key, &bin, &docs_root, None, None, *omit_type)?;
-                println!("  {} MCP registered → {}", style("✓").green(), path);
             }
             crate::agents::McpConfig::OpenCode { path } => {
                 let p = expand_path(path);
                 crate::agents::write_opencode_mcp(&p, &bin, &docs_root, None, None)?;
-                println!("  {} MCP registered → {}", style("✓").green(), path);
             }
         }
 

@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use console::style;
 
 // ---------------------------------------------------------------------------
 // Agent definitions
@@ -137,97 +138,39 @@ pub(crate) fn install_skill_to(dir: &Path) -> Result<()> {
 
 pub(crate) fn write_json_mcp(
     config_path: &Path,
-    server_key: &str,
-    binary: &Path,
-    docs_root: &Path,
-    server_url: Option<&str>,
-    token_ref: Option<&str>,
-    omit_type: bool,
+    _server_key: &str,
+    _binary: &Path,
+    _docs_root: &Path,
+    _server_url: Option<&str>,
+    _token_ref: Option<&str>,
+    _omit_type: bool,
 ) -> Result<()> {
-    let mut config: serde_json::Value = if config_path.exists() {
-        let content = fs::read_to_string(config_path)?;
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    let server_entry = if let Some(url) = server_url {
-        let mut entry = serde_json::json!({ "url": url });
-        if !omit_type {
-            entry["type"] = serde_json::Value::String("http".to_string());
-        }
-        if let Some(ref_val) = token_ref {
-            entry["headers"] = serde_json::json!({
-                "Authorization": format!("Bearer {ref_val}")
-            });
-        }
-        entry
-    } else {
-        let mut env = serde_json::json!({ "DOCS_ROOT": docs_root.to_string_lossy() });
-        if let Some(ref_val) = token_ref {
-            env["ALCOVE_TOKEN"] = serde_json::Value::String(ref_val.to_string());
-        }
-        let mut entry = serde_json::json!({
-            "command": binary.to_string_lossy(),
-            "args": [],
-            "env": env
-        });
-        if !omit_type {
-            entry["type"] = serde_json::Value::String("stdio".to_string());
-        }
-        entry
-    };
-
-    config[server_key]["alcove"] = server_entry;
-
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(config_path, serde_json::to_string_pretty(&config)?)?;
+    println!(
+        "  {} MCP server not auto-configured (skill-driven mode).",
+        style("ℹ").dim()
+    );
+    println!(
+        "     To use MCP, see registry/mcp.json for manual setup."
+    );
+    let _ = config_path; // suppress unused warning
     Ok(())
 }
 
 pub(crate) fn write_opencode_mcp(
     config_path: &Path,
-    binary: &Path,
-    docs_root: &Path,
-    server_url: Option<&str>,
-    token_ref: Option<&str>,
+    _binary: &Path,
+    _docs_root: &Path,
+    _server_url: Option<&str>,
+    _token_ref: Option<&str>,
 ) -> Result<()> {
-    let mut config: serde_json::Value = if config_path.exists() {
-        let content = fs::read_to_string(config_path)?;
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    if let Some(url) = server_url {
-        let mut entry = serde_json::json!({
-            "type": "remote",
-            "url": url
-        });
-        if let Some(ref_val) = token_ref {
-            entry["headers"] = serde_json::json!({
-                "Authorization": format!("Bearer {ref_val}")
-            });
-        }
-        config["mcp"]["alcove"] = entry;
-    } else {
-        let mut env = serde_json::json!({ "DOCS_ROOT": docs_root.to_string_lossy() });
-        if let Some(ref_val) = token_ref {
-            env["ALCOVE_TOKEN"] = serde_json::Value::String(ref_val.to_string());
-        }
-        config["mcp"]["alcove"] = serde_json::json!({
-            "type": "local",
-            "command": [binary.to_string_lossy()],
-            "environment": env
-        });
-    }
-
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(config_path, serde_json::to_string_pretty(&config)?)?;
+    println!(
+        "  {} MCP server not auto-configured (skill-driven mode).",
+        style("ℹ").dim()
+    );
+    println!(
+        "     To use MCP, see registry/mcp.json for manual setup."
+    );
+    let _ = config_path; // suppress unused warning
     Ok(())
 }
 
@@ -393,10 +336,10 @@ mod tests {
         assert_eq!(content, SKILL_CONTENT);
     }
 
-    // ── write_json_mcp ──
+    // ── write_json_mcp (skill-driven mode: no file written) ──
 
     #[test]
-    fn write_json_mcp_creates_new_file() {
+    fn write_json_mcp_returns_ok() {
         let tmp = TempDir::new().expect("failed to create temp dir");
         let cfg = tmp.path().join("mcp.json");
         let bin = PathBuf::from("/usr/local/bin/alcove");
@@ -404,96 +347,14 @@ mod tests {
 
         let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None, None, false);
         assert!(result.is_ok());
-        assert!(cfg.exists());
-
-        let content = fs::read_to_string(&cfg).expect("failed to read");
-        let parsed: serde_json::Value = serde_json::from_str(&content).expect("invalid json");
-
-        assert_eq!(parsed["mcpServers"]["alcove"]["type"], "stdio");
-        assert_eq!(
-            parsed["mcpServers"]["alcove"]["command"],
-            "/usr/local/bin/alcove"
-        );
-        assert_eq!(
-            parsed["mcpServers"]["alcove"]["env"]["DOCS_ROOT"],
-            "/docs/root"
-        );
+        // Skill-driven mode: no file is created
+        assert!(!cfg.exists());
     }
 
-    #[test]
-    fn write_json_mcp_merges_with_existing() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let cfg = tmp.path().join("mcp.json");
-
-        let existing = serde_json::json!({
-            "mcpServers": {
-                "other": { "command": "other-tool" }
-            }
-        });
-        fs::write(&cfg, serde_json::to_string_pretty(&existing).unwrap()).expect("failed to write");
-
-        let bin = PathBuf::from("/bin/alcove");
-        let docs = PathBuf::from("/docs");
-
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None, None, false);
-        assert!(result.is_ok());
-
-        let content = fs::read_to_string(&cfg).expect("failed to read");
-        let parsed: serde_json::Value = serde_json::from_str(&content).expect("invalid json");
-
-        // Existing entry preserved
-        assert_eq!(parsed["mcpServers"]["other"]["command"], "other-tool");
-        // New entry added
-        assert_eq!(parsed["mcpServers"]["alcove"]["command"], "/bin/alcove");
-    }
+    // ── write_opencode_mcp (skill-driven mode: no file written) ──
 
     #[test]
-    fn write_json_mcp_creates_parent_dirs() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let cfg = tmp.path().join("deep/nested/mcp.json");
-        let bin = PathBuf::from("/bin/alcove");
-        let docs = PathBuf::from("/docs");
-
-        let result = write_json_mcp(&cfg, "mcpServers", &bin, &docs, None, None, false);
-        assert!(result.is_ok());
-        assert!(cfg.exists());
-    }
-
-    // ── write_json_mcp with HTTP mode ──
-
-    #[test]
-    fn write_json_mcp_http_mode() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let cfg = tmp.path().join("mcp.json");
-        let bin = PathBuf::from("/usr/local/bin/alcove");
-        let docs = PathBuf::from("/docs/root");
-
-        let result = write_json_mcp(
-            &cfg,
-            "mcpServers",
-            &bin,
-            &docs,
-            Some("http://127.0.0.1:57384/mcp"),
-            None,
-            false,
-        );
-        assert!(result.is_ok());
-
-        let content = fs::read_to_string(&cfg).expect("failed to read");
-        let parsed: serde_json::Value = serde_json::from_str(&content).expect("invalid json");
-
-        assert_eq!(parsed["mcpServers"]["alcove"]["type"], "http");
-        assert_eq!(
-            parsed["mcpServers"]["alcove"]["url"],
-            "http://127.0.0.1:57384/mcp"
-        );
-        assert!(parsed["mcpServers"]["alcove"]["command"].is_null());
-    }
-
-    // ── write_opencode_mcp ──
-
-    #[test]
-    fn write_opencode_mcp_creates_new_file() {
+    fn write_opencode_mcp_returns_ok() {
         let tmp = TempDir::new().expect("failed to create temp dir");
         let cfg = tmp.path().join("opencode.json");
         let bin = PathBuf::from("/bin/alcove");
@@ -501,37 +362,8 @@ mod tests {
 
         let result = write_opencode_mcp(&cfg, &bin, &docs, None, None);
         assert!(result.is_ok());
-
-        let content = fs::read_to_string(&cfg).expect("failed to read");
-        let parsed: serde_json::Value = serde_json::from_str(&content).expect("invalid json");
-
-        assert_eq!(parsed["mcp"]["alcove"]["type"], "local");
-        assert_eq!(parsed["mcp"]["alcove"]["command"][0], "/bin/alcove");
-        assert_eq!(parsed["mcp"]["alcove"]["environment"]["DOCS_ROOT"], "/docs");
-    }
-
-    #[test]
-    fn write_opencode_mcp_merges_existing() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let cfg = tmp.path().join("opencode.json");
-
-        let existing = serde_json::json!({ "mcp": { "other": { "type": "remote" } } });
-        fs::write(&cfg, serde_json::to_string(&existing).unwrap()).expect("failed to write");
-
-        let result = write_opencode_mcp(
-            &cfg,
-            &PathBuf::from("/bin/alcove"),
-            &PathBuf::from("/docs"),
-            None,
-            None,
-        );
-        assert!(result.is_ok());
-
-        let content = fs::read_to_string(&cfg).expect("failed to read");
-        let parsed: serde_json::Value = serde_json::from_str(&content).expect("invalid json");
-
-        assert_eq!(parsed["mcp"]["other"]["type"], "remote");
-        assert_eq!(parsed["mcp"]["alcove"]["type"], "local");
+        // Skill-driven mode: no file is created
+        assert!(!cfg.exists());
     }
 
     // ── Consistency tests (compile-time validated via include_str!) ──
@@ -565,10 +397,7 @@ mod tests {
         assert!(parsed["name"].is_string(), "missing name");
         assert!(parsed["skills"].is_string(), "missing skills reference");
         assert!(parsed["hooks"].is_string(), "missing hooks reference");
-        assert!(
-            parsed["mcpServers"].is_string(),
-            "missing mcpServers reference"
-        );
+        // mcpServers is optional in skill-driven mode
     }
 
     #[test]
