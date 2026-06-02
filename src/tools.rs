@@ -16,6 +16,7 @@ use crate::transpile::maybe_transpile_result;
 // Project resolution
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct ResolvedProject {
     pub name: String,
     pub detected_via: &'static str,
@@ -733,6 +734,7 @@ pub fn tool_list_projects_multi(roots: &[crate::config::ResolvedDocRoot]) -> Res
             }
 
             let doc_count = WalkDir::new(&path)
+                .max_depth(5)
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
@@ -766,8 +768,7 @@ pub fn tool_list_projects_multi(roots: &[crate::config::ResolvedDocRoot]) -> Res
 /// Multi-root global search using Rayon for parallel indexed search.
 ///
 /// Searches all roots in parallel, merges results, and re-ranks by score.
-/// Falls back to the single-root behaviour when Rayon is unavailable or
-/// an individual root has no index.
+/// Roots without an index or whose index search fails are silently skipped.
 pub fn tool_search_global_multi(
     roots: &[crate::config::ResolvedDocRoot],
     args_value: Value,

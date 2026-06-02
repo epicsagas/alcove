@@ -545,11 +545,12 @@ impl DocConfig {
     pub fn resolved_docs_roots(&self) -> Vec<ResolvedDocRoot> {
         // 1. DOCS_ROOT env var — highest priority single-root override
         if let Ok(v) = std::env::var("DOCS_ROOT") {
-            let path = PathBuf::from(&v);
-            if !is_blocked_system_path(&path) {
+            let raw = PathBuf::from(&v);
+            let canonical = raw.canonicalize().unwrap_or(raw);
+            if !is_blocked_system_path(&canonical) {
                 return vec![ResolvedDocRoot {
                     name: "default".into(),
-                    path,
+                    path: canonical,
                     #[cfg(feature = "embed-candle")]
                     embedding: None,
                 }];
@@ -557,13 +558,21 @@ impl DocConfig {
         }
         // 2. Legacy single docs_root field
         if let Some(ref root) = self.docs_root {
-            let path = PathBuf::from(root);
-            return vec![ResolvedDocRoot {
-                name: "default".into(),
-                path,
-                #[cfg(feature = "embed-candle")]
-                embedding: None,
-            }];
+            let raw = PathBuf::from(root);
+            let canonical = raw.canonicalize().unwrap_or(raw);
+            if is_blocked_system_path(&canonical) {
+                eprintln!(
+                    "[alcove] docs_root points to blocked system path: {} — skipping",
+                    canonical.display()
+                );
+            } else {
+                return vec![ResolvedDocRoot {
+                    name: "default".into(),
+                    path: canonical,
+                    #[cfg(feature = "embed-candle")]
+                    embedding: None,
+                }];
+            }
         }
         // 3. Multi docs_roots
         if let Some(ref entries) = self.docs_roots {
@@ -1183,16 +1192,20 @@ mod tests {
 
     #[test]
     fn resolved_docs_roots_uses_legacy_docs_root() {
+        let base = alcove_home().join(format!("test-legacy-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
         let cfg = DocConfig {
-            docs_root: Some("/tmp/legacy".into()),
+            docs_root: Some(base.to_string_lossy().to_string()),
             ..DocConfig::default()
         };
         let roots = cfg.resolved_docs_roots();
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].name, "default");
-        assert_eq!(roots[0].path, PathBuf::from("/tmp/legacy"));
+        // canonicalize resolves to the same absolute path
+        assert!(roots[0].path.is_absolute());
         #[cfg(feature = "embed-candle")]
         assert!(roots[0].embedding.is_none());
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -1218,7 +1231,11 @@ mod tests {
         };
         let roots = cfg.resolved_docs_roots();
         assert_eq!(roots.len(), 1, "docs_root must win over docs_roots");
-        assert_eq!(roots[0].path, oss_path);
+        // Path is canonicalized, so compare with canonical form
+        assert_eq!(
+            roots[0].path,
+            oss_path.canonicalize().unwrap_or(oss_path.clone())
+        );
 
         // docs_roots alone (no docs_root field).
         let cfg2 = DocConfig {
@@ -1266,7 +1283,7 @@ mod tests {
         // legacy docs_root takes precedence
         let roots = cfg.resolved_docs_roots();
         assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0].path, base);
+        assert_eq!(roots[0].path, base.canonicalize().unwrap_or(base.clone()));
 
         let _ = std::fs::remove_dir_all(&base); // cleanup
     }
