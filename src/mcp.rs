@@ -1030,18 +1030,23 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     return ok!(v);
                 }
             }
-            // Grep fallback: return results from the first root that has matches.
-            // Full cross-root grep merge is not implemented — use indexed search
-            // for comprehensive multi-root results.
+            // Grep fallback: merge results from all roots for comprehensive coverage.
+            let mut merged_matches: Vec<Value> = Vec::new();
+            let mut truncated = false;
             for root in &all_roots {
                 if let Ok(v) = tools::tool_search_global(&root.path, call.arguments.clone()) {
-                    let has_matches = v["matches"].as_array().is_some_and(|m| !m.is_empty());
-                    if has_matches {
-                        return ok!(v);
+                    if let Some(arr) = v["matches"].as_array() {
+                        merged_matches.extend(arr.clone());
                     }
+                    truncated = truncated || v["truncated"].as_bool().unwrap_or(false);
                 }
             }
-            return ok!(json!({"query": query, "matches": [], "truncated": false, "mode": "grep"}));
+            return ok!(json!({
+                "query": query,
+                "matches": merged_matches,
+                "truncated": truncated,
+                "mode": "grep",
+            }));
         }
 
         if !force_grep {
