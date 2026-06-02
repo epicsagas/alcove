@@ -716,7 +716,15 @@ pub fn tool_list_projects_multi(roots: &[crate::config::ResolvedDocRoot]) -> Res
     for root in roots {
         let entries = match std::fs::read_dir(&root.path) {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!(
+                    "[alcove] failed to read root '{}' at {}: {} — skipping",
+                    root.name,
+                    root.path.display(),
+                    e
+                );
+                continue;
+            }
         };
 
         for entry in entries.flatten() {
