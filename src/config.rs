@@ -382,13 +382,27 @@ pub struct ResolvedDocRoot {
 }
 
 impl DocRootEntry {
-    fn expand_path(&self) -> PathBuf {
-        if self.path.starts_with("~/")
+    /// Expand `~` prefix and canonicalize the path.
+    /// Returns `None` if the resolved path points to a blocked system directory.
+    fn expand_path(&self) -> Option<PathBuf> {
+        let expanded = if self.path.starts_with("~/")
             && let Some(home) = dirs::home_dir()
         {
-            return home.join(&self.path[2..]);
+            home.join(&self.path[2..])
+        } else {
+            PathBuf::from(&self.path)
+        };
+        // Canonicalize to resolve symlinks / `..` traversal, then check safety.
+        let canonical = expanded.canonicalize().unwrap_or(expanded);
+        if is_blocked_system_path(&canonical) {
+            eprintln!(
+                "[alcove] docs_roots entry '{}' points to blocked system path: {} — skipping",
+                self.name,
+                canonical.display()
+            );
+            return None;
         }
-        PathBuf::from(&self.path)
+        Some(canonical)
     }
 }
 
@@ -529,7 +543,7 @@ impl DocConfig {
     ///
     /// Returns an empty Vec if no root is configured or discoverable.
     pub fn resolved_docs_roots(&self) -> Vec<ResolvedDocRoot> {
-        // 1. DOCS_ROOT env var (handled in mcp.rs, but honour here too)
+        // 1. DOCS_ROOT env var — highest priority single-root override
         if let Ok(v) = std::env::var("DOCS_ROOT") {
             let path = PathBuf::from(&v);
             if !is_blocked_system_path(&path) {
@@ -555,13 +569,14 @@ impl DocConfig {
         if let Some(ref entries) = self.docs_roots {
             let roots: Vec<ResolvedDocRoot> = entries
                 .iter()
-                .map(|e| ResolvedDocRoot {
-                    name: e.name.clone(),
-                    path: e.expand_path(),
-                    #[cfg(feature = "embed-candle")]
-                    embedding: e.embedding.clone(),
+                .filter_map(|e| {
+                    e.expand_path().map(|path| ResolvedDocRoot {
+                        name: e.name.clone(),
+                        path,
+                        #[cfg(feature = "embed-candle")]
+                        embedding: e.embedding.clone(),
+                    })
                 })
-                .filter(|r| !is_blocked_system_path(&r.path))
                 .collect();
             if !roots.is_empty() {
                 return roots;

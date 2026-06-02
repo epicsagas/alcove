@@ -817,7 +817,9 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     return ok!(v);
                 }
             }
-            // Grep fallback: try each root until we get results.
+            // Grep fallback: return results from the first root that has matches.
+            // Full cross-root grep merge is not implemented — use indexed search
+            // for comprehensive multi-root results.
             for root in &all_roots {
                 if let Ok(v) = tools::tool_search_global(&root.path, call.arguments.clone()) {
                     let has_matches = v["matches"].as_array().is_some_and(|m| !m.is_empty());
@@ -850,10 +852,22 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
 
     // All other tools require a resolved project.
     // For multi-root: find the root whose CWD match resolves the project.
+    // When detected via CWD, verify the CWD is actually under that root to
+    // prevent selecting the wrong root when multiple roots share a project name.
     let (docs_root, resolved) = {
         let mut found = None;
         for root in &all_roots {
             if let Some(r) = tools::resolve_project(&root.path) {
+                if r.detected_via == "cwd" {
+                    // Cross-validate: CWD must be under this root's path
+                    if let Ok(cwd) = std::env::current_dir()
+                        && let Ok(canonical_root) = root.path.canonicalize()
+                        && let Ok(canonical_cwd) = cwd.canonicalize()
+                        && !canonical_cwd.starts_with(&canonical_root)
+                    {
+                        continue; // Name matched but CWD is under a different root
+                    }
+                }
                 found = Some((root.path.clone(), r));
                 break;
             }
