@@ -1070,15 +1070,10 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     // When detected via MCP_PROJECT_NAME env var, warn if the name exists in
     // multiple roots (ambiguity).
     let (docs_root, resolved) = {
-        let mut found = None;
+        let mut found: Option<(std::path::PathBuf, _)> = None;
         let mut ambiguous_env = false;
         for root in &all_roots {
             if let Some(r) = tools::resolve_project(&root.path) {
-                if found.is_some() && r.detected_via == "env" {
-                    // Same project name resolved in another root — ambiguity.
-                    ambiguous_env = true;
-                    break;
-                }
                 if r.detected_via == "cwd" {
                     // Cross-validate: CWD must be under this root's path
                     if let Ok(cwd) = std::env::current_dir()
@@ -1088,13 +1083,16 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     {
                         continue; // Name matched but CWD is under a different root
                     }
-                }
-                let is_cwd = r.detected_via == "cwd";
-                found = Some((root.path.clone(), r));
-                // For CWD detection, stop at first validated match.
-                // For env detection, continue scanning to detect ambiguity.
-                if is_cwd {
-                    break;
+                    found = Some((root.path.clone(), r));
+                    break; // CWD detection is unambiguous — stop at first validated match
+                } else {
+                    // env detection: record first match, flag if a second match appears
+                    if found.is_some() {
+                        ambiguous_env = true;
+                        break;
+                    }
+                    found = Some((root.path.clone(), r));
+                    // continue scanning remaining roots to detect ambiguity
                 }
             }
         }
