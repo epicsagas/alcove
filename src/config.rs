@@ -565,10 +565,7 @@ impl DocConfig {
                     embedding: None,
                 }];
             } else {
-                eprintln!(
-                    "[alcove] DOCS_ROOT '{}' does not exist — skipping",
-                    v
-                );
+                eprintln!("[alcove] DOCS_ROOT '{}' does not exist — skipping", v);
             }
         }
         // 2. Legacy single docs_root field
@@ -588,10 +585,7 @@ impl DocConfig {
                     embedding: None,
                 }];
             } else {
-                eprintln!(
-                    "[alcove] docs_root '{}' does not exist — skipping",
-                    root
-                );
+                eprintln!("[alcove] docs_root '{}' does not exist — skipping", root);
             }
         }
         // 3. Multi docs_roots
