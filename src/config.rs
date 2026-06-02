@@ -1287,6 +1287,7 @@ mod tests {
         assert!(roots[0].path.is_absolute());
         #[cfg(feature = "embed")]
         assert!(roots[0].embedding.is_none());
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

@@ -1062,10 +1062,18 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
     // For multi-root: find the root whose CWD match resolves the project.
     // When detected via CWD, verify the CWD is actually under that root to
     // prevent selecting the wrong root when multiple roots share a project name.
+    // When detected via MCP_PROJECT_NAME env var, warn if the name exists in
+    // multiple roots (ambiguity).
     let (docs_root, resolved) = {
         let mut found = None;
+        let mut ambiguous_env = false;
         for root in &all_roots {
             if let Some(r) = tools::resolve_project(&root.path) {
+                if found.is_some() && r.detected_via == "env" {
+                    // Same project name resolved in another root — ambiguity.
+                    ambiguous_env = true;
+                    break;
+                }
                 if r.detected_via == "cwd" {
                     // Cross-validate: CWD must be under this root's path
                     if let Ok(cwd) = std::env::current_dir()
@@ -1076,9 +1084,19 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                         continue; // Name matched but CWD is under a different root
                     }
                 }
+                let is_cwd = r.detected_via == "cwd";
                 found = Some((root.path.clone(), r));
-                break;
+                // For CWD detection, stop at first validated match.
+                // For env detection, continue scanning to detect ambiguity.
+                if is_cwd {
+                    break;
+                }
             }
+        }
+        if ambiguous_env {
+            eprintln!(
+                "[alcove] WARNING: MCP_PROJECT_NAME matches projects in multiple roots — using the first match. Consider running from the project directory instead."
+            );
         }
         match found {
             Some(pair) => pair,
