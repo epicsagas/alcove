@@ -227,7 +227,7 @@ fn is_allowed_origin(origin: &[u8]) -> bool {
 /// Check Bearer token authentication. Returns `Err` with 401 if the token is
 /// set and the request does not supply the correct `Authorization: Bearer <token>`.
 #[cfg(feature = "alcove-server")]
-fn check_auth(
+pub fn check_auth(
     state: &ServerState,
     headers: &HeaderMap,
 ) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
@@ -706,6 +706,9 @@ async fn post_search(
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "alcove-server")]
+use crate::rest_routes;
+
+#[cfg(feature = "alcove-server")]
 pub async fn run_server(
     docs_root: std::path::PathBuf,
     host: &str,
@@ -768,18 +771,37 @@ pub async fn run_server(
         search_rate_limiter: RateLimiter::new(60, std::time::Duration::from_secs(60)),
     });
 
+    let rest = Router::new()
+        // Global endpoints
+        .route("/projects", get(rest_routes::get_list_projects).post(rest_routes::post_init_project))
+        .route("/rebuild", post(rest_routes::post_rebuild))
+        .route("/changes", get(rest_routes::get_changes))
+        .route("/lint", get(rest_routes::get_lint))
+        .route("/vaults/search", get(rest_routes::get_vault_search))
+        .route("/vaults", get(rest_routes::get_list_vaults))
+        .route("/vaults/backup", post(rest_routes::post_backup_vault))
+        .route("/promote", post(rest_routes::post_promote))
+        .route("/index-code", post(rest_routes::post_index_code))
+        // Project-scoped endpoints
+        .route("/projects/{name}/docs", get(rest_routes::get_project_docs))
+        .route("/projects/{name}/audit", get(rest_routes::get_audit))
+        .route("/projects/{name}/validate", get(rest_routes::get_validate))
+        .route("/projects/{name}/config", axum::routing::put(rest_routes::put_configure))
+        .route("/docs/{*path}", get(rest_routes::get_doc_file));
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/search", get(get_search))
         .route("/v1/search", post(post_search))
         .route("/mcp", post(mcp_dispatch))
+        .merge(rest)
         .layer(axum::extract::DefaultBodyLimit::max(1_048_576))
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(|origin, _| {
                     is_allowed_origin(origin.as_bytes())
                 }))
-                .allow_methods([Method::GET, Method::POST])
+                .allow_methods([Method::GET, Method::POST, Method::PUT])
                 .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
         )
         .with_state(state);
@@ -804,10 +826,27 @@ pub async fn run_server(
         addr
     );
     println!("  {} Endpoints:", console::style("→").dim());
-    println!("      GET  /health     - Health check");
-    println!("      GET  /search     - Search (q, limit, project, mode params)");
-    println!("      POST /v1/search  - OpenAI-compatible search (JSON body)");
-    println!("      POST /mcp        - MCP JSON-RPC dispatch (proxy target)");
+    println!("      GET  /health              - Health check");
+    println!("      GET  /search              - Search (q, limit, project, mode params)");
+    println!("      POST /v1/search           - OpenAI-compatible search (JSON body)");
+    println!("      POST /mcp                 - MCP JSON-RPC dispatch (proxy target)");
+    println!();
+    println!("  {} REST API:", console::style("→").dim());
+    println!("      GET  /projects            - List projects");
+    println!("      POST /projects            - Init project");
+    println!("      GET  /projects/{{name}}/docs    - Project docs overview");
+    println!("      GET  /projects/{{name}}/audit   - Audit project");
+    println!("      GET  /projects/{{name}}/validate - Validate docs");
+    println!("      PUT  /projects/{{name}}/config   - Configure project");
+    println!("      GET  /docs/{{path}}         - Read doc file");
+    println!("      POST /index-code           - Index code structure");
+    println!("      POST /rebuild              - Rebuild index");
+    println!("      GET  /changes              - Check doc changes");
+    println!("      GET  /lint                 - Lint project docs");
+    println!("      GET  /vaults               - List vaults");
+    println!("      GET  /vaults/search        - Search vaults");
+    println!("      POST /vaults/backup        - Backup vault");
+    println!("      POST /promote              - Promote document");
     println!();
 
     axum::serve(

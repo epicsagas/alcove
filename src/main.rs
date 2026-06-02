@@ -26,6 +26,8 @@ mod vector;
 
 #[cfg(feature = "alcove-server")]
 mod server;
+#[cfg(feature = "alcove-server")]
+mod rest_routes;
 
 use std::io::{self, BufRead, Write as _};
 
