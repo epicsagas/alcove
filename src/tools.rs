@@ -16,7 +16,6 @@ use crate::transpile::maybe_transpile_result;
 // Project resolution
 // ---------------------------------------------------------------------------
 
-#[derive(Clone)]
 pub struct ResolvedProject {
     pub name: String,
     pub detected_via: &'static str,
@@ -693,16 +692,7 @@ pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
         #[cfg(feature = "embed-candle")]
         embedding: None,
     };
-    // Strip the `root` field for single-root callers to preserve the existing API shape.
-    let mut result = tool_list_projects_multi(std::slice::from_ref(&single))?;
-    if let Some(arr) = result["projects"].as_array_mut() {
-        for proj in arr.iter_mut() {
-            if let Some(obj) = proj.as_object_mut() {
-                obj.remove("root");
-            }
-        }
-    }
-    Ok(result)
+    list_projects_impl(std::slice::from_ref(&single), false)
 }
 
 /// Multi-root variant of `tool_list_projects`.
@@ -710,6 +700,18 @@ pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
 /// Aggregates projects from all configured doc-roots, adding a `root` field
 /// to each entry so callers can distinguish which root a project belongs to.
 pub fn tool_list_projects_multi(roots: &[crate::config::ResolvedDocRoot]) -> Result<Value> {
+    list_projects_impl(roots, true)
+}
+
+/// Shared implementation for listing projects across one or more doc-roots.
+///
+/// When `include_root` is true, each project entry includes a `root` field
+/// identifying which doc-root it belongs to. When false (single-root compat
+/// mode), the `root` field is omitted entirely.
+fn list_projects_impl(
+    roots: &[crate::config::ResolvedDocRoot],
+    include_root: bool,
+) -> Result<Value> {
     let mut projects = Vec::new();
     let core_files = load_config().core_files();
 
@@ -760,13 +762,16 @@ pub fn tool_list_projects_multi(roots: &[crate::config::ResolvedDocRoot]) -> Res
                 .cloned()
                 .collect();
 
-            projects.push(json!({
+            let mut proj = json!({
                 "name": name,
-                "root": root.name,
                 "total_docs": doc_count,
                 "internal_required_present": internal_present,
                 "internal_required_missing": internal_missing,
-            }));
+            });
+            if include_root {
+                proj["root"] = json!(root.name);
+            }
+            projects.push(proj);
         }
     }
 
