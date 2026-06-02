@@ -376,6 +376,7 @@ pub struct ResolvedDocRoot {
     pub name: String,
     pub path: PathBuf,
     /// Per-root embedding override, if configured.
+    /// Stored for future per-root model selection; not yet consumed by the indexer.
     #[cfg(feature = "embed-candle")]
     #[allow(dead_code)]
     pub embedding: Option<EmbeddingConfig>,
@@ -547,13 +548,23 @@ impl DocConfig {
         if let Ok(v) = std::env::var("DOCS_ROOT") {
             let raw = PathBuf::from(&v);
             let canonical = raw.canonicalize().unwrap_or(raw);
-            if !is_blocked_system_path(&canonical) {
+            if is_blocked_system_path(&canonical) {
+                eprintln!(
+                    "[alcove] DOCS_ROOT points to blocked system path: {} — skipping",
+                    canonical.display()
+                );
+            } else if canonical.is_dir() {
                 return vec![ResolvedDocRoot {
                     name: "default".into(),
                     path: canonical,
                     #[cfg(feature = "embed-candle")]
                     embedding: None,
                 }];
+            } else {
+                eprintln!(
+                    "[alcove] DOCS_ROOT '{}' does not exist — skipping",
+                    v
+                );
             }
         }
         // 2. Legacy single docs_root field
@@ -565,13 +576,18 @@ impl DocConfig {
                     "[alcove] docs_root points to blocked system path: {} — skipping",
                     canonical.display()
                 );
-            } else {
+            } else if canonical.is_dir() {
                 return vec![ResolvedDocRoot {
                     name: "default".into(),
                     path: canonical,
                     #[cfg(feature = "embed-candle")]
                     embedding: None,
                 }];
+            } else {
+                eprintln!(
+                    "[alcove] docs_root '{}' does not exist — skipping",
+                    root
+                );
             }
         }
         // 3. Multi docs_roots
@@ -1190,10 +1206,20 @@ mod tests {
 
     // -- resolved_docs_roots --
 
+    /// RAII guard: removes `path` on drop so test directories are cleaned up
+    /// even when an assertion panics.
+    struct TempDir(std::path::PathBuf);
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     #[test]
     fn resolved_docs_roots_uses_legacy_docs_root() {
         let base = alcove_home().join(format!("test-legacy-{}", std::process::id()));
         std::fs::create_dir_all(&base).unwrap();
+        let _guard = TempDir(base.clone());
         let cfg = DocConfig {
             docs_root: Some(base.to_string_lossy().to_string()),
             ..DocConfig::default()
@@ -1205,7 +1231,6 @@ mod tests {
         assert!(roots[0].path.is_absolute());
         #[cfg(feature = "embed-candle")]
         assert!(roots[0].embedding.is_none());
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -1217,6 +1242,7 @@ mod tests {
         let work_path = base.join("work");
         std::fs::create_dir_all(&oss_path).unwrap();
         std::fs::create_dir_all(&work_path).unwrap();
+        let _guard = TempDir(base.clone());
 
         // docs_root takes precedence over docs_roots.
         let cfg = DocConfig {
@@ -1259,14 +1285,13 @@ mod tests {
         assert_eq!(roots2.len(), 2);
         assert_eq!(roots2[0].name, "oss");
         assert_eq!(roots2[1].name, "work");
-
-        let _ = std::fs::remove_dir_all(&base); // cleanup
     }
 
     #[test]
     fn resolved_docs_roots_legacy_takes_precedence_over_vec() {
         let base = alcove_home().join(format!("test-legacy-root-{}", std::process::id()));
         std::fs::create_dir_all(&base).unwrap();
+        let _guard = TempDir(base.clone());
         let cfg = DocConfig {
             docs_root: Some(base.to_string_lossy().to_string()),
             docs_roots: Some(vec![DocRootEntry {
@@ -1284,8 +1309,6 @@ mod tests {
         let roots = cfg.resolved_docs_roots();
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].path, base.canonicalize().unwrap_or(base.clone()));
-
-        let _ = std::fs::remove_dir_all(&base); // cleanup
     }
 
     #[test]

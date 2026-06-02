@@ -766,6 +766,9 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         let roots_clone: Vec<_> = all_roots.iter().map(|r| r.path.clone()).collect();
         std::thread::spawn(move || {
             use rayon::prelude::*;
+            // build_index is safe to call concurrently on distinct roots:
+            // all writes are scoped to `root/.alcove/index/` and a per-root
+            // file lock prevents concurrent builds on the same root.
             roots_clone.par_iter().for_each(|root| {
                 let _ = crate::index::build_index(root);
             });

@@ -744,7 +744,7 @@ fn list_projects_impl(
             }
 
             let doc_count = WalkDir::new(&path)
-                .max_depth(5)
+                .max_depth(10)
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
@@ -814,7 +814,10 @@ pub fn tool_search_global_multi(
         .collect();
 
     if per_root.is_empty() {
-        anyhow::bail!("No indexed roots found");
+        anyhow::bail!(
+            "No indexed roots found — {} root(s) configured, 0 indexed",
+            roots.len()
+        );
     }
 
     // Merge and re-rank by score descending.
