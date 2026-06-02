@@ -1287,7 +1287,6 @@ mod tests {
         assert!(roots[0].path.is_absolute());
         #[cfg(feature = "embed")]
         assert!(roots[0].embedding.is_none());
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -1342,6 +1341,30 @@ mod tests {
         assert_eq!(roots2.len(), 2);
         assert_eq!(roots2[0].name, "oss");
         assert_eq!(roots2[1].name, "work");
+    }
+
+    #[test]
+    fn resolved_docs_roots_legacy_takes_precedence_over_vec() {
+        let base = alcove_home().join(format!("test-legacy-root-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let _guard = TempDir(base.clone());
+        let cfg = DocConfig {
+            docs_root: Some(base.to_string_lossy().to_string()),
+            docs_roots: Some(vec![DocRootEntry {
+                name: "oss".into(),
+                path: alcove_home()
+                    .join("test-oss-root")
+                    .to_string_lossy()
+                    .to_string(),
+                #[cfg(feature = "embed")]
+                embedding: None,
+            }]),
+            ..DocConfig::default()
+        };
+        // legacy docs_root takes precedence
+        let roots = cfg.resolved_docs_roots();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].path, base.canonicalize().unwrap_or(base.clone()));
     }
 
     #[test]
