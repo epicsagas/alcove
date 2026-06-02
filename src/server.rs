@@ -773,7 +773,10 @@ pub async fn run_server(
 
     let rest = Router::new()
         // Global endpoints
-        .route("/projects", get(rest_routes::get_list_projects).post(rest_routes::post_init_project))
+        .route(
+            "/projects",
+            get(rest_routes::get_list_projects).post(rest_routes::post_init_project),
+        )
         .route("/rebuild", post(rest_routes::post_rebuild))
         .route("/changes", get(rest_routes::get_changes))
         .route("/lint", get(rest_routes::get_lint))
@@ -786,7 +789,10 @@ pub async fn run_server(
         .route("/projects/{name}/docs", get(rest_routes::get_project_docs))
         .route("/projects/{name}/audit", get(rest_routes::get_audit))
         .route("/projects/{name}/validate", get(rest_routes::get_validate))
-        .route("/projects/{name}/config", axum::routing::put(rest_routes::put_configure))
+        .route(
+            "/projects/{name}/config",
+            axum::routing::put(rest_routes::put_configure),
+        )
         .route("/docs/{*path}", get(rest_routes::get_doc_file));
 
     let app = Router::new()

@@ -149,9 +149,7 @@ pub(crate) fn write_json_mcp(
         "  {} MCP server not auto-configured (skill-driven mode).",
         style("ℹ").dim()
     );
-    println!(
-        "     To use MCP, see registry/mcp.json for manual setup."
-    );
+    println!("     To use MCP, see registry/mcp.json for manual setup.");
     let _ = config_path; // suppress unused warning
     Ok(())
 }
@@ -167,9 +165,7 @@ pub(crate) fn write_opencode_mcp(
         "  {} MCP server not auto-configured (skill-driven mode).",
         style("ℹ").dim()
     );
-    println!(
-        "     To use MCP, see registry/mcp.json for manual setup."
-    );
+    println!("     To use MCP, see registry/mcp.json for manual setup.");
     let _ = config_path; // suppress unused warning
     Ok(())
 }

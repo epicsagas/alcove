@@ -25,9 +25,9 @@ mod code_index;
 mod vector;
 
 #[cfg(feature = "alcove-server")]
-mod server;
-#[cfg(feature = "alcove-server")]
 mod rest_routes;
+#[cfg(feature = "alcove-server")]
+mod server;
 
 use std::io::{self, BufRead, Write as _};
 

@@ -173,7 +173,7 @@ pub async fn get_list_projects(
     let docs_root = state.docs_root.clone();
     let result = tokio::task::spawn_blocking(move || crate::tools::tool_list_projects(&docs_root))
         .await
-       .unwrap_or_else(|e| {
+        .unwrap_or_else(|e| {
             eprintln!("[alcove] list_projects task failed: {e}");
             Err(anyhow::anyhow!("Internal server error"))
         });
@@ -253,14 +253,13 @@ pub async fn get_changes(
     check_auth(&state, &headers)?;
     let docs_root = state.docs_root.clone();
     let args = json!({ "auto_rebuild": query.auto_rebuild.unwrap_or(false) });
-    let result = tokio::task::spawn_blocking(move || {
-        crate::tools::tool_check_doc_changes(&docs_root, args)
-    })
-    .await
-    .unwrap_or_else(|e| {
-        eprintln!("[alcove] check_doc_changes task failed: {e}");
-        Err(anyhow::anyhow!("Internal server error"))
-    });
+    let result =
+        tokio::task::spawn_blocking(move || crate::tools::tool_check_doc_changes(&docs_root, args))
+            .await
+            .unwrap_or_else(|e| {
+                eprintln!("[alcove] check_doc_changes task failed: {e}");
+                Err(anyhow::anyhow!("Internal server error"))
+            });
     map_tool_result(result)
 }
 
@@ -430,14 +429,13 @@ pub async fn post_promote(
         "project": body.project,
         "copy": body.copy,
     });
-    let result = tokio::task::spawn_blocking(move || {
-        crate::tools::tool_promote_document(&docs_root, args)
-    })
-    .await
-    .unwrap_or_else(|e| {
-        eprintln!("[alcove] promote task failed: {e}");
-        Err(anyhow::anyhow!("Internal server error"))
-    });
+    let result =
+        tokio::task::spawn_blocking(move || crate::tools::tool_promote_document(&docs_root, args))
+            .await
+            .unwrap_or_else(|e| {
+                eprintln!("[alcove] promote task failed: {e}");
+                Err(anyhow::anyhow!("Internal server error"))
+            });
     map_tool_result(result)
 }
 
@@ -499,12 +497,7 @@ pub async fn get_project_docs(
     let name_clone = name.clone();
     let result = tokio::task::spawn_blocking(move || {
         let repo_path = std::env::current_dir().ok();
-        crate::tools::tool_overview(
-            &project_root,
-            &name_clone,
-            "rest-api",
-            repo_path.as_deref(),
-        )
+        crate::tools::tool_overview(&project_root, &name_clone, "rest-api", repo_path.as_deref())
     })
     .await
     .unwrap_or_else(|e| {
@@ -650,13 +643,12 @@ pub async fn put_configure(
         "public_files": body.public_files,
     });
 
-    let result = tokio::task::spawn_blocking(move || {
-        crate::tools::tool_configure_project(&repo_path, args)
-    })
-    .await
-    .unwrap_or_else(|e| {
-        eprintln!("[alcove] configure task failed: {e}");
-        Err(anyhow::anyhow!("Internal server error"))
-    });
+    let result =
+        tokio::task::spawn_blocking(move || crate::tools::tool_configure_project(&repo_path, args))
+            .await
+            .unwrap_or_else(|e| {
+                eprintln!("[alcove] configure task failed: {e}");
+                Err(anyhow::anyhow!("Internal server error"))
+            });
     map_tool_result(result)
 }
