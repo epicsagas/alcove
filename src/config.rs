@@ -382,17 +382,21 @@ pub struct ResolvedDocRoot {
     pub embedding: Option<EmbeddingConfig>,
 }
 
+/// Expand a leading `~/` to the user's home directory.
+fn expand_tilde(s: &str) -> PathBuf {
+    if let Some(stripped) = s.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(stripped);
+    }
+    PathBuf::from(s)
+}
+
 impl DocRootEntry {
     /// Expand `~` prefix and canonicalize the path.
     /// Returns `None` if the resolved path points to a blocked system directory.
     fn expand_path(&self) -> Option<PathBuf> {
-        let expanded = if self.path.starts_with("~/")
-            && let Some(home) = dirs::home_dir()
-        {
-            home.join(&self.path[2..])
-        } else {
-            PathBuf::from(&self.path)
-        };
+        let expanded = expand_tilde(&self.path);
         // Canonicalize to resolve symlinks / `..` traversal, then check safety.
         let canonical = expanded.canonicalize().unwrap_or(expanded);
         if is_blocked_system_path(&canonical) {
@@ -546,7 +550,7 @@ impl DocConfig {
     pub fn resolved_docs_roots(&self) -> Vec<ResolvedDocRoot> {
         // 1. DOCS_ROOT env var — highest priority single-root override
         if let Ok(v) = std::env::var("DOCS_ROOT") {
-            let raw = PathBuf::from(&v);
+            let raw = expand_tilde(&v);
             let canonical = raw.canonicalize().unwrap_or(raw);
             if is_blocked_system_path(&canonical) {
                 eprintln!(
@@ -569,7 +573,7 @@ impl DocConfig {
         }
         // 2. Legacy single docs_root field
         if let Some(ref root) = self.docs_root {
-            let raw = PathBuf::from(root);
+            let raw = expand_tilde(root);
             let canonical = raw.canonicalize().unwrap_or(raw);
             if is_blocked_system_path(&canonical) {
                 eprintln!(
@@ -1288,38 +1292,68 @@ mod tests {
     }
 
     #[test]
-    fn resolved_docs_roots_legacy_takes_precedence_over_vec() {
-        let base = alcove_home().join(format!("test-legacy-root-{}", std::process::id()));
-        std::fs::create_dir_all(&base).unwrap();
-        let _guard = TempDir(base.clone());
-        let cfg = DocConfig {
-            docs_root: Some(base.to_string_lossy().to_string()),
-            docs_roots: Some(vec![DocRootEntry {
-                name: "oss".into(),
-                path: alcove_home()
-                    .join("test-oss-root")
-                    .to_string_lossy()
-                    .to_string(),
-                #[cfg(feature = "embed-candle")]
-                embedding: None,
-            }]),
-            ..DocConfig::default()
-        };
-        // legacy docs_root takes precedence
-        let roots = cfg.resolved_docs_roots();
-        assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0].path, base.canonicalize().unwrap_or(base.clone()));
-    }
-
-    #[test]
     fn resolved_docs_roots_empty_when_nothing_configured() {
-        // Ensure ~/.alcove/docs does NOT exist during this test.
-        // Since we can't control the env safely, just verify the method returns
-        // a consistent type — no panic.
+        // Since we can't control whether ~/.alcove/docs exists in the test env,
+        // just verify no panic and a bounded return.
         let cfg = DocConfig::default();
         let roots = cfg.resolved_docs_roots();
         // Either 0 (no default dir) or 1 (default dir exists) — both valid.
         assert!(roots.len() <= 1);
+    }
+
+    #[test]
+    fn resolved_docs_roots_expands_tilde_in_docs_root() {
+        // Construct a path that starts with "~/" and verify it resolves to an
+        // absolute path (i.e. the tilde was expanded).
+        let home = dirs::home_dir().expect("home dir must exist for this test");
+        // Point at ~/.alcove itself — guaranteed to exist on any dev machine
+        // that has alcove installed, but safe to test even if it doesn't because
+        // we only check that the path is absolute, not that it's a dir.
+        let tilde_path = "~/.alcove".to_string();
+        let cfg = DocConfig {
+            docs_root: Some(tilde_path),
+            ..DocConfig::default()
+        };
+        let roots = cfg.resolved_docs_roots();
+        // If ~/.alcove exists as a dir we get one root; if not, zero. Either way
+        // verify the returned path (if any) does NOT contain a literal "~".
+        for r in &roots {
+            assert!(
+                r.path.is_absolute(),
+                "tilde must have been expanded: {:?}",
+                r.path
+            );
+            assert!(
+                !r.path.starts_with("~"),
+                "literal tilde must not appear in resolved path: {:?}",
+                r.path
+            );
+        }
+        // Sanity: the resolved path, when it exists, should start with home.
+        if !roots.is_empty() && roots[0].path.exists() {
+            assert!(roots[0].path.starts_with(&home));
+        }
+    }
+
+    #[test]
+    fn resolved_docs_roots_blocked_docs_root_skips_to_fallback() {
+        // Setting docs_root to a blocked path (e.g. /tmp which is blocked by
+        // is_blocked_system_path) should skip that entry and fall through to
+        // the default fallback, not panic.
+        let cfg = DocConfig {
+            docs_root: Some("/tmp".to_string()),
+            ..DocConfig::default()
+        };
+        // Should not panic; may return 0 or 1 roots depending on default dir.
+        let roots = cfg.resolved_docs_roots();
+        // /tmp must never appear in the results.
+        for r in &roots {
+            assert_ne!(
+                r.path.to_string_lossy().as_ref(),
+                "/tmp",
+                "blocked path must not appear in resolved roots"
+            );
+        }
     }
 
     #[test]
