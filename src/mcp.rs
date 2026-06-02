@@ -1041,7 +1041,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     }
                 }
             }
-            return ok!(json!({"query": "", "matches": [], "truncated": false, "mode": "grep"}));
+            return ok!(json!({"query": query, "matches": [], "truncated": false, "mode": "grep"}));
         }
 
         if !force_grep {
