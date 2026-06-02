@@ -67,36 +67,107 @@ curl -s -X POST http://localhost:58301/v1/search \
 
 Response: `{"query": "...", "results": [...], "mode": "...", "truncated": false}`
 
-### API Proxy (Tool Calls)
+### Project Operations
 
-All 16 alcove tools are available via the HTTP API proxy. Use the Bash tool:
+```bash
+# List projects
+curl -s http://localhost:58301/projects
+
+# Init project
+curl -s -X POST http://localhost:58301/projects \
+  -H 'Content-Type: application/json' \
+  -d '{"project_name": "myproj", "project_path": "/abs/path"}'
+
+# Project docs overview (with sizes and classification)
+curl -s http://localhost:58301/projects/PROJECT/docs
+
+# Audit doc health
+curl -s http://localhost:58301/projects/PROJECT/audit
+
+# Validate against policy.toml
+curl -s http://localhost:58301/projects/PROJECT/validate
+
+# Configure project settings
+curl -s -X PUT http://localhost:58301/projects/PROJECT/config \
+  -H 'Content-Type: application/json' \
+  -d '{"core_files": ["PRD.md", "ARCHITECTURE.md"]}'
+
+# Read a doc file
+curl -s 'http://localhost:58301/docs/PRD.md?project=PROJECT'
+curl -s 'http://localhost:58301/docs/reports/weekly.md?project=PROJECT&offset=0&limit=2000'
+
+# Index code structure
+curl -s -X POST http://localhost:58301/index-code \
+  -H 'Content-Type: application/json' \
+  -d '{"source_path": "/abs/path/src", "language": "rust", "project": "PROJECT"}'
+```
+
+| Action | Method | Endpoint |
+|--------|--------|----------|
+| List projects | GET | `/projects` |
+| Init project | POST | `/projects` |
+| Project docs overview | GET | `/projects/{name}/docs` |
+| Audit project | GET | `/projects/{name}/audit` |
+| Validate docs | GET | `/projects/{name}/validate` |
+| Configure project | PUT | `/projects/{name}/config` |
+| Read doc file | GET | `/docs/{path}?project=name` |
+| Index code | POST | `/index-code` |
+
+### Index & Maintenance
+
+```bash
+# Rebuild index
+curl -s -X POST http://localhost:58301/rebuild
+
+# Check changed files since last index
+curl -s 'http://localhost:58301/changes?auto_rebuild=true'
+
+# Lint docs
+curl -s 'http://localhost:58301/lint?project=PROJECT'
+```
+
+| Action | Method | Endpoint |
+|--------|--------|----------|
+| Rebuild index | POST | `/rebuild` |
+| Check changes | GET | `/changes?auto_rebuild=true` |
+| Lint project | GET | `/lint?project=name` |
+
+### Vault Operations
+
+```bash
+# List vaults
+curl -s http://localhost:58301/vaults
+
+# Search vaults
+curl -s 'http://localhost:58301/vaults/search?q=QUERY&vault=*&limit=20'
+
+# Backup vault
+curl -s -X POST http://localhost:58301/vaults/backup \
+  -H 'Content-Type: application/json' \
+  -d '{"vault_name": "myvault"}'
+
+# Promote document into doc-repo
+curl -s -X POST http://localhost:58301/promote \
+  -H 'Content-Type: application/json' \
+  -d '{"source": "/abs/path/notes.md", "project": "PROJECT", "copy": true}'
+```
+
+| Action | Method | Endpoint |
+|--------|--------|----------|
+| List vaults | GET | `/vaults` |
+| Search vault | GET | `/vaults/search?q=...` |
+| Backup vault | POST | `/vaults/backup` |
+| Promote doc | POST | `/promote` |
+
+### MCP Proxy (Legacy)
+
+The JSON-RPC proxy remains available for MCP clients:
 
 ```bash
 curl -s -X POST http://localhost:58301/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"TOOL_NAME","arguments":{}}}'
 ```
-
-Available tools:
-
-| Tool | Arguments | Purpose |
-|------|-----------|---------|
-| `get_project_docs_overview` | `{}` | List all docs for current project with sizes and classification |
-| `search_project_docs` | `{"query": "...", "limit": 10, "scope": "project"}` | BM25/grep search. Scope: `project` (default) or `global` |
-| `get_doc_file` | `{"relative_path": "PRD.md"}` | Read a specific doc file |
-| `list_projects` | `{}` | List all projects in the doc-repo |
-| `audit_project` | `{}` | Audit doc health (missing, outdated, misplaced) |
-| `init_project` | `{"project_name": "name", "project_path": "/abs/path"}` | Initialize docs from templates |
-| `validate_docs` | `{}` | Validate against `policy.toml` |
-| `lint_project` | `{"project": "name"}` (optional) | Broken links, orphans, stale markers |
-| `rebuild_index` | `{}` | Full index rebuild |
-| `check_doc_changes` | `{"auto_rebuild": true}` | Check changed files since last index |
-| `promote_document` | `{"source": "/abs/path", "project": "name", "copy": true}` | Import file into doc-repo |
-| `configure_project` | `{"project_name": "name", "core_files": [...], ...}` | Update project settings in alcove.toml |
-| `index_code_structure` | `{"source_path": "/abs/path", "language": "rust"}` | Index source code via tree-sitter |
-| `search_vault` | `{"query": "...", "vault": "name"}` | Search knowledge base vaults |
-| `list_vaults` | `{}` | List vaults with doc counts |
-| `backup_vault` | `{"vault_name": "name"}` | Git snapshot of vault state |
 
 ### Health Check
 
@@ -113,18 +184,18 @@ curl -s http://localhost:58301/health
 ### Before writing code
 1. `CONVENTIONS.md` → project-specific rules
 2. `CODE_INDEX.md` → compact module/type/function overview (avoids reading dozens of source files)
-3. For research/reference material → search vaults via `search_vault` tool
+3. For research/reference material → search vaults via `GET /vaults/search?q=...`
 
 ### Answering questions
-**Never answer from memory.** Call `get_project_docs_overview` → `get_doc_file` for the relevant file → summarize. Do not dump full files unless asked.
+**Never answer from memory.** Call `GET /projects/{name}/docs` → `GET /docs/{path}?project=name` for the relevant file → summarize. Do not dump full files unless asked.
 
 ### Doc status disambiguation
-| User says | Tool call |
-|-----------|-----------|
-| validate, policy, compliance | `validate_docs` |
-| lint, broken link, orphan, stale | `lint_project` |
-| audit, organize, cleanup, what's missing | `audit_project` (runs both validate + lint) |
-| changed, stale index, new files | `check_doc_changes` with `auto_rebuild: true` |
+| User says | Endpoint |
+|-----------|----------|
+| validate, policy, compliance | `GET /projects/{name}/validate` |
+| lint, broken link, orphan, stale | `GET /lint?project=name` |
+| audit, organize, cleanup, what's missing | `GET /projects/{name}/audit` (runs both validate + lint) |
+| changed, stale index, new files | `GET /changes?auto_rebuild=true` |
 
 Ambiguous → call `audit_project` (broadest).
 
@@ -136,7 +207,7 @@ Ambiguous → call `audit_project` (broadest).
 - Re-run validate + lint after cleanup
 
 ### Promoting notes
-Path provided → act immediately: call `promote_document` with the source path. No matching project → `inbox/`. Then call `rebuild_index`.
+Path provided → act immediately: `POST /promote` with the source path. No matching project → `inbox/`. Then `POST /rebuild`.
 
 ### After development
 Proactively capture at natural stopping points:
@@ -147,4 +218,4 @@ Proactively capture at natural stopping points:
 - Env var → `SECRETS_MAP.md`
 - Progress → `PROGRESS.md`
 
-Read → append with date → call `rebuild_index`.
+Read → append with date → `POST /rebuild`.
