@@ -1,21 +1,26 @@
 ---
 name: alcove
-description: "Questions about project architecture, conventions, decisions, code structure, tech debt, env config, progress, or doc health. Also: init project, audit docs, lint, validate, promote note, rebuild index, search vaults."
+description: "HTTP API-based documentation server (always running). Questions about project architecture, conventions, decisions, code structure, tech debt, env config, progress, or doc health. Also: init project, audit docs, lint, validate, promote note, rebuild index, search vaults."
 ---
 
 # Alcove
 
-CLI-based documentation server. Auto-detects project by matching CWD against `DOCS_ROOT` folders.
+HTTP API-based documentation server (always running). Auto-detects project by matching CWD against `DOCS_ROOT` folders.
 
 ## Prerequisites
 
-The `alcove` binary must be installed and on PATH. If not found, install via:
+The alcove API server must be running. Check and start with:
+
 ```bash
-brew install epicsagas/tap/alcove    # macOS
-cargo binstall alcove                # cross-platform
+alcove api status   # check if server is running
+alcove api start    # start if not running
 ```
 
-Verify: `alcove --version`
+- **Base URL**: `http://localhost:58301`
+- **Auth**: `Authorization: Bearer $ALCOVE_TOKEN` (if token configured during setup)
+- **Health check**: `curl -s http://localhost:58301/health`
+
+All commands below use the Bash tool to run `curl`. If `ALCOVE_TOKEN` is set, add `-H "Authorization: Bearer $ALCOVE_TOKEN"` to every request.
 
 ## When to Use
 
@@ -33,57 +38,72 @@ Any question about project design, status, conventions, decisions, env config, t
 | "What env vars needed?" | `SECRETS_MAP.md` |
 | "Any known issues?" | `DEBT.md` |
 
-Unsure → `alcove search "QUERY" --scope project`. **Never contradict existing decisions.**
+Unsure → search via API. **Never contradict existing decisions.**
 
-## Commands
+## API Reference
 
 ### Search & Discovery
 
-| CLI Command | Purpose |
-|-------------|---------|
-| `alcove search "QUERY" --scope project` | BM25/grep search within current project. Default scope. |
-| `alcove search "QUERY" --scope global` | Search across all projects. Use only when user explicitly requests. |
-| `alcove search "QUERY" --limit N --mode auto` | Control result count and search mode (auto, grep, ranked). |
-| `alcove index-code --source PATH` | Index source code structure (tree-sitter) for code-aware search. |
-| `alcove vault list` | List knowledge base vaults with doc counts. |
+Use the search endpoint. Project is auto-detected from CWD.
 
-### Validation & Linting
+```bash
+# Search current project (default)
+curl -s 'http://localhost:58301/search?q=QUERY'
 
-| CLI Command | Purpose |
-|-------------|---------|
-| `alcove validate --format json` | Validate against `policy.toml` → pass/warn/fail. |
-| `alcove lint --format json` | Broken links, orphans, stale markers, stale dates. |
+# Search with options
+curl -s 'http://localhost:58301/search?q=QUERY&limit=10&mode=hybrid'
 
-### Index Management
+# Search a specific project
+curl -s 'http://localhost:58301/search?q=QUERY&project=PROJ'
 
-| CLI Command | Purpose |
-|-------------|---------|
-| `alcove index` | Incremental index update (only changed files). |
-| `alcove rebuild` | Full index rebuild from scratch. |
+# Search across all projects
+curl -s 'http://localhost:58301/search?q=QUERY&limit=20'
 
-### Document Operations
+# POST search (JSON body)
+curl -s -X POST http://localhost:58301/v1/search \
+  -H 'Content-Type: application/json' \
+  -d '{"q": "QUERY", "limit": 10, "project": "proj", "mode": "hybrid"}'
+```
 
-| CLI Command | Purpose |
-|-------------|---------|
-| `alcove promote SOURCE [--project PROJ] [--mv]` | Import file from external vault into doc-repo. Use `--mv` to move instead of copy. |
+Response: `{"query": "...", "results": [...], "mode": "...", "truncated": false}`
 
-### Setup & Maintenance
+### API Proxy (Tool Calls)
 
-| CLI Command | Purpose |
-|-------------|---------|
-| `alcove setup` | Interactive setup: docs root, categories, diagram format. |
-| `alcove doctor` | Check health of the alcove installation. |
+All 16 alcove tools are available via the HTTP API proxy. Use the Bash tool:
 
-### File Operations (use Read/Bash tools directly)
+```bash
+curl -s -X POST http://localhost:58301/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"TOOL_NAME","arguments":{}}}'
+```
 
-| Operation | How |
-|-----------|-----|
-| Read a doc file | `Read` tool with the full path under docs root. Find docs root via `alcove search` or `alcove.toml`. |
-| List projects | `ls` the docs root directory. Discover via `alcove search --scope global` or check `alcove.toml`. |
-| Get docs overview | Combine `ls` of project docs directory with reading tier info from `alcove.toml`. |
-| Audit project | Run `alcove validate --format json` + `alcove lint --format json` together. |
-| Configure project | Edit `alcove.toml` directly using the Edit tool. |
-| Search vaults | Use `grep -ri "QUERY"` in vault directory paths (find via `alcove vault list`). |
+Available tools:
+
+| Tool | Arguments | Purpose |
+|------|-----------|---------|
+| `get_project_docs_overview` | `{}` | List all docs for current project with sizes and classification |
+| `search_project_docs` | `{"query": "...", "limit": 10, "scope": "project"}` | BM25/grep search. Scope: `project` (default) or `global` |
+| `get_doc_file` | `{"relative_path": "PRD.md"}` | Read a specific doc file |
+| `list_projects` | `{}` | List all projects in the doc-repo |
+| `audit_project` | `{}` | Audit doc health (missing, outdated, misplaced) |
+| `init_project` | `{"project_name": "name", "project_path": "/abs/path"}` | Initialize docs from templates |
+| `validate_docs` | `{}` | Validate against `policy.toml` |
+| `lint_project` | `{"project": "name"}` (optional) | Broken links, orphans, stale markers |
+| `rebuild_index` | `{}` | Full index rebuild |
+| `check_doc_changes` | `{"auto_rebuild": true}` | Check changed files since last index |
+| `promote_document` | `{"source": "/abs/path", "project": "name", "copy": true}` | Import file into doc-repo |
+| `configure_project` | `{"project_name": "name", "core_files": [...], ...}` | Update project settings in alcove.toml |
+| `index_code_structure` | `{"source_path": "/abs/path", "language": "rust"}` | Index source code via tree-sitter |
+| `search_vault` | `{"query": "...", "vault": "name"}` | Search knowledge base vaults |
+| `list_vaults` | `{}` | List vaults with doc counts |
+| `backup_vault` | `{"vault_name": "name"}` | Git snapshot of vault state |
+
+### Health Check
+
+```bash
+curl -s http://localhost:58301/health
+# → {"status": "ok", "version": "x.y.z", "docs_root_configured": true, "projects": N}
+```
 
 ## Rules
 
@@ -93,20 +113,20 @@ Unsure → `alcove search "QUERY" --scope project`. **Never contradict existing 
 ### Before writing code
 1. `CONVENTIONS.md` → project-specific rules
 2. `CODE_INDEX.md` → compact module/type/function overview (avoids reading dozens of source files)
-3. For research/reference material → search vaults via `grep -ri` in vault directories
+3. For research/reference material → search vaults via `search_vault` tool
 
 ### Answering questions
-**Never answer from memory.** `ls` the project docs directory → `Read` the relevant file → summarize. Do not dump full files unless asked.
+**Never answer from memory.** Call `get_project_docs_overview` → `get_doc_file` for the relevant file → summarize. Do not dump full files unless asked.
 
 ### Doc status disambiguation
-| User says | Command |
-|-----------|---------|
-| validate, policy, compliance | `alcove validate --format json` |
-| lint, broken link, orphan, stale | `alcove lint --format json` |
-| audit, organize, cleanup, what's missing | Run both: `alcove validate --format json` && `alcove lint --format json` |
-| changed, stale index, new files | `alcove index` |
+| User says | Tool call |
+|-----------|-----------|
+| validate, policy, compliance | `validate_docs` |
+| lint, broken link, orphan, stale | `lint_project` |
+| audit, organize, cleanup, what's missing | `audit_project` (runs both validate + lint) |
+| changed, stale index, new files | `check_doc_changes` with `auto_rebuild: true` |
 
-Ambiguous → run both validate and lint (broadest).
+Ambiguous → call `audit_project` (broadest).
 
 ### Acting on audit results
 - **alcove → project repo**: OK for public-facing docs derived from internal content
@@ -116,7 +136,7 @@ Ambiguous → run both validate and lint (broadest).
 - Re-run validate + lint after cleanup
 
 ### Promoting notes
-Path provided → act immediately: `alcove promote SOURCE`. No matching project → `inbox/`. Then `alcove index`.
+Path provided → act immediately: call `promote_document` with the source path. No matching project → `inbox/`. Then call `rebuild_index`.
 
 ### After development
 Proactively capture at natural stopping points:
@@ -127,4 +147,4 @@ Proactively capture at natural stopping points:
 - Env var → `SECRETS_MAP.md`
 - Progress → `PROGRESS.md`
 
-Read → append with date → `alcove index`.
+Read → append with date → call `rebuild_index`.

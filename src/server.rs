@@ -1,7 +1,7 @@
 //! HTTP server mode for external RAG access (alcove-server feature)
 //!
 //! Provides a REST API for search and document access.
-//! Usage: `alcove serve --port 8080 [--token secret]`
+//! Usage: `alcove serve --port 58301 [--token secret]`
 
 #[cfg(feature = "alcove-server")]
 use anyhow::Result;

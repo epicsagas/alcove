@@ -577,7 +577,7 @@ fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()
             // Resolve port: CLI flag > config.toml > kind-specific default
             let bind_port = port.unwrap_or(match kind {
                 ServiceKind::Mcp => 57384,
-                ServiceKind::Api => 8080,
+                ServiceKind::Api => 58301,
             });
             // Resolve token: CLI flag > config.toml > none
             let resolved_token = token

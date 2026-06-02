@@ -33,7 +33,7 @@
   <a href="https://buymeacoffee.com/epicsaga"><img alt="Buy Me a Coffee" src="https://img.shields.io/badge/buy_me_a_coffee-FFDD00?style=for-the-badge&labelColor=0d1117&logo=buymeacoffee&logoColor=black" /></a>
 </p>
 
-Alcove is an MCP server that gives AI coding agents on-demand access to your private project docs — **BM25 + vector hybrid search** for precision retrieval, **tree-sitter code indexing** so agents understand your codebase structure, and **policy enforcement** for doc consistency. No context bloat, no leaking docs into public repos, no per-project config for every agent.
+Alcove is an HTTP API server that gives AI coding agents on-demand access to your private project docs — **BM25 + vector hybrid search** for precision retrieval, **tree-sitter code indexing** so agents understand your codebase structure, and **policy enforcement** for doc consistency. No context bloat, no leaking docs into public repos, no per-project config for every agent.
 
 ## Demo
 
@@ -122,7 +122,7 @@ Agent config files                ← agent rules, coding conventions, recurring
 
 ## Quick start
 
-> **Required**: Run `alcove setup` once after installation to configure your docs root and enable full functionality. Plugins seed the MCP connection automatically, but Alcove cannot search or index documents until `setup` has been run.
+> **Required**: Run `alcove setup` once after installation to configure your docs root and enable full functionality. Plugins start the API server automatically, but Alcove cannot search or index documents until `setup` has been run.
 >
 > **Using Obsidian?** See the [Ecosystem](#ecosystem) section for the docs structure and vault configuration.
 
@@ -133,7 +133,7 @@ Agent config files                ← agent rules, coding conventions, recurring
 /plugin install alcove@epicsagas
 ```
 
-Auto-installs the binary and registers the MCP server on next session start.
+Auto-installs the binary and starts the API server on next session start.
 
 ```bash
 alcove setup   # run once after plugin install
@@ -147,7 +147,7 @@ Updates with `claude plugin update alcove@epicsagas`.
 codex plugin marketplace add epicsagas/plugins
 ```
 
-Auto-installs the skill and registers the MCP server. Available immediately — no further steps needed.
+Auto-installs the skill and starts the API server. Available immediately — no further steps needed.
 
 Updates with `codex plugin update alcove@epicsagas`.
 
@@ -185,7 +185,7 @@ irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | i
 agy plugins install https://github.com/epicsagas/alcove
 ```
 
-Auto-installs the plugin (MCP server, skill, hooks) and registers it on next session start.
+Auto-installs the plugin (API server, skill, hooks) and starts it on next session start.
 
 ```bash
 alcove setup   # run once after plugin install
@@ -217,7 +217,7 @@ alcove doctor
 3. Preferred diagram format
 4. Embedding model for hybrid search
 5. Background server — eliminate cold-start on every session (macOS login item)
-6. Which AI agents to configure (MCP + skill files — Claude Code and Codex are handled by their plugin systems)
+6. Which AI agents to configure (skill files — Claude Code and Codex are handled by their plugin systems)
 
 Re-run `alcove setup` anytime to change settings. It remembers your previous choices.
 
@@ -232,7 +232,7 @@ Without `pdftotext`, Alcove falls back to a built-in PDF parser which may fail o
 ### Troubleshooting
 
 **Agent can't find Alcove tools**
-Run `alcove setup` again — it re-registers the MCP server for all configured agents. Then start a new agent session (registration takes effect on next session start).
+Run `alcove setup` again — it reconfigures the API server for all configured agents. Then start a new agent session (changes take effect on next session start).
 
 **Search returns no results**
 The index may not be built yet. Run `alcove index` to build it, then try again.
@@ -241,7 +241,7 @@ The index may not be built yet. Run `alcove index` to build it, then try again.
 `ALCOVE_TOKEN` is not set in your shell. Run `alcove token` to print it, then add `export ALCOVE_TOKEN="..."` to your shell profile and reload.
 
 **`alcove doctor` reports issues**
-Follow the suggestions printed by `doctor` — it checks binary location, MCP registration, index state, and optional dependencies like `pdftotext`.
+Follow the suggestions printed by `doctor` — it checks binary location, API server status, index state, and optional dependencies like `pdftotext`.
 
 ## Usage
 
@@ -266,21 +266,37 @@ alcove search "data model" --mode ranked
 alcove search "deployment" --limit 5
 ```
 
-### Coding Agents (MCP)
+### Coding Agents (HTTP API)
 
-AI coding agents use Alcove through **MCP tools**. You don't usually need to call these yourself; the agent will invoke them when you ask questions about your project.
+AI coding agents use Alcove through a **local HTTP API** running on port 58301. Skills call `curl http://localhost:58301/...` under the hood. You don't usually need to call these yourself; the agent will invoke them when you ask questions about your project.
 
-| Goal | Agent Tool | Description |
-|------|------------|-------------|
-| **Explore** | `get_project_docs_overview` | List all files in the current project to understand the structure. |
-| **Search** | `search_project_docs` | Search for specific keywords or concepts. Supports `scope: "global"`. |
-| **Read** | `get_doc_file` | Read the content of a specific file found during search. |
-| **Audit** | `audit_project` | Check for missing docs or inconsistencies between code and docs. |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check — verify the API server is running |
+| `/search?q=...` | GET | Search documentation (query parameter) |
+| `/v1/search` | POST | Search with JSON body (supports scope, limit, mode) |
+| `/mcp` | POST | JSON-RPC proxy for all 16 MCP tools |
+
+> **Note**: MCP is still available — see `registry/mcp.json` for manual MCP setup if you prefer stdio-based access.
+
+**Example API calls:**
+```bash
+# Health check
+curl http://localhost:58301/health
+
+# Search docs
+curl "http://localhost:58301/search?q=authentication+flow"
+
+# Advanced search with JSON body
+curl -X POST http://localhost:58301/v1/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "api endpoint", "scope": "global", "limit": 5}'
+```
 
 **Example agent interaction:**
 > **User:** "/alcove How do I add a new API endpoint?"
-> **Agent:** (calls `search_project_docs(query="add api endpoint")`)
-> **Agent:** (reads the most relevant doc via `get_doc_file`)
+> **Agent:** (calls `POST /v1/search` with `query="add api endpoint"`)
+> **Agent:** (reads the most relevant doc via `POST /mcp` with `get_doc_file`)
 > **Agent:** "According to `ARCHITECTURE.md`, you need to..."
 
 ---
@@ -300,46 +316,40 @@ flowchart LR
         P1["policy.toml"]
     end
 
-    subgraph Agents["Any MCP agent"]
+    subgraph Agents["Any AI agent"]
         AG["Claude Code · Cursor\nCodex · Copilot\n+4 more"]
     end
 
-    subgraph MCP["Alcove MCP server"]
+    subgraph API["Alcove HTTP API server"]
         T["search · get_file\noverview · audit\ninit · validate"]
     end
 
     A1 -- "CWD detected" --> D1
     A2 -- "CWD detected" --> D2
-    Agents -- "stdio MCP" --> MCP
-    MCP -- "scoped access" --> Docs
+    Agents -- "HTTP :58301" --> API
+    API -- "scoped access" --> Docs
 ```
 
-Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any MCP-compatible AI agent over stdio.
+Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per project. Alcove manages docs there and serves them to any AI agent over HTTP on port 58301.
 
-## MCP Tools
+## API Endpoints
 
-| Tool | What it does |
-|------|-------------|
-| `get_project_docs_overview` | List all docs with classification and sizes |
-| `search_project_docs` | Smart search — auto-selects BM25 ranked or grep, supports `scope: "global"` for cross-project search |
-| `get_doc_file` | Read a specific doc by path (supports `offset`/`limit` for large files) |
-| `list_projects` | Show all projects in your docs repo |
-| `audit_project` | Cross-repo audit — scans doc-repo and local project repo, suggests actions |
-| `init_project` | Scaffold docs for a new project (internal + external docs, GitHub community standards, selective file creation) |
-| `validate_docs` | Validate docs against team policy (`policy.toml`) |
-| `rebuild_index` | Rebuild the full-text search index (usually automatic) |
-| `check_doc_changes` | Detect added, modified, or deleted docs since last index build |
-| `lint_project` | Semantic lint — broken links, orphan files, stale markers, stale date claims |
-| `promote_document` | Copy or move a file from an external vault into the alcove doc-repo |
-| `search_vault` | Search knowledge base vaults — separate from project docs, for research and reference |
-| `list_vaults` | List all knowledge base vaults with document counts |
-| `configure_project` | Create or update per-project settings (core docs, team docs, public docs, diagram format) |
-| `index_code_structure` | Parse source code with tree-sitter and generate `CODE_INDEX.md` per project. Supports 12 languages (see [Code Indexing](#code-indexing) below) |
+| Endpoint | Method | What it does |
+|----------|--------|-------------|
+| `/health` | GET | Health check — verify the API server is running |
+| `/search?q=...` | GET | Search documentation (query parameter) |
+| `/v1/search` | POST | Search with JSON body (scope, limit, mode) |
+| `/mcp` | POST | JSON-RPC proxy for all 16 tools (MCP-compatible) |
+
+All 16 tools from the previous MCP interface are accessible via `POST /mcp` (JSON-RPC):
+`get_project_docs_overview` · `search_project_docs` · `get_doc_file` · `list_projects` · `audit_project` · `init_project` · `validate_docs` · `rebuild_index` · `check_doc_changes` · `lint_project` · `promote_document` · `search_vault` · `list_vaults` · `configure_project` · `index_code_structure` · `backup_vault`
+
+> **Note**: MCP is still available for manual setup — see `registry/mcp.json` for stdio-based access.
 
 ## CLI
 
 ```
-alcove              Start MCP server (agents call this)
+alcove              Start API server (agents call this)
 alcove setup        Interactive setup — re-run anytime to reconfigure
 alcove doctor       Check the health of your alcove installation
 alcove validate     Validate docs against policy (--format json, --exit-code)
@@ -352,7 +362,7 @@ alcove index-code   Generate code structure index from source [--language LANG] 
 alcove token        Print the bearer token (for background server auth)
 alcove uninstall    Remove skills, config, and legacy files
 
-alcove mcp <CMD>      Manage background MCP server lifecycle (start, stop, status, enable, disable)
+alcove mcp <CMD>      Manage background API server lifecycle (start, stop, status, enable, disable)
 
 alcove vault create   Create a new knowledge base vault
 alcove vault link     Link an external directory as a vault (e.g., Obsidian)
@@ -449,6 +459,8 @@ alcove mcp disable          # Disable and remove login item
 
 When the background server is running, the stdio process acts as a thin proxy — forwarding requests to the warm server instead of loading the search engine each session. On startup, the stdio process checks `GET /health` and enters proxy mode automatically.
 
+> **Note**: MCP is still available for users who prefer stdio-based access. See `registry/mcp.json` for manual MCP configuration.
+
 </details>
 
 ## Search
@@ -498,7 +510,7 @@ alcove search "authentication flow"
 alcove search "FR-023" --mode grep
 ```
 
-The index builds automatically in the background when the MCP server starts, and rebuilds when it detects file changes. No cron jobs, no manual steps.
+The index builds automatically in the background when the API server starts, and rebuilds when it detects file changes. No cron jobs, no manual steps.
 
 **How it works for agents:** agents just call `search_project_docs` with a query. Alcove handles the rest — ranking, deduplication (one result per file), cross-project search, and fallback. The agent never needs to choose a search mode.
 
@@ -648,8 +660,8 @@ files = ["README.md", "CHANGELOG.md", "PRD.md"]  # PRD exposed as public for thi
 
 ## Supported agents
 
-| Agent | MCP | Skill |
-|-------|-----|-------|
+| Agent | Access | Skill |
+|-------|--------|-------|
 | Claude Code | `~/.claude.json` | `~/.claude/skills/alcove/` |
 | Cursor | `~/.cursor/mcp.json` | `~/.cursor/skills/alcove/` |
 | Claude Desktop | platform config | — |
@@ -811,7 +823,7 @@ Bigger windows don't solve the relevance problem. Even a 200K-token window fille
 
 ## Roadmap
 
-- **Multi-user remote access** — REST API for team doc sharing over LAN/VPN (bearer token auth, rate limiting already implemented). Requires: write API, concurrent index coordination, project lifecycle management.
+- **Multi-user remote access** — team doc sharing over LAN/VPN (bearer token auth, rate limiting already implemented). Requires: write API, concurrent index coordination, project lifecycle management.
 
 ## Contributing
 
