@@ -270,17 +270,32 @@ AI 编码代理通过**本地 HTTP API**（端口 58301）使用 Alcove。技能
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
-| `/health` | GET | 健康检查 — 确认 API 服务器正在运行 |
-| `/search?q=...` | GET | 搜索文档（查询参数） |
-| `/v1/search` | POST | 使用 JSON 主体搜索（支持 scope、limit、mode） |
-| `/mcp` | POST | 所有 16 个 MCP 工具的 JSON-RPC 代理 |
+| `/health` | GET | 健康检查 |
+| `/search?q=...` | GET | 搜索文档 |
+| `/v1/search` | POST | 使用 JSON 主体搜索 |
+| `/projects` | GET | 列出所有项目 |
+| `/projects` | POST | 初始化新项目 |
+| `/projects/{name}/docs` | GET | 列出项目文档 |
+| `/projects/{name}/audit` | GET | 文档健康审计 |
+| `/projects/{name}/validate` | GET | 根据策略验证文档 |
+| `/projects/{name}/config` | PUT | 更新项目设置 |
+| `/docs/{path}` | GET | 读取文档文件 |
+| `/rebuild` | POST | 重建搜索索引 |
+| `/changes` | GET | 检查已更改文件 |
+| `/lint` | GET | 文档 Lint |
+| `/vaults` | GET | 列出 Vault |
+| `/vaults/search?q=...` | GET | 搜索 Vault |
+| `/vaults/backup` | POST | 备份 Vault |
+| `/promote` | POST | 将文件导入 doc-repo |
+| `/index-code` | POST | 索引代码结构 |
+| `/mcp` | POST | JSON-RPC 代理（旧版 MCP） |
 
-> **注意**: MCP 仍然可用。如果您偏好基于 stdio 的访问，请参阅 `registry/mcp.json`。
+> **注意**: MCP 仍然可用于手动设置 — 如需基于 stdio 的访问，请参阅 `registry/mcp.json`。
 
 **代理交互示例：**
 > **用户：** "/alcove 我该如何添加一个新的 API 端点？"
 > **代理：** (调用 `POST /v1/search`，`query="add api endpoint"`)
-> **代理：** (通过 `POST /mcp` 的 `get_doc_file` 读取最相关的文档)
+> **代理：** (通过 `GET /docs/{path}?project=...` 读取最相关的文档)
 > **代理：** "根据 `ARCHITECTURE.md`，您需要..."
 
 ---
@@ -333,13 +348,25 @@ Alcove 将文档分为以下层级：
 
 | 端点 | 方法 | 功能 |
 |------|------|------|
-| `/health` | GET | 健康检查 — 确认 API 服务器正在运行 |
-| `/search?q=...` | GET | 搜索文档（查询参数） |
-| `/v1/search` | POST | 使用 JSON 主体搜索（支持 scope、limit、mode） |
-| `/mcp` | POST | 所有 16 个 MCP 工具的 JSON-RPC 代理 |
-
-16 个 MCP 工具可通过 `POST /mcp` (JSON-RPC) 访问:
-`get_project_docs_overview` · `search_project_docs` · `get_doc_file` · `list_projects` · `audit_project` · `init_project` · `validate_docs` · `rebuild_index` · `check_doc_changes` · `lint_project` · `promote_document` · `search_vault` · `list_vaults` · `configure_project` · `index_code_structure` · `backup_vault`
+| `/health` | GET | 健康检查 |
+| `/search?q=...` | GET | 搜索文档 |
+| `/v1/search` | POST | 使用 JSON 主体搜索 |
+| `/projects` | GET | 列出所有项目 |
+| `/projects` | POST | 初始化新项目 |
+| `/projects/{name}/docs` | GET | 列出项目文档 |
+| `/projects/{name}/audit` | GET | 文档健康审计 |
+| `/projects/{name}/validate` | GET | 根据策略验证文档 |
+| `/projects/{name}/config` | PUT | 更新项目设置 |
+| `/docs/{path}` | GET | 读取文档文件 |
+| `/rebuild` | POST | 重建搜索索引 |
+| `/changes` | GET | 检查已更改文件 |
+| `/lint` | GET | 文档 Lint |
+| `/vaults` | GET | 列出 Vault |
+| `/vaults/search?q=...` | GET | 搜索 Vault |
+| `/vaults/backup` | POST | 备份 Vault |
+| `/promote` | POST | 将文件导入 doc-repo |
+| `/index-code` | POST | 索引代码结构 |
+| `/mcp` | POST | JSON-RPC 代理（旧版 MCP） |
 
 > **注意**: MCP 仍然可用于手动设置 — 请参阅 `registry/mcp.json`。
 

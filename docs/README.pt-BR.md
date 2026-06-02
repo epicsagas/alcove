@@ -25,9 +25,9 @@
   <a href="https://buymeacoffee.com/epicsaga"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee" /></a>
 </p>
 
-O Alcove é um servidor MCP que dá a agentes de codificação com IA acesso sob demanda à documentação privada do seu projeto — **busca híbrida BM25 + vetorial** para recuperação precisa, **indexação de código com tree-sitter** para que os agentes entendam a estrutura da sua base de código, e **aplicação de políticas** para consistência da documentação. Sem inchar o contexto, sem vazar documentos em repositórios públicos, sem configuração por projeto para cada agente.
+O Alcove é um servidor de API HTTP que dá a agentes de codificação com IA acesso sob demanda à documentação privada do seu projeto — **busca híbrida BM25 + vetorial** para recuperação precisa, **indexação de código com tree-sitter** para que os agentes entendam a estrutura da sua base de código, e **aplicação de políticas** para consistência da documentação. Sem inchar o contexto, sem vazar documentos em repositórios públicos, sem configuração por projeto para cada agente.
 
-Mantenha PRDs, decisões de arquitetura, mapas de segredos e runbooks internos em um só lugar. Todo agente compatível com MCP recebe as mesmas ferramentas, em todos os projetos, sem configuração por projeto.
+Mantenha PRDs, decisões de arquitetura, mapas de segredos e runbooks internos em um só lugar. Todos os agentes recebem as mesmas ferramentas, em todos os projetos, sem configuração por projeto.
 
 ## Demonstração
 
@@ -62,7 +62,7 @@ Multiplique por 5 projetos e 3 agentes. Toda vez que você troca, perde o contex
 
 ## Como o Alcove resolve isso
 
-O Alcove mantém todos os seus documentos privados em **um único repositório compartilhado**, organizado por projeto. Qualquer agente compatível com MCP os acessa da mesma forma — seja no Claude Code, Cursor, Antigravity ou Codex.
+O Alcove mantém todos os seus documentos privados em **um único repositório compartilhado**, organizado por projeto. Todos os agentes os acessam da mesma forma via API HTTP — seja no Claude Code, Cursor, Antigravity ou Codex.
 
 ```
 ~/projects/my-app $ claude "/alcove como a autenticação é implementada?"
@@ -85,7 +85,7 @@ O Alcove mantém todos os seus documentos privados em **um único repositório c
 ## O que ele faz
 
 - **Um repositório de documentos, vários projetos** — documentos privados organizados por projeto, gerenciados em um único lugar
-- **Uma configuração, qualquer agente** — configure uma vez, todo agente compatível com MCP recebe o mesmo acesso
+- **Uma configuração, qualquer agente** — configure uma vez, todo agente de IA recebe o mesmo acesso
 - **Detecta automaticamente seu projeto** a partir do CWD — sem necessidade de configuração por projeto
 - **Acesso com escopo** — cada projeto vê apenas seus próprios documentos
 - **Busca inteligente** — busca BM25 com ranking e indexação automática; encontra os documentos mais relevantes primeiro, recorre ao grep quando necessário
@@ -116,7 +116,7 @@ O Alcove mantém todos os seus documentos privados em **um único repositório c
 
 ## Início rápido
 
-> **Obrigatório**: Execute `alcove setup` uma vez após a instalação para configurar o diretório de documentos e ativar todas as funcionalidades. Os plugins registram a conexão MCP automaticamente, mas o Alcove não pode pesquisar ou indexar documentos até que `setup` seja executado.
+> **Obrigatório**: Execute `alcove setup` uma vez após a instalação para configurar o diretório de documentos e ativar todas as funcionalidades. Os plugins iniciam o servidor API automaticamente, mas o Alcove não pode pesquisar ou indexar documentos até que `setup` seja executado.
 >
 > **Usa Obsidian?** Veja a seção [Ecossistema](#ecosystem) para a estrutura de documentos recomendada e configuração de cofres.
 
@@ -127,9 +127,9 @@ O Alcove mantém todos os seus documentos privados em **um único repositório c
 /plugin install alcove@epicsagas
 ```
 
-Instala automaticamente o binário e registra o servidor MCP na próxima inicialização de sessão.
+Instala automaticamente o binário e inicia o servidor API na próxima inicialização de sessão.
 
-> **Obrigatório**: Execute `alcove setup` uma vez após a instalação para configurar sua raiz de documentos e habilitar a funcionalidade completa. O plugin semeia a conexão MCP automaticamente, mas o Alcove não pode pesquisar ou indexar documentos até que o `setup` tenha sido executado.
+> **Obrigatório**: Execute `alcove setup` uma vez após a instalação para configurar sua raiz de documentos e habilitar a funcionalidade completa. O plugin inicia o servidor API automaticamente, mas o Alcove não pode pesquisar ou indexar documentos até que o `setup` tenha sido executado.
 
 ```bash
 alcove setup   # execute uma vez após a instalação do plugin
@@ -143,7 +143,7 @@ Atualizações com `claude plugin update epicsagas/alcove`.
 codex plugin marketplace add epicsagas/plugins
 ```
 
-Instala automaticamente a skill e registra o servidor MCP. As skills estão disponíveis imediatamente — nenhum passo adicional necessário.
+Instala automaticamente a skill e inicia o servidor API. As skills estão disponíveis imediatamente — nenhum passo adicional necessário.
 
 Atualizações com `codex plugin update alcove@epicsagas`.
 
@@ -181,7 +181,7 @@ irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | i
 agy plugins install https://github.com/epicsagas/alcove
 ```
 
-Instala automaticamente o plugin (servidor MCP, skill, hooks) e o registra no próximo início de sessão.
+Instala automaticamente o plugin (servidor API, skill, hooks) e o inicia no próximo início de sessão.
 
 ```bash
 alcove setup   # run once after plugin install
@@ -213,7 +213,7 @@ alcove doctor
 3. Formato de diagrama preferido
 4. Modelo de embeddings para busca híbrida
 5. **Servidor em segundo plano** — eliminar o cold-start em cada sessão (item de login do macOS)
-6. Quais agentes de IA configurar (MCP + arquivos de habilidades — Claude Code e Codex são gerenciados por seus sistemas de plugins)
+6. Quais agentes de IA configurar (arquivos de habilidades — Claude Code e Codex são gerenciados por seus sistemas de plugins)
 
 Execute `alcove setup` novamente a qualquer momento para alterar as configurações. Ele lembra das suas escolhas anteriores.
 
@@ -228,7 +228,7 @@ Sem `pdftotext`, o Alcove recorre a um parser PDF integrado que pode falhar em a
 ### Solução de problemas
 
 **O agente não encontra as ferramentas do Alcove**
-Execute `alcove setup` novamente — ele recadastra o servidor MCP para todos os agentes configurados. Depois inicie uma nova sessão do agente (o registro entra em vigor no próximo início de sessão).
+Execute `alcove setup` novamente — ele reconfigura o servidor API para todos os agentes configurados. Depois inicie uma nova sessão do agente (as mudanças entram em vigor no próximo início de sessão).
 
 **A busca não retorna resultados**
 O índice pode ainda não ter sido construído. Execute `alcove index` para construí-lo e tente novamente.
@@ -237,7 +237,7 @@ O índice pode ainda não ter sido construído. Execute `alcove index` para cons
 `ALCOVE_TOKEN` não está definido no seu shell. Execute `alcove token` para exibi-lo, adicione `export ALCOVE_TOKEN="..."` ao seu perfil de shell e recarregue.
 
 **`alcove doctor` relata problemas**
-Siga as sugestões exibidas por `doctor` — ele verifica a localização do binário, registro MCP, estado do índice e dependências opcionais como `pdftotext`.
+Siga as sugestões exibidas por `doctor` — ele verifica a localização do binário, estado do servidor API, estado do índice e dependências opcionais como `pdftotext`.
 
 ## Uso
 
@@ -262,21 +262,38 @@ alcove search "data model" --mode ranked
 alcove search "deployment" --limit 5
 ```
 
-### Agentes de Codificação (MCP)
+### Agentes de Codificação (API HTTP)
 
-Os agentes de codificação de IA usam o Alcove por meio de **ferramentas MCP**. Geralmente, você não precisa chamá-las manualmente; o agente as invocará quando você fizer perguntas sobre seu projeto.
+Os agentes de codificação de IA usam o Alcove por meio de uma **API HTTP local** na porta 58301. As skills chamam `curl http://localhost:58301/...` internamente. Geralmente, você não precisa chamá-las manualmente; o agente as invocará quando você fizer perguntas sobre seu projeto.
 
-| Objetivo | Ferramenta do Agente | Descrição |
-|----------|-----------------------|-----------|
-| **Explorar** | `get_project_docs_overview` | Lista todos os arquivos no projeto atual para entender a estrutura. |
-| **Buscar** | `search_project_docs` | Busca por palavras-chave ou conceitos específicos. Suporta `scope: "global"`. |
-| **Ler** | `get_doc_file` | Lê o conteúdo de um arquivo específico encontrado durante a busca. |
-| **Auditar** | `audit_project` | Verifica se há documentos faltando ou inconsistências entre o código e os documentos. |
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/health` | GET | Health check |
+| `/search?q=...` | GET | Buscar documentação |
+| `/v1/search` | POST | Buscar com corpo JSON |
+| `/projects` | GET | Listar todos os projetos |
+| `/projects` | POST | Inicializar um novo projeto |
+| `/projects/{name}/docs` | GET | Listar documentos de um projeto |
+| `/projects/{name}/audit` | GET | Auditar integridade dos documentos |
+| `/projects/{name}/validate` | GET | Validar documentos contra a política |
+| `/projects/{name}/config` | PUT | Atualizar configurações do projeto |
+| `/docs/{path}` | GET | Ler um arquivo de documento |
+| `/rebuild` | POST | Reconstruir índice de busca |
+| `/changes` | GET | Verificar arquivos alterados |
+| `/lint` | GET | Lint nos documentos |
+| `/vaults` | GET | Listar vaults |
+| `/vaults/search?q=...` | GET | Buscar nos vaults |
+| `/vaults/backup` | POST | Backup do vault |
+| `/promote` | POST | Importar arquivo para o doc-repo |
+| `/index-code` | POST | Indexar estrutura de código |
+| `/mcp` | POST | Proxy JSON-RPC (MCP legado) |
+
+> **Nota**: MCP continua disponível para configuração manual — consulte `registry/mcp.json` para acesso via stdio.
 
 **Exemplo de interação com o agente:**
 > **Usuário:** "/alcove Como adiciono um novo endpoint de API?"
-> **Agente:** (chama `search_project_docs(query="add api endpoint")`)
-> **Agente:** (lê o documento mais relevante via `get_doc_file`)
+> **Agente:** (chama `POST /v1/search` com `query="add api endpoint"`)
+> **Agente:** (lê o documento mais relevante via `GET /docs/{path}?project=...`)
 > **Agente:** "De acordo com o `ARCHITECTURE.md`, você precisa..."
 
 ---
@@ -296,21 +313,21 @@ flowchart LR
         P1["policy.toml"]
     end
 
-    subgraph Agents["Qualquer agente MCP"]
+    subgraph Agents["Qualquer agente de IA"]
         AG["Claude Code · Cursor\nCodex · Copilot\n+4 more"]
     end
 
-    subgraph MCP["Servidor MCP Alcove"]
+    subgraph API["Servidor API HTTP Alcove"]
         T["search · get_file\noverview · audit\ninit · validate"]
     end
 
     A1 -- "CWD detectado" --> D1
     A2 -- "CWD detectado" --> D2
-    Agents -- "stdio MCP" --> MCP
-    MCP -- "acesso com escopo" --> Docs
+    Agents -- "HTTP :58301" --> API
+    API -- "acesso com escopo" --> Docs
 ```
 
-Seus documentos são organizados em um diretório separado (`DOCS_ROOT`), uma pasta por projeto. O Alcove gerencia os documentos e os serve para qualquer agente de IA compatível com MCP via stdio.
+Seus documentos são organizados em um diretório separado (`DOCS_ROOT`), uma pasta por projeto. O Alcove gerencia os documentos e os serve para qualquer agente de IA via HTTP na porta 58301.
 
 ## Classificação de documentos
 
@@ -325,22 +342,31 @@ O Alcove classifica documentos nos seguintes níveis:
 
 A ferramenta `audit` escaneia o repositório de documentos e o diretório local do projeto, e sugere ações — como gerar um README público a partir do seu PRD privado, ou mover relatórios mal posicionados de volta para o alcove.
 
-## Ferramentas MCP
+## Endpoints de API
 
-| Ferramenta | O que faz |
-|------------|-----------|
-| `get_project_docs_overview` | Lista todos os documentos com classificação e tamanhos |
-| `search_project_docs` | Busca inteligente — seleciona automaticamente BM25 com ranking ou grep, suporta `scope: "global"` para busca entre projetos |
-| `get_doc_file` | Lê um documento específico pelo caminho (suporta `offset`/`limit` para arquivos grandes) |
-| `list_projects` | Mostra todos os projetos no seu repositório de documentos |
-| `audit_project` | Auditoria entre repositórios — escaneia o repo de documentos e o projeto local, sugere ações |
-| `init_project` | Cria estrutura de documentos para um novo projeto (documentos internos+externos, criação seletiva) |
-| `validate_docs` | Valida documentos contra a política da equipe (`policy.toml`) |
-| `rebuild_index` | Reconstrói o índice de busca de texto completo (normalmente automático) |
-| `check_doc_changes` | Detecta documentos adicionados, modificados ou excluídos desde a última indexação |
-| `lint_project` | Lint semântico — links quebrados, órfãos, marcadores obsoletos e datas antigas |
-| `promote_document` | Copiar ou mover um arquivo de um vault externo para o alcove doc-repo |
-| `index_code_structure` | Analisa o código-fonte com tree-sitter e gera `CODE_INDEX.md` por projeto |
+| Endpoint | Método | O que faz |
+|----------|--------|-----------|
+| `/health` | GET | Health check |
+| `/search?q=...` | GET | Buscar documentação |
+| `/v1/search` | POST | Buscar com corpo JSON |
+| `/projects` | GET | Listar todos os projetos |
+| `/projects` | POST | Inicializar um novo projeto |
+| `/projects/{name}/docs` | GET | Listar documentos de um projeto |
+| `/projects/{name}/audit` | GET | Auditar integridade dos documentos |
+| `/projects/{name}/validate` | GET | Validar documentos contra a política |
+| `/projects/{name}/config` | PUT | Atualizar configurações do projeto |
+| `/docs/{path}` | GET | Ler um arquivo de documento |
+| `/rebuild` | POST | Reconstruir índice de busca |
+| `/changes` | GET | Verificar arquivos alterados |
+| `/lint` | GET | Lint nos documentos |
+| `/vaults` | GET | Listar vaults |
+| `/vaults/search?q=...` | GET | Buscar nos vaults |
+| `/vaults/backup` | POST | Backup do vault |
+| `/promote` | POST | Importar arquivo para o doc-repo |
+| `/index-code` | POST | Indexar estrutura de código |
+| `/mcp` | POST | Proxy JSON-RPC (MCP legado) |
+
+> **Nota**: MCP continua disponível para configuração manual — consulte `registry/mcp.json` para acesso via stdio.
 
 ## CLI
 

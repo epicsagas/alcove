@@ -266,17 +266,32 @@ AI 코딩 에이전트는 **로컬 HTTP API**(포트 58301)를 통해 Alcove를 
 
 | 엔드포인트 | 메서드 | 설명 |
 |-----------|--------|------|
-| `/health` | GET | 상태 확인 — API 서버가 실행 중인지 확인 |
-| `/search?q=...` | GET | 문서 검색 (쿼리 파라미터) |
-| `/v1/search` | POST | JSON 본문으로 검색 (scope, limit, mode 지원) |
-| `/mcp` | POST | 16개 MCP 도구 전체에 대한 JSON-RPC 프록시 |
+| `/health` | GET | 상태 확인 |
+| `/search?q=...` | GET | 문서 검색 |
+| `/v1/search` | POST | JSON 본문으로 검색 |
+| `/projects` | GET | 모든 프로젝트 목록 |
+| `/projects` | POST | 새 프로젝트 초기화 |
+| `/projects/{name}/docs` | GET | 프로젝트 문서 목록 |
+| `/projects/{name}/audit` | GET | 문서 상태 감사 |
+| `/projects/{name}/validate` | GET | 정책에 따라 문서 검증 |
+| `/projects/{name}/config` | PUT | 프로젝트 설정 업데이트 |
+| `/docs/{path}` | GET | 문서 파일 읽기 |
+| `/rebuild` | POST | 검색 인덱스 재구축 |
+| `/changes` | GET | 변경된 파일 확인 |
+| `/lint` | GET | 문서 린트 |
+| `/vaults` | GET | 볼트 목록 |
+| `/vaults/search?q=...` | GET | 볼트 검색 |
+| `/vaults/backup` | POST | 볼트 백업 |
+| `/promote` | POST | 파일을 doc-repo로 가져오기 |
+| `/index-code` | POST | 코드 구조 인덱싱 |
+| `/mcp` | POST | JSON-RPC 프록시 (레거시 MCP) |
 
-> **참고**: MCP는 여전히 사용 가능합니다. stdio 기반 접근을 원하시면 `registry/mcp.json`을 참조하세요.
+> **참고**: MCP는 여전히 수동 설정으로 사용 가능합니다 — stdio 기반 접근을 원하시면 `registry/mcp.json`을 참조하세요.
 
 **에이전트 상호작용 예시:**
 > **사용자:** "/alcove 새로운 API 엔드포인트를 어떻게 추가하나요?"
 > **에이전트:** (`POST /v1/search`에 `query="add api endpoint"`로 호출)
-> **에이전트:** (`POST /mcp`로 `get_doc_file`을 통해 가장 관련성 높은 문서를 읽음)
+> **에이전트:** (`GET /docs/{path}?project=...`로 가장 관련성 높은 문서를 읽음)
 > **에이전트:** "`ARCHITECTURE.md`에 따르면, 다음과 같이 추가해야 합니다..."
 
 ---
@@ -329,13 +344,25 @@ Alcove는 문서를 다음과 같이 분류합니다:
 
 | 엔드포인트 | 메서드 | 기능 |
 |-----------|--------|------|
-| `/health` | GET | 상태 확인 — API 서버가 실행 중인지 확인 |
-| `/search?q=...` | GET | 문서 검색 (쿼리 파라미터) |
-| `/v1/search` | POST | JSON 본문으로 검색 (scope, limit, mode 지원) |
-| `/mcp` | POST | 16개 MCP 도구 전체에 대한 JSON-RPC 프록시 |
-
-16개 MCP 도구는 `POST /mcp` (JSON-RPC)를 통해 접근할 수 있습니다:
-`get_project_docs_overview` · `search_project_docs` · `get_doc_file` · `list_projects` · `audit_project` · `init_project` · `validate_docs` · `rebuild_index` · `check_doc_changes` · `lint_project` · `promote_document` · `search_vault` · `list_vaults` · `configure_project` · `index_code_structure` · `backup_vault`
+| `/health` | GET | 상태 확인 |
+| `/search?q=...` | GET | 문서 검색 |
+| `/v1/search` | POST | JSON 본문으로 검색 |
+| `/projects` | GET | 모든 프로젝트 목록 |
+| `/projects` | POST | 새 프로젝트 초기화 |
+| `/projects/{name}/docs` | GET | 프로젝트 문서 목록 |
+| `/projects/{name}/audit` | GET | 문서 상태 감사 |
+| `/projects/{name}/validate` | GET | 정책에 따라 문서 검증 |
+| `/projects/{name}/config` | PUT | 프로젝트 설정 업데이트 |
+| `/docs/{path}` | GET | 문서 파일 읽기 |
+| `/rebuild` | POST | 검색 인덱스 재구축 |
+| `/changes` | GET | 변경된 파일 확인 |
+| `/lint` | GET | 문서 린트 |
+| `/vaults` | GET | 볼트 목록 |
+| `/vaults/search?q=...` | GET | 볼트 검색 |
+| `/vaults/backup` | POST | 볼트 백업 |
+| `/promote` | POST | 파일을 doc-repo로 가져오기 |
+| `/index-code` | POST | 코드 구조 인덱싱 |
+| `/mcp` | POST | JSON-RPC 프록시 (레거시 MCP) |
 
 > **참고**: MCP는 여전히 수동 설정으로 사용 가능합니다 — `registry/mcp.json`을 참조하세요.
 

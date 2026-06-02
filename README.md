@@ -275,7 +275,22 @@ AI coding agents use Alcove through a **local HTTP API** running on port 58301. 
 | `/health` | GET | Health check — verify the API server is running |
 | `/search?q=...` | GET | Search documentation (query parameter) |
 | `/v1/search` | POST | Search with JSON body (supports scope, limit, mode) |
-| `/mcp` | POST | JSON-RPC proxy for all 16 MCP tools |
+| `/projects` | GET | List all projects in the doc-repo |
+| `/projects` | POST | Initialize a new project from templates |
+| `/projects/{name}/docs` | GET | List docs for a project with sizes and classification |
+| `/projects/{name}/audit` | GET | Audit doc health (missing, outdated, misplaced) |
+| `/projects/{name}/validate` | GET | Validate docs against policy.toml |
+| `/projects/{name}/config` | PUT | Update project settings in alcove.toml |
+| `/docs/{path}` | GET | Read a specific doc file (query: `project`, `offset`, `limit`) |
+| `/rebuild` | POST | Rebuild the search index |
+| `/changes` | GET | Check changed files since last index (query: `auto_rebuild`) |
+| `/lint` | GET | Lint docs — broken links, orphans, stale markers (query: `project`) |
+| `/vaults` | GET | List all knowledge base vaults |
+| `/vaults/search?q=...` | GET | Search vaults (query: `vault`, `limit`) |
+| `/vaults/backup` | POST | Git snapshot of vault state |
+| `/promote` | POST | Import a file into the doc-repo |
+| `/index-code` | POST | Index source code via tree-sitter |
+| `/mcp` | POST | JSON-RPC proxy for all 16 MCP tools (legacy) |
 
 > **Note**: MCP is still available — see `registry/mcp.json` for manual MCP setup if you prefer stdio-based access.
 
@@ -296,7 +311,7 @@ curl -X POST http://localhost:58301/v1/search \
 **Example agent interaction:**
 > **User:** "/alcove How do I add a new API endpoint?"
 > **Agent:** (calls `POST /v1/search` with `query="add api endpoint"`)
-> **Agent:** (reads the most relevant doc via `POST /mcp` with `get_doc_file`)
+> **Agent:** (reads the most relevant doc via `GET /docs/{path}?project=...`)
 > **Agent:** "According to `ARCHITECTURE.md`, you need to..."
 
 ---
@@ -339,10 +354,22 @@ Your docs are organized in a separate directory (`DOCS_ROOT`), one folder per pr
 | `/health` | GET | Health check — verify the API server is running |
 | `/search?q=...` | GET | Search documentation (query parameter) |
 | `/v1/search` | POST | Search with JSON body (scope, limit, mode) |
-| `/mcp` | POST | JSON-RPC proxy for all 16 tools (MCP-compatible) |
-
-All 16 tools from the previous MCP interface are accessible via `POST /mcp` (JSON-RPC):
-`get_project_docs_overview` · `search_project_docs` · `get_doc_file` · `list_projects` · `audit_project` · `init_project` · `validate_docs` · `rebuild_index` · `check_doc_changes` · `lint_project` · `promote_document` · `search_vault` · `list_vaults` · `configure_project` · `index_code_structure` · `backup_vault`
+| `/projects` | GET | List all projects |
+| `/projects` | POST | Initialize a new project |
+| `/projects/{name}/docs` | GET | List docs for a project |
+| `/projects/{name}/audit` | GET | Audit doc health |
+| `/projects/{name}/validate` | GET | Validate docs against policy |
+| `/projects/{name}/config` | PUT | Update project settings |
+| `/docs/{path}` | GET | Read a doc file |
+| `/rebuild` | POST | Rebuild search index |
+| `/changes` | GET | Check changed files |
+| `/lint` | GET | Lint docs |
+| `/vaults` | GET | List vaults |
+| `/vaults/search?q=...` | GET | Search vaults |
+| `/vaults/backup` | POST | Backup vault |
+| `/promote` | POST | Import file into doc-repo |
+| `/index-code` | POST | Index code structure |
+| `/mcp` | POST | JSON-RPC proxy (legacy MCP) |
 
 > **Note**: MCP is still available for manual setup — see `registry/mcp.json` for stdio-based access.
 

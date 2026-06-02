@@ -271,14 +271,29 @@ KI-Codierungs-Agenten nutzen Alcove über eine **lokale HTTP API** auf Port 5830
 | `/health` | GET | Health-Check — prüfen ob der API-Server läuft |
 | `/search?q=...` | GET | Dokumentensuche (Query-Parameter) |
 | `/v1/search` | POST | Suche mit JSON-Body (scope, limit, mode) |
-| `/mcp` | POST | JSON-RPC-Proxy für alle 16 MCP-Tools |
+| `/projects` | GET | Alle Projekte im Doc-Repository auflisten |
+| `/projects` | POST | Neues Projekt aus Vorlagen initialisieren |
+| `/projects/{name}/docs` | GET | Dokumente eines Projekts mit Größen und Klassifizierung auflisten |
+| `/projects/{name}/audit` | GET | Dokumentengesundheit prüfen (fehlend, veraltet, fehlplatziert) |
+| `/projects/{name}/validate` | GET | Dokumente gegen policy.toml validieren |
+| `/projects/{name}/config` | PUT | Projekteinstellungen in alcove.toml aktualisieren |
+| `/docs/{path}` | GET | Bestimmte Dokumentdatei lesen (Query: `project`, `offset`, `limit`) |
+| `/rebuild` | POST | Suchindex neu aufbauen |
+| `/changes` | GET | Geänderte Dateien seit letzter Indexierung prüfen (Query: `auto_rebuild`) |
+| `/lint` | GET | Docs linten — defekte Links, verwaiste Dateien, veraltete Markierungen (Query: `project`) |
+| `/vaults` | GET | Alle Wissensdatenbank-Vaults auflisten |
+| `/vaults/search?q=...` | GET | Vaults durchsuchen (Query: `vault`, `limit`) |
+| `/vaults/backup` | POST | Git-Snapshot des Vault-Zustands |
+| `/promote` | POST | Datei ins Doc-Repository importieren |
+| `/index-code` | POST | Quellcode über tree-sitter indexieren |
+| `/mcp` | POST | JSON-RPC-Proxy (Legacy MCP) |
 
-> **Hinweis**: MCP ist weiterhin verfügbar — siehe `registry/mcp.json` für manuelles MCP-Setup.
+> **Hinweis**: MCP ist weiterhin für manuelles Setup verfügbar — siehe `registry/mcp.json` für stdio-basierten Zugriff.
 
 **Beispiel für die Interaktion mit dem Agenten:**
 > **Benutzer:** "/alcove Wie füge ich einen neuen API-Endpunkt hinzu?"
 > **Agent:** (ruft `POST /v1/search` mit `query="add api endpoint"` auf)
-> **Agent:** (liest das relevanteste Dokument über `POST /mcp` mit `get_doc_file`)
+> **Agent:** (liest das relevanteste Dokument über `GET /docs/{path}?project=...`)
 > **Agent:** "Laut `ARCHITECTURE.md` müssen Sie..."
 
 ---
@@ -334,12 +349,24 @@ Das `audit`-Tool scannt sowohl das Docs-Repository als auch das lokale Projektve
 | `/health` | GET | Health-Check — prüfen ob der API-Server läuft |
 | `/search?q=...` | GET | Dokumentensuche (Query-Parameter) |
 | `/v1/search` | POST | Suche mit JSON-Body (scope, limit, mode) |
-| `/mcp` | POST | JSON-RPC-Proxy für alle 16 MCP-Tools |
+| `/projects` | GET | Alle Projekte auflisten |
+| `/projects` | POST | Neues Projekt initialisieren |
+| `/projects/{name}/docs` | GET | Dokumente eines Projekts auflisten |
+| `/projects/{name}/audit` | GET | Dokumentengesundheit prüfen |
+| `/projects/{name}/validate` | GET | Dokumente gegen Policy validieren |
+| `/projects/{name}/config` | PUT | Projekteinstellungen aktualisieren |
+| `/docs/{path}` | GET | Dokumentdatei lesen |
+| `/rebuild` | POST | Suchindex neu aufbauen |
+| `/changes` | GET | Geänderte Dateien prüfen |
+| `/lint` | GET | Docs linten |
+| `/vaults` | GET | Vaults auflisten |
+| `/vaults/search?q=...` | GET | Vaults durchsuchen |
+| `/vaults/backup` | POST | Vault sichern |
+| `/promote` | POST | Datei ins Doc-Repository importieren |
+| `/index-code` | POST | Code-Struktur indexieren |
+| `/mcp` | POST | JSON-RPC-Proxy (Legacy MCP) |
 
-Alle 16 MCP-Tools sind über `POST /mcp` (JSON-RPC) erreichbar:
-`get_project_docs_overview` · `search_project_docs` · `get_doc_file` · `list_projects` · `audit_project` · `init_project` · `validate_docs` · `rebuild_index` · `check_doc_changes` · `lint_project` · `promote_document` · `search_vault` · `list_vaults` · `configure_project` · `index_code_structure` · `backup_vault`
-
-> **Hinweis**: MCP ist weiterhin für manuelles Setup verfügbar — siehe `registry/mcp.json`.
+> **Hinweis**: MCP ist weiterhin für manuelles Setup verfügbar — siehe `registry/mcp.json` für stdio-basierten Zugriff.
 
 ## CLI
 

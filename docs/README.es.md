@@ -273,14 +273,29 @@ Los agentes de codificación de IA utilizan Alcove a través de una **API HTTP l
 | `/health` | GET | Health check — verificar que el servidor API está en ejecución |
 | `/search?q=...` | GET | Buscar documentación (parámetro de consulta) |
 | `/v1/search` | POST | Buscar con cuerpo JSON (scope, limit, mode) |
-| `/mcp` | POST | Proxy JSON-RPC para las 16 herramientas MCP |
+| `/projects` | GET | Listar todos los proyectos en el repositorio de documentos |
+| `/projects` | POST | Inicializar un nuevo proyecto desde plantillas |
+| `/projects/{name}/docs` | GET | Listar documentos de un proyecto con tamaños y clasificación |
+| `/projects/{name}/audit` | GET | Auditar salud documental (faltantes, obsoletos, mal ubicados) |
+| `/projects/{name}/validate` | GET | Validar documentos contra policy.toml |
+| `/projects/{name}/config` | PUT | Actualizar configuración del proyecto en alcove.toml |
+| `/docs/{path}` | GET | Leer un archivo de documento específico (query: `project`, `offset`, `limit`) |
+| `/rebuild` | POST | Reconstruir el índice de búsqueda |
+| `/changes` | GET | Verificar archivos modificados desde el último índice (query: `auto_rebuild`) |
+| `/lint` | GET | Lint de documentos — enlaces rotos, huérfanos, marcadores obsoletos (query: `project`) |
+| `/vaults` | GET | Listar todos los vaults de base de conocimiento |
+| `/vaults/search?q=...` | GET | Buscar en vaults (query: `vault`, `limit`) |
+| `/vaults/backup` | POST | Snapshot de Git del estado del vault |
+| `/promote` | POST | Importar un archivo al repositorio de documentos |
+| `/index-code` | POST | Indexar código fuente mediante tree-sitter |
+| `/mcp` | POST | Proxy JSON-RPC (MCP heredado) |
 
-> **Nota**: MCP sigue disponible — consulta `registry/mcp.json` para configuración manual.
+> **Nota**: MCP sigue disponible para configuración manual — consulta `registry/mcp.json` para acceso basado en stdio.
 
 **Ejemplo de interacción con el agente:**
 > **Usuario:** "/alcove ¿Cómo añado un nuevo endpoint a la API?"
 > **Agente:** (llama a `POST /v1/search` con `query="add api endpoint"`)
-> **Agente:** (lee el documento más relevante vía `POST /mcp` con `get_doc_file`)
+> **Agente:** (lee el documento más relevante vía `GET /docs/{path}?project=...`)
 > **Agente:** "Según `ARCHITECTURE.md`, necesitas..."
 
 ---
@@ -336,12 +351,24 @@ La herramienta `audit` escanea tanto el repositorio de documentos como el direct
 | `/health` | GET | Health check — verificar que el servidor API está en ejecución |
 | `/search?q=...` | GET | Buscar documentación (parámetro de consulta) |
 | `/v1/search` | POST | Buscar con cuerpo JSON (scope, limit, mode) |
-| `/mcp` | POST | Proxy JSON-RPC para las 16 herramientas MCP |
+| `/projects` | GET | Listar todos los proyectos |
+| `/projects` | POST | Inicializar un nuevo proyecto |
+| `/projects/{name}/docs` | GET | Listar documentos de un proyecto |
+| `/projects/{name}/audit` | GET | Auditar salud documental |
+| `/projects/{name}/validate` | GET | Validar documentos contra la política |
+| `/projects/{name}/config` | PUT | Actualizar configuración del proyecto |
+| `/docs/{path}` | GET | Leer un archivo de documento |
+| `/rebuild` | POST | Reconstruir índice de búsqueda |
+| `/changes` | GET | Verificar archivos modificados |
+| `/lint` | GET | Lint de documentos |
+| `/vaults` | GET | Listar vaults |
+| `/vaults/search?q=...` | GET | Buscar en vaults |
+| `/vaults/backup` | POST | Respaldar vault |
+| `/promote` | POST | Importar archivo al repositorio de documentos |
+| `/index-code` | POST | Indexar estructura de código |
+| `/mcp` | POST | Proxy JSON-RPC (MCP heredado) |
 
-Las 16 herramientas MCP están accesibles vía `POST /mcp` (JSON-RPC):
-`get_project_docs_overview` · `search_project_docs` · `get_doc_file` · `list_projects` · `audit_project` · `init_project` · `validate_docs` · `rebuild_index` · `check_doc_changes` · `lint_project` · `promote_document` · `search_vault` · `list_vaults` · `configure_project` · `index_code_structure` · `backup_vault`
-
-> **Nota**: MCP sigue disponible para configuración manual — consulta `registry/mcp.json`.
+> **Nota**: MCP sigue disponible para configuración manual — consulta `registry/mcp.json` para acceso basado en stdio.
 
 ## CLI
 
