@@ -16,11 +16,15 @@ alcove api status   # check if server is running
 alcove api start    # start if not running
 ```
 
-- **Base URL**: `http://localhost:58301`
+- **Base URL**: `$(alcove api url)` — resolve at runtime, never hardcode the port
 - **Auth**: `Authorization: Bearer $ALCOVE_TOKEN` (if token configured during setup)
-- **Health check**: `curl -s http://localhost:58301/health`
+- **Health check**: `curl -s "$(alcove api url)/health"`
 
-All commands below use the Bash tool to run `curl`. If `ALCOVE_TOKEN` is set, add `-H "Authorization: Bearer $ALCOVE_TOKEN"` to every request.
+Resolve the base URL once at the start of every session:
+```bash
+ALCOVE_URL=$(alcove api url)   # e.g. http://127.0.0.1:57384
+```
+All commands below use `$ALCOVE_URL`. If `ALCOVE_TOKEN` is set, add `-H "Authorization: Bearer $ALCOVE_TOKEN"` to every request.
 
 ## When to Use
 
@@ -48,19 +52,19 @@ Use the search endpoint. Project is auto-detected from CWD.
 
 ```bash
 # Search current project (default)
-curl -s 'http://localhost:58301/search?q=QUERY'
+curl -s '$ALCOVE_URL/search?q=QUERY'
 
 # Search with options
-curl -s 'http://localhost:58301/search?q=QUERY&limit=10&mode=hybrid'
+curl -s '$ALCOVE_URL/search?q=QUERY&limit=10&mode=hybrid'
 
 # Search a specific project
-curl -s 'http://localhost:58301/search?q=QUERY&project=PROJ'
+curl -s '$ALCOVE_URL/search?q=QUERY&project=PROJ'
 
 # Search across all projects
-curl -s 'http://localhost:58301/search?q=QUERY&limit=20'
+curl -s '$ALCOVE_URL/search?q=QUERY&limit=20'
 
 # POST search (JSON body)
-curl -s -X POST http://localhost:58301/v1/search \
+curl -s -X POST $ALCOVE_URL/v1/search \
   -H 'Content-Type: application/json' \
   -d '{"q": "QUERY", "limit": 10, "project": "proj", "mode": "hybrid"}'
 ```
@@ -71,33 +75,33 @@ Response: `{"query": "...", "results": [...], "mode": "...", "truncated": false}
 
 ```bash
 # List projects
-curl -s http://localhost:58301/projects
+curl -s $ALCOVE_URL/projects
 
 # Init project
-curl -s -X POST http://localhost:58301/projects \
+curl -s -X POST $ALCOVE_URL/projects \
   -H 'Content-Type: application/json' \
   -d '{"project_name": "myproj", "project_path": "/abs/path"}'
 
 # Project docs overview (with sizes and classification)
-curl -s http://localhost:58301/projects/PROJECT/docs
+curl -s $ALCOVE_URL/projects/PROJECT/docs
 
 # Audit doc health
-curl -s http://localhost:58301/projects/PROJECT/audit
+curl -s $ALCOVE_URL/projects/PROJECT/audit
 
 # Validate against policy.toml
-curl -s http://localhost:58301/projects/PROJECT/validate
+curl -s $ALCOVE_URL/projects/PROJECT/validate
 
 # Configure project settings
-curl -s -X PUT http://localhost:58301/projects/PROJECT/config \
+curl -s -X PUT $ALCOVE_URL/projects/PROJECT/config \
   -H 'Content-Type: application/json' \
   -d '{"core_files": ["PRD.md", "ARCHITECTURE.md"]}'
 
 # Read a doc file
-curl -s 'http://localhost:58301/docs/PRD.md?project=PROJECT'
-curl -s 'http://localhost:58301/docs/reports/weekly.md?project=PROJECT&offset=0&limit=2000'
+curl -s '$ALCOVE_URL/docs/PRD.md?project=PROJECT'
+curl -s '$ALCOVE_URL/docs/reports/weekly.md?project=PROJECT&offset=0&limit=2000'
 
 # Index code structure
-curl -s -X POST http://localhost:58301/index-code \
+curl -s -X POST $ALCOVE_URL/index-code \
   -H 'Content-Type: application/json' \
   -d '{"source_path": "/abs/path/src", "language": "rust", "project": "PROJECT"}'
 ```
@@ -117,13 +121,13 @@ curl -s -X POST http://localhost:58301/index-code \
 
 ```bash
 # Rebuild index
-curl -s -X POST http://localhost:58301/rebuild
+curl -s -X POST $ALCOVE_URL/rebuild
 
 # Check changed files since last index
-curl -s 'http://localhost:58301/changes?auto_rebuild=true'
+curl -s '$ALCOVE_URL/changes?auto_rebuild=true'
 
 # Lint docs
-curl -s 'http://localhost:58301/lint?project=PROJECT'
+curl -s '$ALCOVE_URL/lint?project=PROJECT'
 ```
 
 | Action | Method | Endpoint |
@@ -136,18 +140,18 @@ curl -s 'http://localhost:58301/lint?project=PROJECT'
 
 ```bash
 # List vaults
-curl -s http://localhost:58301/vaults
+curl -s $ALCOVE_URL/vaults
 
 # Search vaults
-curl -s 'http://localhost:58301/vaults/search?q=QUERY&vault=*&limit=20'
+curl -s '$ALCOVE_URL/vaults/search?q=QUERY&vault=*&limit=20'
 
 # Backup vault
-curl -s -X POST http://localhost:58301/vaults/backup \
+curl -s -X POST $ALCOVE_URL/vaults/backup \
   -H 'Content-Type: application/json' \
   -d '{"vault_name": "myvault"}'
 
 # Promote document into doc-repo
-curl -s -X POST http://localhost:58301/promote \
+curl -s -X POST $ALCOVE_URL/promote \
   -H 'Content-Type: application/json' \
   -d '{"source": "/abs/path/notes.md", "project": "PROJECT", "copy": true}'
 ```
@@ -164,7 +168,7 @@ curl -s -X POST http://localhost:58301/promote \
 The JSON-RPC proxy remains available for MCP clients:
 
 ```bash
-curl -s -X POST http://localhost:58301/mcp \
+curl -s -X POST $ALCOVE_URL/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"TOOL_NAME","arguments":{}}}'
 ```
@@ -172,7 +176,7 @@ curl -s -X POST http://localhost:58301/mcp \
 ### Health Check
 
 ```bash
-curl -s http://localhost:58301/health
+curl -s $ALCOVE_URL/health
 # → {"status": "ok", "version": "x.y.z", "docs_root_configured": true, "projects": N}
 ```
 

@@ -1258,9 +1258,6 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
     }
 
     println!();
-    println!("  {}", style(t!("setup.hint_update").to_string()).dim());
-    println!("  {}", style(t!("setup.hint_uninstall").to_string()).dim());
-    println!();
 
     crate::telemetry::Telemetry::init().track_setup_completed();
 

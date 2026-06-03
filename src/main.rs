@@ -276,6 +276,8 @@ enum ServerCommands {
         #[arg(long)]
         now: bool,
     },
+    /// Print the base URL of the running server (reads from config)
+    Url,
     /// Internal use: run foreground server for background daemon
     #[command(hide = true)]
     Serve {
@@ -554,6 +556,12 @@ fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()
         ServerCommands::Stop => launchd::stop(kind),
         ServerCommands::Restart { host: _, port: _ } => launchd::restart(kind),
         ServerCommands::Status => launchd::status(kind),
+        ServerCommands::Url => {
+            let cfg = config::load_config();
+            let srv = cfg.server_config();
+            println!("http://{}:{}", srv.host, srv.port);
+            Ok(())
+        }
         ServerCommands::Enable { now } => {
             let res = launchd::enable(kind);
             if now && res.is_ok() {
