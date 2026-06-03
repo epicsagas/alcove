@@ -828,6 +828,7 @@ pub async fn run_server(
     socket.set_reuse_address(true)?;
     socket.bind(&addr.into())?;
     socket.listen(128)?;
+    socket.set_nonblocking(true)?;
     let listener = tokio::net::TcpListener::from_std(socket.into())?;
 
     println!(
