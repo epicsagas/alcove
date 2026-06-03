@@ -344,10 +344,147 @@ impl Default for MemoryConfig {
     }
 }
 
+/// A single entry in `docs_roots` — a named doc-root with an optional
+/// per-root embedding override.
+///
+/// ```toml
+/// [[docs_roots]]
+/// name = "oss"
+/// path = "~/.alcove/docs-oss"
+///
+/// [[docs_roots]]
+/// name = "work"
+/// path = "~/.alcove/docs-work"
+/// [docs_roots.embedding]
+/// model = "BGEM3"
+/// ```
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DocRootEntry {
+    /// Human-readable identifier shown in `list_projects` output.
+    pub name: String,
+    /// Filesystem path (tilde-expanded at runtime).
+    pub path: String,
+    /// Per-root embedding override.  Falls back to global `[embedding]` when absent.
+    /// NOTE: cfg-gate must stay in sync with `ResolvedDocRoot.embedding`.
+    #[cfg(feature = "embed-candle")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<EmbeddingConfig>,
+}
+
+/// A resolved `DocRootEntry` with the path expanded and validated.
+///
+/// `path` is always stored in canonical form (via `canonicalize()` during
+/// resolution), so callers can rely on it being absolute with symlinks resolved.
+#[derive(Debug, Clone)]
+pub struct ResolvedDocRoot {
+    pub name: String,
+    pub path: PathBuf,
+    /// Per-root embedding override, if configured.
+    /// NOTE: cfg-gate must stay in sync with `DocRootEntry.embedding`.
+    /// TODO: wire per-root embedding into the index builder.
+    #[cfg(feature = "embed-candle")]
+    #[allow(dead_code)]
+    pub embedding: Option<EmbeddingConfig>,
+}
+
+impl ResolvedDocRoot {
+    /// Create a single-root entry with the "default" name and no embedding override.
+    pub fn new_default(path: PathBuf) -> Self {
+        Self {
+            name: "default".into(),
+            path,
+            #[cfg(feature = "embed-candle")]
+            embedding: None,
+        }
+    }
+
+    /// Create from a `DocRootEntry` with a pre-resolved canonical path.
+    ///
+    /// This is the single conversion point between the two types — the
+    /// `#[cfg(feature = "embed-candle")]` gate for the `embedding` field
+    /// only needs to be maintained here and in the struct definitions.
+    pub fn from_entry(entry: &DocRootEntry, canonical_path: PathBuf) -> Self {
+        Self {
+            name: entry.name.clone(),
+            path: canonical_path,
+            #[cfg(feature = "embed-candle")]
+            embedding: entry.embedding.clone(),
+        }
+    }
+}
+
+/// Expand a leading `~` to the user's home directory.
+///
+/// Handles both `~/path` and bare `~` forms.
+fn expand_tilde(s: &str) -> PathBuf {
+    if let Some(home) = dirs::home_dir() {
+        if s == "~" {
+            return home;
+        }
+        if let Some(stripped) = s.strip_prefix("~/") {
+            return home.join(stripped);
+        }
+    }
+    PathBuf::from(s)
+}
+
+/// Validate a doc-root candidate path: expand tilde, canonicalize, check for
+/// blocked system paths, and verify the path is a directory.
+///
+/// On failure, prints a diagnostic to stderr using `label` and `raw` for
+/// context, then returns `None` so the caller's priority chain can fall through.
+fn validate_doc_root_path(raw: &str, label: &str) -> Option<PathBuf> {
+    let expanded = expand_tilde(raw);
+    let canonical = match expanded.canonicalize() {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!("[alcove] {} '{}' does not exist — skipping", label, raw);
+            return None;
+        }
+    };
+    if is_blocked_system_path(&canonical) {
+        eprintln!(
+            "[alcove] {} points to blocked system path: {} — skipping",
+            label,
+            canonical.display()
+        );
+        return None;
+    }
+    if !canonical.is_dir() {
+        eprintln!("[alcove] {} '{}' is not a directory — skipping", label, raw);
+        return None;
+    }
+    Some(canonical)
+}
+
+/// Shared logic for resolving a single-root path.
+///
+/// Returns `None` (with a warning) if the path is blocked or missing, allowing
+/// the caller's priority chain to fall through to the next source.
+fn resolve_single_root(raw: &str, label: &str) -> Option<ResolvedDocRoot> {
+    validate_doc_root_path(raw, label).map(ResolvedDocRoot::new_default)
+}
+
+impl DocRootEntry {
+    /// Expand `~` prefix and canonicalize the path.
+    /// Returns `None` if the path doesn't exist, is not a directory, or points to a blocked system directory.
+    fn expand_path(&self) -> Option<PathBuf> {
+        let label = format!("docs_roots entry '{}'", self.name);
+        validate_doc_root_path(&self.path, &label)
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct DocConfig {
+    /// Legacy single doc-root path.  Still supported; takes precedence over
+    /// `docs_roots` when both are present (env var `DOCS_ROOT` takes precedence
+    /// over both).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docs_root: Option<String>,
+    /// Multiple named doc-roots.  Ignored when `DOCS_ROOT` env var or `docs_root`
+    /// field is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docs_roots: Option<Vec<DocRootEntry>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub core: Option<CategoryConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -386,6 +523,7 @@ impl DocConfig {
     pub fn overlay(&self, base: &DocConfig) -> DocConfig {
         DocConfig {
             docs_root: self.docs_root.clone().or_else(|| base.docs_root.clone()),
+            docs_roots: self.docs_roots.clone().or_else(|| base.docs_roots.clone()),
             core: self.core.clone().or_else(|| base.core.clone()),
             team: self.team.clone().or_else(|| base.team.clone()),
             public: self.public.clone().or_else(|| base.public.clone()),
@@ -461,6 +599,84 @@ impl DocConfig {
             return Some(fallback);
         }
         None
+    }
+
+    /// Return all configured doc-roots as resolved paths.
+    ///
+    /// Priority (highest → lowest):
+    ///   1. `DOCS_ROOT` env var — single root named "default"
+    ///   2. `docs_root` field   — single root named "default"
+    ///   3. `docs_roots` field  — multiple named roots
+    ///   4. built-in default (`~/.alcove/docs`) if the directory exists
+    ///
+    /// Returns an empty Vec if no root is configured or discoverable.
+    ///
+    /// **Performance note**: this method performs filesystem I/O (`canonicalize` +
+    /// `is_dir`) for each configured root on every call.  It is called once per
+    /// MCP tool dispatch, which is acceptable for typical root counts (1–5).
+    /// TODO: cache the result at server startup when the number of roots or
+    /// call frequency grows large enough to make this a bottleneck.
+    pub fn resolved_docs_roots(&self) -> Vec<ResolvedDocRoot> {
+        Self::roots_from_env()
+            .or_else(|| self.roots_from_legacy_field())
+            .or_else(|| self.roots_from_multi_field())
+            .or_else(Self::roots_from_builtin_default)
+            .unwrap_or_default()
+    }
+
+    /// Priority 1: `DOCS_ROOT` env var — highest priority single-root override.
+    fn roots_from_env() -> Option<Vec<ResolvedDocRoot>> {
+        let v = std::env::var("DOCS_ROOT").ok()?;
+        resolve_single_root(&v, "DOCS_ROOT").map(|r| vec![r])
+    }
+
+    /// Priority 2: Legacy single `docs_root` field.
+    fn roots_from_legacy_field(&self) -> Option<Vec<ResolvedDocRoot>> {
+        let root = self.docs_root.as_ref()?;
+        resolve_single_root(root, "docs_root").map(|r| vec![r])
+    }
+
+    /// Priority 3: Multiple named `docs_roots` entries.
+    fn roots_from_multi_field(&self) -> Option<Vec<ResolvedDocRoot>> {
+        let entries = self.docs_roots.as_ref()?;
+        let roots: Vec<ResolvedDocRoot> = entries
+            .iter()
+            .filter_map(|e| {
+                e.expand_path()
+                    .map(|path| ResolvedDocRoot::from_entry(e, path))
+            })
+            .collect();
+        if roots.is_empty() {
+            eprintln!(
+                "[alcove] all {} configured docs_roots entries failed validation — \
+                 falling back to default",
+                entries.len()
+            );
+            None
+        } else {
+            Some(roots)
+        }
+    }
+
+    /// Priority 4: Built-in default (`~/.alcove/docs`) if the directory exists.
+    fn roots_from_builtin_default() -> Option<Vec<ResolvedDocRoot>> {
+        let fallback = default_docs_root();
+        // canonicalize() fails when the path doesn't exist — return None so the
+        // caller's priority chain stays clean.  Using `ok()?` also preserves the
+        // ResolvedDocRoot invariant that `path` is always in canonical form.
+        let canonical = fallback.canonicalize().ok()?;
+        if is_blocked_system_path(&canonical) {
+            eprintln!(
+                "[alcove] built-in default docs root points to blocked system path: {} — skipping",
+                canonical.display()
+            );
+            return None;
+        }
+        if canonical.is_dir() {
+            Some(vec![ResolvedDocRoot::new_default(canonical)])
+        } else {
+            None
+        }
     }
 
     #[cfg_attr(test, allow(dead_code))]
@@ -565,6 +781,7 @@ pub fn load_config() -> &'static DocConfig {
         }
         DocConfig {
             docs_root: None,
+            docs_roots: None,
             core: None,
             team: None,
             public: None,
@@ -812,6 +1029,7 @@ pub fn is_doc_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn classify_core_files() {
@@ -1044,6 +1262,203 @@ mod tests {
         if let Some(ref p) = result {
             assert!(p.is_dir());
         }
+    }
+
+    // -- resolved_docs_roots --
+
+    /// RAII guard: removes `path` on drop so test directories are cleaned up
+    /// even when an assertion panics.
+    struct TempDir(std::path::PathBuf);
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn resolved_docs_roots_uses_legacy_docs_root() {
+        let base = alcove_home().join(format!("test-legacy-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let _guard = TempDir(base.clone());
+        let cfg = DocConfig {
+            docs_root: Some(base.to_string_lossy().to_string()),
+            ..DocConfig::default()
+        };
+        let roots = cfg.resolved_docs_roots();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].name, "default");
+        // canonicalize resolves to the same absolute path
+        assert!(roots[0].path.is_absolute());
+        #[cfg(feature = "embed-candle")]
+        assert!(roots[0].embedding.is_none());
+    }
+
+    #[test]
+    fn resolved_docs_roots_uses_docs_roots_vec() {
+        // Use a tempdir under ~/.alcove/test-* so paths are outside /tmp
+        // and pass is_blocked_system_path.
+        let base = alcove_home().join(format!("test-multi-root-{}", std::process::id()));
+        let oss_path = base.join("oss");
+        let work_path = base.join("work");
+        std::fs::create_dir_all(&oss_path).unwrap();
+        std::fs::create_dir_all(&work_path).unwrap();
+        let _guard = TempDir(base.clone());
+
+        // docs_root takes precedence over docs_roots.
+        let cfg = DocConfig {
+            docs_root: Some(oss_path.to_string_lossy().to_string()),
+            docs_roots: Some(vec![DocRootEntry {
+                name: "work".into(),
+                path: work_path.to_string_lossy().to_string(),
+                #[cfg(feature = "embed-candle")]
+                embedding: None,
+            }]),
+            ..DocConfig::default()
+        };
+        let roots = cfg.resolved_docs_roots();
+        assert_eq!(roots.len(), 1, "docs_root must win over docs_roots");
+        // Path is canonicalized, so compare with canonical form
+        assert_eq!(
+            roots[0].path,
+            oss_path.canonicalize().unwrap_or(oss_path.clone())
+        );
+
+        // docs_roots alone (no docs_root field).
+        let cfg2 = DocConfig {
+            docs_roots: Some(vec![
+                DocRootEntry {
+                    name: "oss".into(),
+                    path: oss_path.to_string_lossy().to_string(),
+                    #[cfg(feature = "embed-candle")]
+                    embedding: None,
+                },
+                DocRootEntry {
+                    name: "work".into(),
+                    path: work_path.to_string_lossy().to_string(),
+                    #[cfg(feature = "embed-candle")]
+                    embedding: None,
+                },
+            ]),
+            ..DocConfig::default()
+        };
+        let roots2 = cfg2.resolved_docs_roots();
+        assert_eq!(roots2.len(), 2);
+        assert_eq!(roots2[0].name, "oss");
+        assert_eq!(roots2[1].name, "work");
+    }
+
+    #[test]
+    fn resolved_docs_roots_empty_when_nothing_configured() {
+        // The built-in default (~/.alcove/docs) may or may not exist in the
+        // test environment, so the result is 0 or 1 roots — both are valid.
+        let cfg = DocConfig::default();
+        let roots = cfg.resolved_docs_roots();
+        assert!(roots.len() <= 1);
+        // Whatever is returned must never be a raw uncanonicalized path.
+        for r in &roots {
+            assert!(
+                r.path.is_absolute(),
+                "resolved path must be absolute: {:?}",
+                r.path
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn resolved_docs_roots_skips_nonexistent_docs_root_env() {
+        // When DOCS_ROOT points to a non-existent path it is skipped, and the
+        // chain falls through to the next source (legacy field, multi field, or
+        // built-in default). Verify that the invalid DOCS_ROOT path never appears
+        // in the returned roots — the chain must not pass through unchecked paths.
+        let prev = std::env::var("DOCS_ROOT").ok();
+        unsafe {
+            std::env::set_var("DOCS_ROOT", "/nonexistent-alcove-test-path-xyzqrs123");
+        }
+        let cfg = DocConfig::default();
+        let roots = cfg.resolved_docs_roots();
+        if let Some(v) = prev {
+            unsafe { std::env::set_var("DOCS_ROOT", v) };
+        } else {
+            unsafe { std::env::remove_var("DOCS_ROOT") };
+        }
+        for r in &roots {
+            assert_ne!(
+                r.path.to_string_lossy().as_ref(),
+                "/nonexistent-alcove-test-path-xyzqrs123",
+                "invalid DOCS_ROOT path must never appear in resolved roots"
+            );
+            assert!(
+                r.path.is_absolute(),
+                "resolved path must be absolute: {:?}",
+                r.path
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_docs_roots_expands_tilde_in_docs_root() {
+        // Construct a path that starts with "~/" and verify it resolves to an
+        // absolute path (i.e. the tilde was expanded).
+        let home = dirs::home_dir().expect("home dir must exist for this test");
+        // Point at ~/.alcove itself — guaranteed to exist on any dev machine
+        // that has alcove installed, but safe to test even if it doesn't because
+        // we only check that the path is absolute, not that it's a dir.
+        let tilde_path = "~/.alcove".to_string();
+        let cfg = DocConfig {
+            docs_root: Some(tilde_path),
+            ..DocConfig::default()
+        };
+        let roots = cfg.resolved_docs_roots();
+        // If ~/.alcove exists as a dir we get one root; if not, zero. Either way
+        // verify the returned path (if any) does NOT contain a literal "~".
+        for r in &roots {
+            assert!(
+                r.path.is_absolute(),
+                "tilde must have been expanded: {:?}",
+                r.path
+            );
+            assert!(
+                !r.path.starts_with("~"),
+                "literal tilde must not appear in resolved path: {:?}",
+                r.path
+            );
+        }
+        // Sanity: the resolved path, when it exists, should start with home.
+        if !roots.is_empty() && roots[0].path.exists() {
+            assert!(roots[0].path.starts_with(&home));
+        }
+    }
+
+    #[test]
+    fn resolved_docs_roots_blocked_docs_root_skips_to_fallback() {
+        // Setting docs_root to a blocked path (e.g. /tmp which is blocked by
+        // is_blocked_system_path) should skip that entry and fall through to
+        // the default fallback, not panic.
+        let cfg = DocConfig {
+            docs_root: Some("/tmp".to_string()),
+            ..DocConfig::default()
+        };
+        // Should not panic; may return 0 or 1 roots depending on default dir.
+        let roots = cfg.resolved_docs_roots();
+        // /tmp must never appear in the results.
+        for r in &roots {
+            assert_ne!(
+                r.path.to_string_lossy().as_ref(),
+                "/tmp",
+                "blocked path must not appear in resolved roots"
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_doc_root_new_default_creates_correct_entry() {
+        let path = PathBuf::from("/some/path");
+        let root = ResolvedDocRoot::new_default(path.clone());
+        assert_eq!(root.name, "default");
+        assert_eq!(root.path, path);
+        #[cfg(feature = "embed-candle")]
+        assert!(root.embedding.is_none());
     }
 
     #[test]

@@ -186,9 +186,10 @@ pub fn enable(kind: ServiceKind) -> Result<()> {
     }
     std::fs::create_dir_all(log_dir())?;
 
-    // Unload first if already registered
+    // Unload first if already registered, then wait for port release.
     if is_loaded(kind) {
-        let _ = launchctl(&["unload", &plist.to_string_lossy()]);
+        launchctl(&["unload", &plist.to_string_lossy()])?;
+        std::thread::sleep(std::time::Duration::from_millis(300));
     }
 
     // Write plist
