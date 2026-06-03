@@ -685,6 +685,14 @@ pub fn tool_get_file(project_root: &Path, args_value: Value) -> Result<Value> {
 // Tool: list_projects
 // ---------------------------------------------------------------------------
 
+/// Maximum directory traversal depth for `list_projects` doc counting.
+///
+/// Behavioral change from the original unlimited traversal: docs nested deeper
+/// than this will not be counted.  10 covers typical project layouts while
+/// preventing runaway scans in deeply nested directories (node_modules, build
+/// artifacts).
+const MAX_LIST_PROJECTS_DEPTH: usize = 10;
+
 pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
     let single = crate::config::ResolvedDocRoot::new_default(docs_root.to_path_buf());
     list_projects_impl(std::slice::from_ref(&single), false)
@@ -739,11 +747,9 @@ fn list_projects_impl(
             }
 
             // Limit traversal depth to avoid runaway scans in deeply nested
-            // directories (e.g. node_modules, build artifacts).  NOTE: this is
-            // a behavioral change from the original unlimited traversal; docs
-            // nested deeper than 10 levels will not be counted.
+            // directories (e.g. node_modules, build artifacts).
             let doc_count = WalkDir::new(&path)
-                .max_depth(10)
+                .max_depth(MAX_LIST_PROJECTS_DEPTH)
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|e| e.file_type().is_file() && is_doc_file(e.path()))
@@ -819,8 +825,8 @@ pub fn tool_search_global_multi(
     }
 
     // Parallel search across all roots that have an index.
-    // Cap per-root results to limit * 2 total across all roots.
-    let per_root_limit = (limit * 2).div_ceil(roots.len().max(1));
+    // Fetch up to `limit` results per root, then merge and truncate for best quality.
+    let per_root_limit = limit;
     let per_root: Vec<Value> = roots
         .par_iter()
         .filter(|r| crate::index::index_exists(&r.path))

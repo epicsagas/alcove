@@ -365,17 +365,22 @@ pub struct DocRootEntry {
     /// Filesystem path (tilde-expanded at runtime).
     pub path: String,
     /// Per-root embedding override.  Falls back to global `[embedding]` when absent.
+    /// NOTE: cfg-gate must stay in sync with `ResolvedDocRoot.embedding`.
     #[cfg(feature = "embed-candle")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<EmbeddingConfig>,
 }
 
 /// A resolved `DocRootEntry` with the path expanded and validated.
+///
+/// `path` is always stored in canonical form (via `canonicalize()` during
+/// resolution), so callers can rely on it being absolute with symlinks resolved.
 #[derive(Debug, Clone)]
 pub struct ResolvedDocRoot {
     pub name: String,
     pub path: PathBuf,
     /// Per-root embedding override, if configured.
+    /// NOTE: cfg-gate must stay in sync with `DocRootEntry.embedding`.
     /// TODO: wire per-root embedding into the index builder.
     #[cfg(feature = "embed-candle")]
     #[allow(dead_code)]
@@ -406,19 +411,40 @@ fn expand_tilde(s: &str) -> PathBuf {
 
 /// Shared logic for resolving a single-root path: expand tilde, canonicalize,
 /// check for blocked system paths, and verify the directory exists.
-fn resolve_single_root(raw: &str, label: &str) -> Option<Vec<ResolvedDocRoot>> {
+///
+/// When `is_fatal` is true (highest-priority sources: env var, legacy field),
+/// a blocked or missing path is treated as a hard error — the caller should not
+/// fall through to lower-priority sources. When false, the path is silently skipped.
+fn resolve_single_root(raw: &str, label: &str, is_fatal: bool) -> Option<Vec<ResolvedDocRoot>> {
     let expanded = expand_tilde(raw);
     let canonical = expanded.canonicalize().unwrap_or(expanded);
     if is_blocked_system_path(&canonical) {
-        eprintln!(
-            "[alcove] {} points to blocked system path: {} — skipping",
-            label,
-            canonical.display()
-        );
+        if is_fatal {
+            eprintln!(
+                "[alcove] ERROR: {} points to blocked system path: {}. \
+                 This is a high-priority source — will NOT fall back to lower-priority roots.",
+                label,
+                canonical.display()
+            );
+        } else {
+            eprintln!(
+                "[alcove] {} points to blocked system path: {} — skipping",
+                label,
+                canonical.display()
+            );
+        }
         return None;
     }
     if !canonical.is_dir() {
-        eprintln!("[alcove] {} '{}' does not exist — skipping", label, raw);
+        if is_fatal {
+            eprintln!(
+                "[alcove] ERROR: {} '{}' does not exist. \
+                 This is a high-priority source — will NOT fall back to lower-priority roots.",
+                label, raw
+            );
+        } else {
+            eprintln!("[alcove] {} '{}' does not exist — skipping", label, raw);
+        }
         return None;
     }
     Some(vec![ResolvedDocRoot::new_default(canonical)])
@@ -590,13 +616,13 @@ impl DocConfig {
     /// Priority 1: `DOCS_ROOT` env var — highest priority single-root override.
     fn roots_from_env() -> Option<Vec<ResolvedDocRoot>> {
         let v = std::env::var("DOCS_ROOT").ok()?;
-        resolve_single_root(&v, "DOCS_ROOT")
+        resolve_single_root(&v, "DOCS_ROOT", true)
     }
 
     /// Priority 2: Legacy single `docs_root` field.
     fn roots_from_legacy_field(&self) -> Option<Vec<ResolvedDocRoot>> {
         let root = self.docs_root.as_ref()?;
-        resolve_single_root(root, "docs_root")
+        resolve_single_root(root, "docs_root", true)
     }
 
     /// Priority 3: Multiple named `docs_roots` entries.
@@ -608,6 +634,8 @@ impl DocConfig {
                 e.expand_path().map(|path| ResolvedDocRoot {
                     name: e.name.clone(),
                     path,
+                    // cfg-gate sync: must match `ResolvedDocRoot.embedding` and
+                    // `DocRootEntry.embedding` — all three use `#[cfg(feature = "embed-candle")]`.
                     #[cfg(feature = "embed-candle")]
                     embedding: e.embedding.clone(),
                 })

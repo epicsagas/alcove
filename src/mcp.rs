@@ -11,13 +11,13 @@ use crate::tools;
 // Multi-root helpers
 // ---------------------------------------------------------------------------
 
-/// Check whether `canonical_cwd` is physically inside the canonical form of `root`.
-/// Caller must pass an already-canonicalized CWD to avoid repeated syscall overhead.
+/// Check whether `canonical_cwd` is physically inside `root`.
+///
+/// Both `root` and `canonical_cwd` must already be canonicalized.
+/// `ResolvedDocRoot.path` is always canonical (set via `canonicalize()` in config),
+/// so no additional syscall is needed here.
 fn is_cwd_inside_root(root: &std::path::Path, canonical_cwd: &std::path::Path) -> bool {
-    let Ok(canonical_root) = root.canonicalize() else {
-        return false;
-    };
-    canonical_cwd.starts_with(&canonical_root)
+    canonical_cwd.starts_with(root)
 }
 
 /// Resolve the active project across all configured doc-roots.
@@ -965,12 +965,10 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                 .map(|root| tools::tool_search_global(&root.path, args_clone.clone()).ok())
                 .collect();
             let mut merged_matches: Vec<Value> = Vec::new();
-            let mut truncated = false;
             for v in root_results.into_iter().flatten() {
                 if let Some(arr) = v["matches"].as_array() {
                     merged_matches.extend(arr.clone());
                 }
-                truncated = truncated || v["truncated"].as_bool().unwrap_or(false);
             }
             // Sort by score descending, then truncate to limit.
             merged_matches.sort_by(|a, b| {
@@ -978,10 +976,8 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                 let sb = b["score"].as_f64().unwrap_or(0.0);
                 sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
             });
-            if merged_matches.len() > limit {
-                truncated = true;
-                merged_matches.truncate(limit);
-            }
+            let truncated = merged_matches.len() > limit;
+            merged_matches.truncate(limit);
             return ok!(json!({
                 "query": query,
                 "matches": merged_matches,
