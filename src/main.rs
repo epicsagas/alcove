@@ -300,6 +300,24 @@ pub(crate) enum ServiceKind {
     Api,
 }
 
+/// Resolve server port: config.toml `[server].port` (if non-default) → kind-specific default.
+///
+/// The serde default for `ServerConfig.port` is 57384, which matches `Mcp`.
+/// When the user hasn't customized the port, we return the kind-specific default
+/// (57384 for Mcp, 58301 for Api). When they've explicitly set a different port,
+/// we honor it.
+#[cfg(feature = "alcove-server")]
+pub(crate) fn resolve_server_port(cfg: &config::DocConfig, kind: ServiceKind) -> u16 {
+    cfg.server
+        .as_ref()
+        .map(|s| s.port)
+        .filter(|&p| p != 57384)
+        .unwrap_or(match kind {
+            ServiceKind::Mcp => 57384,
+            ServiceKind::Api => 58301,
+        })
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -559,7 +577,8 @@ fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()
         ServerCommands::Env => {
             let cfg = config::load_config();
             let srv = cfg.server_config();
-            println!("ALCOVE_URL=http://{}:{}", srv.host, srv.port);
+            let bind_port = resolve_server_port(cfg, kind);
+            println!("ALCOVE_URL=http://{}:{}", srv.host, bind_port);
             if let Some(token) = &srv.token {
                 println!("ALCOVE_TOKEN={}", token);
             }
@@ -588,10 +607,7 @@ fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()
             let srv_cfg = cfg.server_config();
             let bind_host = host.as_deref().unwrap_or(&srv_cfg.host);
             // Resolve port: CLI flag > config.toml > kind-specific default
-            let bind_port = port.unwrap_or(match kind {
-                ServiceKind::Mcp => 57384,
-                ServiceKind::Api => 58301,
-            });
+            let bind_port = port.unwrap_or(resolve_server_port(cfg, kind));
             // Resolve token: CLI flag > config.toml > none
             let resolved_token = token
                 .as_ref()
@@ -759,4 +775,51 @@ fn serve() -> Result<()> {
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(all(test, feature = "alcove-server"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_port_no_server_section_mcp() {
+        let cfg = config::DocConfig::default();
+        assert_eq!(resolve_server_port(&cfg, ServiceKind::Mcp), 57384);
+    }
+
+    #[test]
+    fn resolve_port_no_server_section_api() {
+        let cfg = config::DocConfig::default();
+        assert_eq!(resolve_server_port(&cfg, ServiceKind::Api), 58301);
+    }
+
+    #[test]
+    fn resolve_port_server_section_custom_port() {
+        let mut cfg = config::DocConfig::default();
+        cfg.server = Some(config::ServerConfig {
+            host: "127.0.0.1".into(),
+            port: 54321,
+            token: None,
+        });
+        // Custom port honored regardless of kind
+        assert_eq!(resolve_server_port(&cfg, ServiceKind::Mcp), 54321);
+        assert_eq!(resolve_server_port(&cfg, ServiceKind::Api), 54321);
+    }
+
+    #[test]
+    fn resolve_port_server_section_default_port_falls_through() {
+        let mut cfg = config::DocConfig::default();
+        cfg.server = Some(config::ServerConfig {
+            host: "127.0.0.1".into(),
+            port: 57384, // same as serde default
+            token: None,
+        });
+        // Port 57384 is treated as "not customized" → kind default applies
+        assert_eq!(resolve_server_port(&cfg, ServiceKind::Mcp), 57384);
+        assert_eq!(resolve_server_port(&cfg, ServiceKind::Api), 58301);
+    }
 }
