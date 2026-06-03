@@ -731,19 +731,35 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         );
     }
     // Primary root: first entry (DOCS_ROOT env var, docs_root field, or first docs_roots entry).
-    // NOTE: lint_project, promote_document, and check_doc_changes operate on this root only.
-    // In multi-root configs these tools always target the highest-priority root.
+    // NOTE: lint_project, promote_document, check_doc_changes, and init_project operate on
+    // this root only. In multi-root configs these tools always target the highest-priority root.
     let primary_root = all_roots[0].path.clone();
+    let primary_root_name = all_roots[0].name.clone();
+    let multi_root = all_roots.len() > 1;
+
+    // Inject `"root"` into a tool response when multiple roots are configured so
+    // callers can tell which root was targeted.
+    macro_rules! ok_with_root {
+        ($val:expr) => {{
+            let mut v = $val;
+            if multi_root {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("root".to_owned(), json!(primary_root_name));
+                }
+            }
+            ok!(v)
+        }};
+    }
 
     if call.name == "lint_project" {
         return match tools::tool_lint_project(&primary_root, call.arguments) {
-            Ok(v) => ok!(v),
+            Ok(v) => ok_with_root!(v),
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
     if call.name == "promote_document" {
         return match tools::tool_promote_document(&primary_root, call.arguments) {
-            Ok(v) => ok!(v),
+            Ok(v) => ok_with_root!(v),
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
@@ -855,7 +871,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         return match tools::tool_init_project(&primary_root, call.arguments) {
             Ok(v) => {
                 let _ = crate::index::build_index(&primary_root);
-                ok!(v)
+                ok_with_root!(v)
             }
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
@@ -888,14 +904,15 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             "message": format!(
                 "Index build started for {} root(s) in background. \
                  Search will use the updated index once complete. \
-                 Build failures (if any) are logged to stderr.",
+                 Any build failures are logged to the server stderr — \
+                 check the alcove process output if search results look stale.",
                 root_count
             )
         }));
     }
     if call.name == "check_doc_changes" {
         return match tools::tool_check_doc_changes(&primary_root, call.arguments) {
-            Ok(v) => ok!(v),
+            Ok(v) => ok_with_root!(v),
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }

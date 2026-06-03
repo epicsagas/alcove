@@ -1041,6 +1041,7 @@ pub fn is_doc_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn classify_core_files() {
@@ -1376,6 +1377,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn resolved_docs_roots_skips_nonexistent_docs_root_env() {
         // When DOCS_ROOT points to a non-existent path it is skipped, and the
         // chain falls through to the next source (legacy field, multi field, or

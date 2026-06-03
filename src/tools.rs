@@ -796,6 +796,14 @@ fn list_projects_impl(
         })
         .collect();
 
+    // Sort by name for stable output order (rayon does not preserve insertion order).
+    let mut projects = projects;
+    projects.sort_by(|a, b| {
+        let na = a["name"].as_str().unwrap_or("");
+        let nb = b["name"].as_str().unwrap_or("");
+        na.cmp(nb)
+    });
+
     Ok(json!({ "projects": projects }))
 }
 
@@ -805,6 +813,12 @@ fn list_projects_impl(
 /// cross-root comparison remains fair. A single result is returned unchanged
 /// so its original relevance score is preserved for the caller.
 /// Returns an empty vec when `matches` is None.
+///
+/// **Known tradeoff**: per-root normalization means that the best result from
+/// a weak root is inflated to 1.0 before the cross-root merge.  This can make
+/// a marginally relevant document from one root appear as relevant as the
+/// truly best result from another root.  Callers should treat the merged
+/// ranking as a soft guide rather than a strict relevance ordering.
 fn normalize_root_scores(matches: Option<&Vec<Value>>) -> Vec<Value> {
     let mut matches = matches.cloned().unwrap_or_default();
     if matches.len() <= 1 {
