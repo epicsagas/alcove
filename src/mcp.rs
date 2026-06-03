@@ -11,16 +11,10 @@ use crate::tools;
 // Multi-root helpers
 // ---------------------------------------------------------------------------
 
-/// Check whether the current working directory is physically inside `root`.
-/// Uses `canonicalize` to resolve symlinks before comparison.
-fn is_cwd_inside_root(root: &std::path::Path) -> bool {
-    let Ok(cwd) = std::env::current_dir() else {
-        return false;
-    };
+/// Check whether `canonical_cwd` is physically inside the canonical form of `root`.
+/// Caller must pass an already-canonicalized CWD to avoid repeated syscall overhead.
+fn is_cwd_inside_root(root: &std::path::Path, canonical_cwd: &std::path::Path) -> bool {
     let Ok(canonical_root) = root.canonicalize() else {
-        return false;
-    };
-    let Ok(canonical_cwd) = cwd.canonicalize() else {
         return false;
     };
     canonical_cwd.starts_with(&canonical_root)
@@ -38,12 +32,19 @@ fn resolve_project_multi(
     all_roots: &[ResolvedDocRoot],
     id: &Option<Value>,
 ) -> Result<(std::path::PathBuf, tools::ResolvedProject), RpcResponse> {
+    // Pre-compute canonical CWD once to avoid repeated syscall overhead per root.
+    let canonical_cwd = std::env::current_dir()
+        .ok()
+        .and_then(|c| c.canonicalize().ok());
     let mut found: Option<(std::path::PathBuf, tools::ResolvedProject)> = None;
     let mut ambiguous_env = false;
     for root in all_roots {
         if let Some(r) = tools::resolve_project(&root.path) {
             if r.detected_via == "cwd" {
-                if !is_cwd_inside_root(&root.path) {
+                let cwd_valid = canonical_cwd
+                    .as_ref()
+                    .is_some_and(|cc| is_cwd_inside_root(&root.path, cc));
+                if !cwd_valid {
                     continue; // Name matched but CWD is under a different root
                 }
                 found = Some((root.path.clone(), r));
@@ -859,6 +860,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         };
     }
     if call.name == "rebuild_index" {
+        let root_count = all_roots.len();
         let roots_clone: Vec<_> = all_roots.iter().map(|r| r.path.clone()).collect();
         std::thread::spawn(move || {
             use rayon::prelude::*;
@@ -881,7 +883,12 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         });
         return ok!(json!({
             "status": "started",
-            "message": "Index build started in background. Search will use the updated index once complete."
+            "root_count": root_count,
+            "message": format!(
+                "Index build started for {} root(s) in background. \
+                 Search will use the updated index once complete.",
+                root_count
+            )
         }));
     }
     if call.name == "check_doc_changes" {
@@ -964,6 +971,16 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     merged_matches.extend(arr.clone());
                 }
                 truncated = truncated || v["truncated"].as_bool().unwrap_or(false);
+            }
+            // Sort by score descending, then truncate to limit.
+            merged_matches.sort_by(|a, b| {
+                let sa = a["score"].as_f64().unwrap_or(0.0);
+                let sb = b["score"].as_f64().unwrap_or(0.0);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            if merged_matches.len() > limit {
+                truncated = true;
+                merged_matches.truncate(limit);
             }
             return ok!(json!({
                 "query": query,

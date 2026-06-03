@@ -739,7 +739,9 @@ fn list_projects_impl(
             }
 
             // Limit traversal depth to avoid runaway scans in deeply nested
-            // node_modules or similar artifacts that may appear under a project.
+            // directories (e.g. node_modules, build artifacts).  NOTE: this is
+            // a behavioral change from the original unlimited traversal; docs
+            // nested deeper than 10 levels will not be counted.
             let doc_count = WalkDir::new(&path)
                 .max_depth(10)
                 .into_iter()
