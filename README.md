@@ -268,7 +268,15 @@ alcove search "deployment" --limit 5
 
 ### Coding Agents (HTTP API)
 
-AI coding agents use Alcove through a **local HTTP API** running on port 58301. Skills call `curl http://localhost:58301/...` under the hood. You don't usually need to call these yourself; the agent will invoke them when you ask questions about your project.
+AI coding agents use Alcove through a **local HTTP API**. The URL and auth token are resolved once per session with `alcove api env`:
+
+```bash
+eval $(alcove api env)
+# sets ALCOVE_URL=http://127.0.0.1:<port>
+# sets ALCOVE_TOKEN=<token>  (only if configured)
+```
+
+Agents can verify connectivity with the `verify` or `rag status` argument — it checks the daemon, resolves the URL, and calls `/health` automatically. You don't usually need to call these yourself; the agent will invoke them when you ask questions about your project.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -282,7 +290,8 @@ AI coding agents use Alcove through a **local HTTP API** running on port 58301. 
 | `/projects/{name}/validate` | GET | Validate docs against policy.toml |
 | `/projects/{name}/config` | PUT | Update project settings in alcove.toml |
 | `/docs/{path}` | GET | Read a specific doc file (query: `project`, `offset`, `limit`) |
-| `/rebuild` | POST | Rebuild the search index |
+| `/index` | POST | Update search index (incremental, all projects) |
+| `/projects/{name}/index` | POST | Update search index (single project) |
 | `/changes` | GET | Check changed files since last index (query: `auto_rebuild`) |
 | `/lint` | GET | Lint docs — broken links, orphans, stale markers (query: `project`) |
 | `/vaults` | GET | List all knowledge base vaults |
