@@ -454,7 +454,7 @@ fn resolve_single_root(raw: &str, label: &str) -> Option<ResolvedDocRoot> {
 
 impl DocRootEntry {
     /// Expand `~` prefix and canonicalize the path.
-    /// Returns `None` if the path doesn't exist or points to a blocked system directory.
+    /// Returns `None` if the path doesn't exist, is not a directory, or points to a blocked system directory.
     fn expand_path(&self) -> Option<PathBuf> {
         let expanded = expand_tilde(&self.path);
         // Canonicalize to resolve symlinks / `..` traversal, then check safety.
@@ -473,6 +473,13 @@ impl DocRootEntry {
                 "[alcove] docs_roots entry '{}' points to blocked system path: {} — skipping",
                 self.name,
                 canonical.display()
+            );
+            return None;
+        }
+        if !canonical.is_dir() {
+            eprintln!(
+                "[alcove] docs_roots entry '{}' path '{}' is not a directory — skipping",
+                self.name, self.path
             );
             return None;
         }

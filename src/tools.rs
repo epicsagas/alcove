@@ -687,12 +687,12 @@ pub fn tool_get_file(project_root: &Path, args_value: Value) -> Result<Value> {
 
 /// Maximum directory traversal depth for `list_projects` doc counting.
 ///
-/// **Note (multi-root PR):** The original single-root implementation used
-/// unlimited depth (`WalkDir::new(&path).into_iter()`).  This constant was
-/// introduced alongside multi-root support to prevent runaway scans in deeply
-/// nested directories (node_modules, build artifacts).  10 covers typical
-/// project layouts; if a project has docs nested deeper, they will not be
-/// counted in `total_docs`.
+/// **Breaking change from pre-multi-root behavior:** the original implementation
+/// used unlimited depth.  This cap was introduced to prevent runaway scans in
+/// repos that mix docs with deep artifact trees (node_modules, build output).
+/// Applies to both single-root (`tool_list_projects`) and multi-root
+/// (`tool_list_projects_multi`) callers — docs nested deeper than this level
+/// will not be counted in `total_docs`.
 const MAX_LIST_PROJECTS_DEPTH: usize = 10;
 
 pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
