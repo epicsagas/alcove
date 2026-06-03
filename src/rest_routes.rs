@@ -251,6 +251,7 @@ pub async fn post_index_project(
     Path(name): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     check_auth(&state, &headers)?;
+    validate_project_name(&name)?;
     let project_root = state.docs_root.join(&name);
     if !project_root.is_dir() {
         return Err((
@@ -679,4 +680,57 @@ pub async fn put_configure(
                 Err(anyhow::anyhow!("Internal server error"))
             });
     map_tool_result(result)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(all(test, feature = "alcove-server"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_project_name_normal() {
+        assert!(validate_project_name("my-project").is_ok());
+    }
+
+    #[test]
+    fn validate_project_name_with_underscore() {
+        assert!(validate_project_name("my_project").is_ok());
+    }
+
+    #[test]
+    fn validate_project_name_path_traversal() {
+        let result = validate_project_name("../etc/passwd");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.0, StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn validate_project_name_dot_dot() {
+        assert!(validate_project_name("..").is_err());
+    }
+
+    #[test]
+    fn validate_project_name_with_slash() {
+        assert!(validate_project_name("foo/bar").is_err());
+    }
+
+    #[test]
+    fn validate_project_name_single_dot() {
+        assert!(validate_project_name(".").is_err());
+    }
+
+    #[test]
+    fn validate_project_name_empty() {
+        assert!(validate_project_name("").is_err());
+    }
+
+    #[test]
+    fn validate_project_name_hidden_file() {
+        // ".hidden" is a single Normal component — this is valid
+        assert!(validate_project_name(".hidden").is_ok());
+    }
 }
