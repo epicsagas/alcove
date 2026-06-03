@@ -789,7 +789,10 @@ pub async fn run_server(
         .route("/projects/{name}/docs", get(rest_routes::get_project_docs))
         .route("/projects/{name}/audit", get(rest_routes::get_audit))
         .route("/projects/{name}/validate", get(rest_routes::get_validate))
-        .route("/projects/{name}/index", post(rest_routes::post_index_project))
+        .route(
+            "/projects/{name}/index",
+            post(rest_routes::post_index_project),
+        )
         .route(
             "/projects/{name}/config",
             axum::routing::put(rest_routes::put_configure),

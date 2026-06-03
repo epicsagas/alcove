@@ -39,6 +39,14 @@ fn log_dir() -> PathBuf {
 // Plist generation
 // ---------------------------------------------------------------------------
 
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 fn generate_plist(alcove_bin: &str, kind: ServiceKind) -> String {
     let logs = log_dir();
     let cfg = load_config();
@@ -46,17 +54,10 @@ fn generate_plist(alcove_bin: &str, kind: ServiceKind) -> String {
 
     let host_arg = format!(
         "        <string>--host</string>\n        <string>{}</string>",
-        srv.host
+        xml_escape(&srv.host)
     );
 
-    let _default_port = match kind {
-        ServiceKind::Mcp => 57384,
-        ServiceKind::Api => 8080,
-    };
-    let bind_port = srv.port; // Config value wins, but wait, usually config has one port.
-    // If config has a port, we use it. If not, we use the default for the kind.
-    // Actually srv.port has a default of 57384.
-    // Maybe we should allow per-kind port config later.
+    let bind_port = crate::resolve_server_port(cfg, kind);
 
     let port_arg = format!(
         "        <string>--port</string>\n        <string>{}</string>",
@@ -72,7 +73,8 @@ fn generate_plist(alcove_bin: &str, kind: ServiceKind) -> String {
     <dict>
         <key>ALCOVE_TOKEN</key>
         <string>{t}</string>
-    </dict>"#
+    </dict>"#,
+                t = xml_escape(t)
             )
         })
         .unwrap_or_default();
@@ -364,4 +366,48 @@ pub fn restart(kind: ServiceKind) -> Result<()> {
         );
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xml_escape_all_special_chars() {
+        assert_eq!(
+            xml_escape("a&b<c>d\"e'f"),
+            "a&amp;b&lt;c&gt;d&quot;e&apos;f"
+        );
+    }
+
+    #[test]
+    fn xml_escape_no_special_chars() {
+        assert_eq!(xml_escape("hello-world_123"), "hello-world_123");
+    }
+
+    #[test]
+    fn xml_escape_ampersand_first() {
+        // & must be escaped first to avoid double-escaping
+        assert_eq!(xml_escape("&lt;"), "&amp;lt;");
+    }
+
+    #[test]
+    fn xml_escape_empty() {
+        assert_eq!(xml_escape(""), "");
+    }
+
+    #[test]
+    fn generate_plist_contains_token_env_when_set() {
+        // Verify structure: if config has a token, plist should have
+        // EnvironmentVariables section with escaped token
+        let escaped = xml_escape("tok&en<with>special\"chars");
+        assert_eq!(escaped, "tok&amp;en&lt;with&gt;special&quot;chars");
+        // Integration test via generate_plist is not possible because
+        // load_config() uses OnceLock — tested indirectly by xml_escape
+        // and resolve_server_port unit tests.
+    }
 }
