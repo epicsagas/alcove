@@ -793,12 +793,14 @@ mod tests {
 
     #[test]
     fn resolve_port_server_section_custom_port() {
-        let mut cfg = config::DocConfig::default();
-        cfg.server = Some(config::ServerConfig {
-            host: "127.0.0.1".into(),
-            port: Some(54321),
-            token: None,
-        });
+        let cfg = config::DocConfig {
+            server: Some(config::ServerConfig {
+                host: "127.0.0.1".into(),
+                port: Some(54321),
+                token: None,
+            }),
+            ..Default::default()
+        };
         // Explicit port honored regardless of kind
         assert_eq!(resolve_server_port(&cfg, ServiceKind::Mcp), 54321);
         assert_eq!(resolve_server_port(&cfg, ServiceKind::Api), 54321);
@@ -806,12 +808,14 @@ mod tests {
 
     #[test]
     fn resolve_port_server_section_none_port_uses_kind_default() {
-        let mut cfg = config::DocConfig::default();
-        cfg.server = Some(config::ServerConfig {
-            host: "127.0.0.1".into(),
-            port: None,
-            token: None,
-        });
+        let cfg = config::DocConfig {
+            server: Some(config::ServerConfig {
+                host: "127.0.0.1".into(),
+                port: None,
+                token: None,
+            }),
+            ..Default::default()
+        };
         assert_eq!(resolve_server_port(&cfg, ServiceKind::Mcp), 57384);
         assert_eq!(resolve_server_port(&cfg, ServiceKind::Api), 58301);
     }

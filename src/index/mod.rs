@@ -38,12 +38,11 @@ pub(crate) use builder::build_index_inner;
 #[allow(unused_imports)]
 pub(crate) use builder::build_index_unlocked;
 #[cfg(test)]
-pub(crate) use cache::{get_cached_reader, reader_cache_for};
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use chunker::{Chunk, chunk_content, extract_title};
 #[cfg(test)]
-pub(crate) use lock::{index_dir, is_locked, lock_file, release_lock, try_acquire_lock};
+pub(crate) use lock::{is_locked, lock_file, release_lock, try_acquire_lock};
 #[cfg(test)]
 pub(crate) use schema::{CHUNK_STRATEGY_VERSION, SCHEMA_VERSION, register_ngram_tokenizer};
 #[cfg(test)]

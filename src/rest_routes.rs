@@ -216,17 +216,15 @@ pub async fn post_init_project(
                 Err(anyhow::anyhow!("Internal server error"))
             });
 
-    // Trigger background reindex after init
+    // Trigger reindex after successful init (synchronous so search works immediately)
     if result.is_ok() {
-        std::thread::spawn(move || {
-            let _ = crate::index::build_index(&docs_root_for_reindex);
-        });
+        let _ = crate::index::build_index(&docs_root_for_reindex);
     }
 
     map_tool_result(result)
 }
 
-/// POST /rebuild
+/// POST /index
 #[cfg(feature = "alcove-server")]
 pub async fn post_index(
     State(state): State<Arc<ServerState>>,
@@ -234,16 +232,16 @@ pub async fn post_index(
 ) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
     check_auth(&state, &headers)?;
     let docs_root = state.docs_root.clone();
-    std::thread::spawn(move || {
-        let _ = crate::index::build_index(&docs_root);
-    });
-    Ok(Json(json!({
-        "status": "started",
-        "message": "Index build started in background."
-    })))
+    let result = tokio::task::spawn_blocking(move || crate::index::build_index(&docs_root))
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("[alcove] index build task failed: {e}");
+            Err(anyhow::anyhow!("Internal server error"))
+        });
+    map_tool_result(result)
 }
 
-/// POST /projects/{name}/rebuild — rebuild index for a single project only
+/// POST /projects/{name}/index — index a single project only
 #[cfg(feature = "alcove-server")]
 pub async fn post_index_project(
     State(state): State<Arc<ServerState>>,
@@ -262,14 +260,13 @@ pub async fn post_index_project(
             }),
         ));
     }
-    std::thread::spawn(move || {
-        let _ = crate::index::build_index(&project_root);
-    });
-    Ok(Json(json!({
-        "status": "started",
-        "project": name,
-        "message": format!("Index build started for project '{name}' in background.")
-    })))
+    let result = tokio::task::spawn_blocking(move || crate::index::build_index(&project_root))
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("[alcove] index build task failed: {e}");
+            Err(anyhow::anyhow!("Internal server error"))
+        });
+    map_tool_result(result)
 }
 
 /// GET /changes
