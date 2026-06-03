@@ -753,7 +753,14 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
             let cfg = load_fresh_config();
             cfg.as_ref()
                 .and_then(|c| c.server.as_ref())
-                .map(|s| (s.host.clone(), s.port.map(|p| p.to_string()).unwrap_or_else(|| "57384".to_string())))
+                .map(|s| {
+                    (
+                        s.host.clone(),
+                        s.port
+                            .map(|p| p.to_string())
+                            .unwrap_or_else(|| "57384".to_string()),
+                    )
+                })
                 .unwrap_or_else(|| ("127.0.0.1".to_string(), "57384".to_string()))
         });
 
