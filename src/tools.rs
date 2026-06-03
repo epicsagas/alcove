@@ -713,13 +713,20 @@ pub fn tool_list_projects_multi(roots: &[crate::config::ResolvedDocRoot]) -> Res
 /// When `include_root` is true, each project entry includes a `root` field
 /// identifying which doc-root it belongs to. When false (single-root compat
 /// mode), the `root` field is omitted entirely.
+///
+/// WalkDir traversal (doc counting) is parallelized across all project
+/// directories using rayon; read_dir is sequential since it's fast.
 fn list_projects_impl(
     roots: &[crate::config::ResolvedDocRoot],
     include_root: bool,
 ) -> Result<Value> {
-    let mut projects = Vec::new();
+    use rayon::prelude::*;
+
     let core_files = load_config().core_files();
 
+    // Collect (root_name, project_path, project_name) triples via sequential
+    // read_dir — this is fast I/O. WalkDir (the bottleneck) is parallelized below.
+    let mut candidates: Vec<(String, std::path::PathBuf, String)> = Vec::new();
     for root in roots {
         let entries = match std::fs::read_dir(&root.path) {
             Ok(e) => e,
@@ -733,7 +740,6 @@ fn list_projects_impl(
                 continue;
             }
         };
-
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_dir() {
@@ -747,7 +753,14 @@ fn list_projects_impl(
             if is_reserved_dir_name(&name) {
                 continue;
             }
+            candidates.push((root.name.clone(), path, name));
+        }
+    }
 
+    // Parallel WalkDir: each project directory is scanned independently.
+    let projects: Vec<Value> = candidates
+        .into_par_iter()
+        .map(|(root_name, path, name)| {
             // Limit traversal depth to avoid runaway scans in deeply nested
             // directories (e.g. node_modules, build artifacts).
             let doc_count = WalkDir::new(&path)
@@ -776,11 +789,11 @@ fn list_projects_impl(
                 "internal_required_missing": internal_missing,
             });
             if include_root {
-                proj["root"] = json!(root.name);
+                proj["root"] = json!(root_name);
             }
-            projects.push(proj);
-        }
-    }
+            proj
+        })
+        .collect();
 
     Ok(json!({ "projects": projects }))
 }
@@ -788,10 +801,12 @@ fn list_projects_impl(
 /// Min-max normalize scores within a single root's matches.
 ///
 /// When all scores are identical (range == 0), sets each to 0.5 so
-/// cross-root comparison remains fair. Returns an empty vec when `matches` is None.
+/// cross-root comparison remains fair. A single result is returned unchanged
+/// so its original relevance score is preserved for the caller.
+/// Returns an empty vec when `matches` is None.
 fn normalize_root_scores(matches: Option<&Vec<Value>>) -> Vec<Value> {
     let mut matches = matches.cloned().unwrap_or_default();
-    if matches.is_empty() {
+    if matches.len() <= 1 {
         return matches;
     }
     let scores: Vec<f64> = matches.iter().filter_map(|m| m["score"].as_f64()).collect();
@@ -829,18 +844,14 @@ pub fn tool_search_global_multi(
         anyhow::bail!("Query must not be empty");
     }
 
-    // Cap per-root fetch to avoid over-requesting when many roots are configured.
-    // Fetch `limit` results per root so the final merge can rank globally
-    // across all roots without distorting scores. Post-merge sort + truncate
-    // selects the best results regardless of which root they came from.
-    let per_root_limit = limit;
-
     // Parallel search: collect (root_name, results) pairs so we can tag each match.
+    // Fetch `limit` results per root so the post-merge global ranking has enough
+    // candidates from each root without over-fetching.
     let per_root: Vec<(String, Value)> = roots
         .par_iter()
         .filter(|r| crate::index::index_exists(&r.path))
         .filter_map(|r| {
-            let result = crate::index::search_indexed(&r.path, &query, per_root_limit, None);
+            let result = crate::index::search_indexed(&r.path, &query, limit, None);
             if let Err(ref e) = result {
                 eprintln!("[alcove] index search failed for root '{}': {}", r.name, e);
             }
@@ -3570,7 +3581,66 @@ mod tests {
         let matches = vec![json!({"score": 42.0, "name": "solo"})];
         let normalized = normalize_root_scores(Some(&matches));
         assert_eq!(normalized.len(), 1);
-        // Single result → range=0 → 0.5
-        assert!((normalized[0]["score"].as_f64().unwrap() - 0.5).abs() < 1e-9);
+        // Single result: no normalization — original score preserved.
+        assert!((normalized[0]["score"].as_f64().unwrap() - 42.0).abs() < 1e-9);
+    }
+
+    // -- list_projects_impl: root field presence --
+
+    #[test]
+    fn list_projects_single_root_omits_root_field() {
+        // tool_list_projects (single-root compat) must not include a `root` field.
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir(tmp.path().join("myproject")).unwrap();
+        let result = tool_list_projects(tmp.path()).unwrap();
+        let projects = result["projects"].as_array().unwrap();
+        assert_eq!(projects.len(), 1);
+        assert!(
+            projects[0].get("root").is_none(),
+            "root field must be absent in single-root compat mode"
+        );
+    }
+
+    #[test]
+    fn list_projects_multi_includes_root_field() {
+        // tool_list_projects_multi must tag each entry with the originating root name.
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("proj1")).unwrap();
+        let root = crate::config::ResolvedDocRoot::new_default(tmp.path().canonicalize().unwrap());
+        let result = tool_list_projects_multi(std::slice::from_ref(&root)).unwrap();
+        let projects = result["projects"].as_array().unwrap();
+        assert_eq!(projects.len(), 1);
+        assert_eq!(
+            projects[0]["root"].as_str().unwrap(),
+            "default",
+            "root field must be present and equal to the root name"
+        );
+    }
+
+    #[test]
+    fn list_projects_multi_two_roots_both_tagged() {
+        // Each project must carry the name of its originating root.
+        let tmp1 = TempDir::new().unwrap();
+        let tmp2 = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp1.path().join("alpha")).unwrap();
+        std::fs::create_dir_all(tmp2.path().join("beta")).unwrap();
+
+        let mut root1 =
+            crate::config::ResolvedDocRoot::new_default(tmp1.path().canonicalize().unwrap());
+        root1.name = "oss".into();
+        let mut root2 =
+            crate::config::ResolvedDocRoot::new_default(tmp2.path().canonicalize().unwrap());
+        root2.name = "work".into();
+
+        let result = tool_list_projects_multi(&[root1, root2]).unwrap();
+        let projects = result["projects"].as_array().unwrap();
+        assert_eq!(projects.len(), 2);
+
+        let by_name: std::collections::HashMap<&str, &str> = projects
+            .iter()
+            .map(|p| (p["name"].as_str().unwrap(), p["root"].as_str().unwrap()))
+            .collect();
+        assert_eq!(by_name["alpha"], "oss");
+        assert_eq!(by_name["beta"], "work");
     }
 }

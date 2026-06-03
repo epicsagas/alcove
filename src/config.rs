@@ -430,7 +430,13 @@ fn expand_tilde(s: &str) -> PathBuf {
 /// the caller's priority chain to fall through to the next source.
 fn resolve_single_root(raw: &str, label: &str) -> Option<ResolvedDocRoot> {
     let expanded = expand_tilde(raw);
-    let canonical = expanded.canonicalize().unwrap_or(expanded);
+    let canonical = match expanded.canonicalize() {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!("[alcove] {} '{}' does not exist — skipping", label, raw);
+            return None;
+        }
+    };
     if is_blocked_system_path(&canonical) {
         eprintln!(
             "[alcove] {} points to blocked system path: {} — skipping",
@@ -440,7 +446,7 @@ fn resolve_single_root(raw: &str, label: &str) -> Option<ResolvedDocRoot> {
         return None;
     }
     if !canonical.is_dir() {
-        eprintln!("[alcove] {} '{}' does not exist — skipping", label, raw);
+        eprintln!("[alcove] {} '{}' is not a directory — skipping", label, raw);
         return None;
     }
     Some(ResolvedDocRoot::new_default(canonical))
