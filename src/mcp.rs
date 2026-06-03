@@ -3,9 +3,105 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::config::{is_reserved_dir_name, load_config};
+use crate::config::{ResolvedDocRoot, is_reserved_dir_name, load_config};
 use crate::telemetry::{FailureClass, ResultSizeBucket, Telemetry, Tool};
 use crate::tools;
+
+// ---------------------------------------------------------------------------
+// Multi-root helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether the current working directory is physically inside `root`.
+/// Uses `canonicalize` to resolve symlinks before comparison.
+fn is_cwd_inside_root(root: &std::path::Path) -> bool {
+    let Ok(cwd) = std::env::current_dir() else {
+        return false;
+    };
+    let Ok(canonical_root) = root.canonicalize() else {
+        return false;
+    };
+    let Ok(canonical_cwd) = cwd.canonicalize() else {
+        return false;
+    };
+    canonical_cwd.starts_with(&canonical_root)
+}
+
+/// Resolve the active project across all configured doc-roots.
+///
+/// For CWD-based detection, cross-validates that the CWD is actually under
+/// the matched root. For env-based detection (`MCP_PROJECT_NAME`), warns
+/// if the project name exists in multiple roots (ambiguity).
+///
+/// Returns `(docs_root, resolved_project)` on success, or an `RpcResponse`
+/// error if no project can be resolved.
+fn resolve_project_multi(
+    all_roots: &[ResolvedDocRoot],
+    id: &Option<Value>,
+) -> Result<(std::path::PathBuf, tools::ResolvedProject), RpcResponse> {
+    let mut found: Option<(std::path::PathBuf, tools::ResolvedProject)> = None;
+    let mut ambiguous_env = false;
+    for root in all_roots {
+        if let Some(r) = tools::resolve_project(&root.path) {
+            if r.detected_via == "cwd" {
+                if !is_cwd_inside_root(&root.path) {
+                    continue; // Name matched but CWD is under a different root
+                }
+                found = Some((root.path.clone(), r));
+                break; // CWD detection is unambiguous — stop at first validated match
+            } else {
+                // env detection: record first match, flag if a second match appears
+                if found.is_some() {
+                    ambiguous_env = true;
+                    break;
+                }
+                found = Some((root.path.clone(), r));
+                // continue scanning remaining roots to detect ambiguity
+            }
+        }
+    }
+    if ambiguous_env {
+        eprintln!(
+            "[alcove] WARNING: MCP_PROJECT_NAME matches projects in multiple roots — \
+             using the first match. Consider running from the project directory instead."
+        );
+    }
+    match found {
+        Some(pair) => Ok(pair),
+        None => {
+            let available: Vec<String> = all_roots
+                .iter()
+                .flat_map(|root| {
+                    std::fs::read_dir(&root.path)
+                        .ok()
+                        .map(|rd| {
+                            rd.filter_map(std::result::Result::ok)
+                                .filter(|e| e.path().is_dir())
+                                .filter_map(|e| {
+                                    let name = e.file_name().to_string_lossy().to_string();
+                                    if is_reserved_dir_name(&name) {
+                                        None
+                                    } else {
+                                        Some(name)
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect();
+            Err(RpcResponse::err(
+                id.clone(),
+                -32001,
+                format!(
+                    "Could not detect project. CWD does not match any project in DOCS_ROOT. \
+                     Available projects: [{}]. \
+                     Set MCP_PROJECT_NAME env var or run from within a project directory.",
+                    available.join(", ")
+                ),
+            ))
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // JSON-RPC 2.0 types
@@ -769,9 +865,19 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             // build_index is safe to call concurrently on distinct roots:
             // all writes are scoped to `root/.alcove/index/` and a per-root
             // file lock prevents concurrent builds on the same root.
-            roots_clone.par_iter().for_each(|root| {
-                let _ = crate::index::build_index(root);
-            });
+            let failures: Vec<_> = roots_clone
+                .par_iter()
+                .filter_map(|root| {
+                    crate::index::build_index(root)
+                        .err()
+                        .map(|e| (root.display().to_string(), e))
+                })
+                .collect();
+            if !failures.is_empty() {
+                for (path, err) in &failures {
+                    eprintln!("[alcove] index build failed for {}: {}", path, err);
+                }
+            }
         });
         return ok!(json!({
             "status": "started",
@@ -784,6 +890,28 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
+
+    // Resolve project early — needed by per-project search and all other tools.
+    // Skip for global search which doesn't need a specific project.
+    let needs_project = call.name != "search_project_docs"
+        || call.arguments.get("scope").and_then(|v| v.as_str()) != Some("global");
+
+    let (docs_root, resolved) = if needs_project {
+        match resolve_project_multi(&all_roots, &id) {
+            Ok(pair) => pair,
+            Err(resp) => return resp,
+        }
+    } else {
+        // Placeholder — won't be used for global search (returns early).
+        (
+            all_roots[0].path.clone(),
+            tools::ResolvedProject {
+                name: String::new(),
+                detected_via: "",
+                repo_path: None,
+            },
+        )
+    };
 
     // Search: auto mode selection — ranked (BM25) if index available, grep fallback
     if call.name == "search_project_docs" {
@@ -811,7 +939,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
 
         if is_global {
             // Multi-root global search: try indexed search across all roots in parallel,
-            // fall back to grep-based global search on the primary root.
+            // fall back to grep-based global search across all roots.
             if !force_grep
                 && let Ok(v) =
                     tools::tool_search_global_multi(&all_roots, call.arguments.clone(), limit)
@@ -840,99 +968,20 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             }));
         }
 
+        // Per-project search: use already-resolved docs_root and resolved.
         if !force_grep {
             let index_dir = docs_root.join(".alcove").join("index");
-            if index_dir.exists() || crate::index::ensure_index_fresh(&docs_root) {
-                let project_filter = tools::resolve_project(&docs_root).map(|r| r.name);
-                if let Ok(v) = crate::index::search_indexed(
-                    &docs_root,
-                    query,
-                    limit,
-                    project_filter.as_deref(),
-                ) {
-                    let matches = v["matches"].as_array();
-                    if matches.is_some_and(|m| !m.is_empty()) {
-                        return ok!(v);
-                    }
+            if (index_dir.exists() || crate::index::ensure_index_fresh(&docs_root))
+                && let Ok(v) =
+                    crate::index::search_indexed(&docs_root, query, limit, Some(&resolved.name))
+            {
+                let matches = v["matches"].as_array();
+                if matches.is_some_and(|m| !m.is_empty()) {
+                    return ok!(v);
                 }
             }
         }
     }
-
-    // All other tools require a resolved project.
-    // For multi-root: find the root whose CWD match resolves the project.
-    // When detected via CWD, verify the CWD is actually under that root to
-    // prevent selecting the wrong root when multiple roots share a project name.
-    // When detected via MCP_PROJECT_NAME env var, warn if the name exists in
-    // multiple roots (ambiguity).
-    let (docs_root, resolved) = {
-        let mut found: Option<(std::path::PathBuf, _)> = None;
-        let mut ambiguous_env = false;
-        for root in &all_roots {
-            if let Some(r) = tools::resolve_project(&root.path) {
-                if r.detected_via == "cwd" {
-                    // Cross-validate: CWD must be under this root's path
-                    if let Ok(cwd) = std::env::current_dir()
-                        && let Ok(canonical_root) = root.path.canonicalize()
-                        && let Ok(canonical_cwd) = cwd.canonicalize()
-                        && !canonical_cwd.starts_with(&canonical_root)
-                    {
-                        continue; // Name matched but CWD is under a different root
-                    }
-                    found = Some((root.path.clone(), r));
-                    break; // CWD detection is unambiguous — stop at first validated match
-                } else {
-                    // env detection: record first match, flag if a second match appears
-                    if found.is_some() {
-                        ambiguous_env = true;
-                        break;
-                    }
-                    found = Some((root.path.clone(), r));
-                    // continue scanning remaining roots to detect ambiguity
-                }
-            }
-        }
-        if ambiguous_env {
-            eprintln!(
-                "[alcove] WARNING: MCP_PROJECT_NAME matches projects in multiple roots — using the first match. Consider running from the project directory instead."
-            );
-        }
-        match found {
-            Some(pair) => pair,
-            None => {
-                let available: Vec<String> = all_roots
-                    .iter()
-                    .flat_map(|root| {
-                        std::fs::read_dir(&root.path)
-                            .ok()
-                            .map(|rd| {
-                                rd.filter_map(std::result::Result::ok)
-                                    .filter(|e| e.path().is_dir())
-                                    .filter_map(|e| {
-                                        let name = e.file_name().to_string_lossy().to_string();
-                                        if is_reserved_dir_name(&name) {
-                                            None
-                                        } else {
-                                            Some(name)
-                                        }
-                                    })
-                                    .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default()
-                    })
-                    .collect();
-                return err!(
-                    -32001,
-                    format!(
-                        "Could not detect project. CWD does not match any project in DOCS_ROOT. \
-                         Available projects: [{}]. \
-                         Set MCP_PROJECT_NAME env var or run from within a project directory.",
-                        available.join(", ")
-                    )
-                );
-            }
-        }
-    };
 
     let project_root = docs_root.join(&resolved.name);
     let repo_path = resolved.repo_path.as_deref();

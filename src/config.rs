@@ -376,7 +376,7 @@ pub struct ResolvedDocRoot {
     pub name: String,
     pub path: PathBuf,
     /// Per-root embedding override, if configured.
-    /// Stored for future per-root model selection; not yet consumed by the indexer.
+    /// TODO: wire per-root embedding into the index builder.
     #[cfg(feature = "embed-candle")]
     #[allow(dead_code)]
     pub embedding: Option<EmbeddingConfig>,
@@ -390,6 +390,31 @@ fn expand_tilde(s: &str) -> PathBuf {
         return home.join(stripped);
     }
     PathBuf::from(s)
+}
+
+/// Shared logic for resolving a single-root path: expand tilde, canonicalize,
+/// check for blocked system paths, and verify the directory exists.
+fn resolve_single_root(raw: &str, label: &str) -> Option<Vec<ResolvedDocRoot>> {
+    let expanded = expand_tilde(raw);
+    let canonical = expanded.canonicalize().unwrap_or(expanded);
+    if is_blocked_system_path(&canonical) {
+        eprintln!(
+            "[alcove] {} points to blocked system path: {} — skipping",
+            label,
+            canonical.display()
+        );
+        return None;
+    }
+    if !canonical.is_dir() {
+        eprintln!("[alcove] {} '{}' does not exist — skipping", label, raw);
+        return None;
+    }
+    Some(vec![ResolvedDocRoot {
+        name: "default".into(),
+        path: canonical,
+        #[cfg(feature = "embed-candle")]
+        embedding: None,
+    }])
 }
 
 impl DocRootEntry {
@@ -548,74 +573,55 @@ impl DocConfig {
     ///
     /// Returns an empty Vec if no root is configured or discoverable.
     pub fn resolved_docs_roots(&self) -> Vec<ResolvedDocRoot> {
-        // 1. DOCS_ROOT env var — highest priority single-root override
-        if let Ok(v) = std::env::var("DOCS_ROOT") {
-            let raw = expand_tilde(&v);
-            let canonical = raw.canonicalize().unwrap_or(raw);
-            if is_blocked_system_path(&canonical) {
-                eprintln!(
-                    "[alcove] DOCS_ROOT points to blocked system path: {} — skipping",
-                    canonical.display()
-                );
-            } else if canonical.is_dir() {
-                return vec![ResolvedDocRoot {
-                    name: "default".into(),
-                    path: canonical,
+        Self::roots_from_env()
+            .or_else(|| self.roots_from_legacy_field())
+            .or_else(|| self.roots_from_multi_field())
+            .or_else(Self::roots_from_builtin_default)
+            .unwrap_or_default()
+    }
+
+    /// Priority 1: `DOCS_ROOT` env var — highest priority single-root override.
+    fn roots_from_env() -> Option<Vec<ResolvedDocRoot>> {
+        let v = std::env::var("DOCS_ROOT").ok()?;
+        resolve_single_root(&v, "DOCS_ROOT")
+    }
+
+    /// Priority 2: Legacy single `docs_root` field.
+    fn roots_from_legacy_field(&self) -> Option<Vec<ResolvedDocRoot>> {
+        let root = self.docs_root.as_ref()?;
+        resolve_single_root(root, "docs_root")
+    }
+
+    /// Priority 3: Multiple named `docs_roots` entries.
+    fn roots_from_multi_field(&self) -> Option<Vec<ResolvedDocRoot>> {
+        let entries = self.docs_roots.as_ref()?;
+        let roots: Vec<ResolvedDocRoot> = entries
+            .iter()
+            .filter_map(|e| {
+                e.expand_path().map(|path| ResolvedDocRoot {
+                    name: e.name.clone(),
+                    path,
                     #[cfg(feature = "embed-candle")]
-                    embedding: None,
-                }];
-            } else {
-                eprintln!("[alcove] DOCS_ROOT '{}' does not exist — skipping", v);
-            }
-        }
-        // 2. Legacy single docs_root field
-        if let Some(ref root) = self.docs_root {
-            let raw = expand_tilde(root);
-            let canonical = raw.canonicalize().unwrap_or(raw);
-            if is_blocked_system_path(&canonical) {
-                eprintln!(
-                    "[alcove] docs_root points to blocked system path: {} — skipping",
-                    canonical.display()
-                );
-            } else if canonical.is_dir() {
-                return vec![ResolvedDocRoot {
-                    name: "default".into(),
-                    path: canonical,
-                    #[cfg(feature = "embed-candle")]
-                    embedding: None,
-                }];
-            } else {
-                eprintln!("[alcove] docs_root '{}' does not exist — skipping", root);
-            }
-        }
-        // 3. Multi docs_roots
-        if let Some(ref entries) = self.docs_roots {
-            let roots: Vec<ResolvedDocRoot> = entries
-                .iter()
-                .filter_map(|e| {
-                    e.expand_path().map(|path| ResolvedDocRoot {
-                        name: e.name.clone(),
-                        path,
-                        #[cfg(feature = "embed-candle")]
-                        embedding: e.embedding.clone(),
-                    })
+                    embedding: e.embedding.clone(),
                 })
-                .collect();
-            if !roots.is_empty() {
-                return roots;
-            }
-        }
-        // 4. Built-in default
+            })
+            .collect();
+        if roots.is_empty() { None } else { Some(roots) }
+    }
+
+    /// Priority 4: Built-in default (`~/.alcove/docs`) if the directory exists.
+    fn roots_from_builtin_default() -> Option<Vec<ResolvedDocRoot>> {
         let fallback = default_docs_root();
         if fallback.is_dir() {
-            return vec![ResolvedDocRoot {
+            Some(vec![ResolvedDocRoot {
                 name: "default".into(),
                 path: fallback,
                 #[cfg(feature = "embed-candle")]
                 embedding: None,
-            }];
+            }])
+        } else {
+            None
         }
-        vec![]
     }
 
     #[cfg_attr(test, allow(dead_code))]

@@ -789,23 +789,22 @@ pub fn tool_search_global_multi(
 ) -> Result<Value> {
     use rayon::prelude::*;
 
-    let query = args_value
-        .get("query")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let args: SearchArgs =
+        serde_json::from_value(args_value).context("search_global_multi requires { query }")?;
+    let query = args.query.trim().to_string();
 
     if query.is_empty() {
         anyhow::bail!("Query must not be empty");
     }
 
     // Parallel search across all roots that have an index.
+    // Cap per-root results to limit * 2 total across all roots.
+    let per_root_limit = (limit * 2).div_ceil(roots.len().max(1));
     let per_root: Vec<Value> = roots
         .par_iter()
         .filter(|r| crate::index::index_exists(&r.path))
         .filter_map(|r| {
-            let result = crate::index::search_indexed(&r.path, &query, limit, None);
+            let result = crate::index::search_indexed(&r.path, &query, per_root_limit, None);
             if let Err(ref e) = result {
                 eprintln!("[alcove] index search failed for root '{}': {}", r.name, e);
             }
@@ -820,10 +819,25 @@ pub fn tool_search_global_multi(
         );
     }
 
-    // Merge and re-rank by score descending.
+    // Normalize scores per-root before merging for fair cross-root comparison.
     let mut merged: Vec<Value> = per_root
         .into_iter()
-        .flat_map(|v| v["matches"].as_array().cloned().unwrap_or_default())
+        .flat_map(|v| {
+            let mut matches = v["matches"].as_array().cloned().unwrap_or_default();
+            // Min-max normalize scores within this root's results.
+            let scores: Vec<f64> = matches.iter().filter_map(|m| m["score"].as_f64()).collect();
+            let min = scores.iter().copied().fold(f64::INFINITY, f64::min);
+            let max = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let range = max - min;
+            if range > 0.0 {
+                for m in &mut matches {
+                    if let Some(s) = m["score"].as_f64() {
+                        m["score"] = json!((s - min) / range);
+                    }
+                }
+            }
+            matches
+        })
         .collect();
 
     merged.sort_by(|a, b| {
