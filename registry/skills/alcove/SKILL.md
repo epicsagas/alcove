@@ -24,6 +24,12 @@ eval $(alcove api env)
 ```
 All commands below use `$ALCOVE_URL`. If `$ALCOVE_TOKEN` is set, add `-H "Authorization: Bearer $ALCOVE_TOKEN"` to every request.
 
+## Arguments
+
+| Arg | Action |
+|-----|--------|
+| `verify` / `rag status` | 1) `alcove api status` — check daemon is running<br>2) `eval $(alcove api env)` — resolve URL + token<br>3) `curl -s $ALCOVE_URL/health` — print health response |
+
 ## When to Use
 
 Any question about project design, status, conventions, decisions, env config, tech debt, code structure, or doc health. **Check alcove before answering, not after.**
