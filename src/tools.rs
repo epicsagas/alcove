@@ -791,6 +791,9 @@ fn list_projects_impl(
 /// cross-root comparison remains fair. Returns an empty vec when `matches` is None.
 fn normalize_root_scores(matches: Option<&Vec<Value>>) -> Vec<Value> {
     let mut matches = matches.cloned().unwrap_or_default();
+    if matches.is_empty() {
+        return matches;
+    }
     let scores: Vec<f64> = matches.iter().filter_map(|m| m["score"].as_f64()).collect();
     let min = scores.iter().copied().fold(f64::INFINITY, f64::min);
     let max = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -827,8 +830,10 @@ pub fn tool_search_global_multi(
     }
 
     // Cap per-root fetch to avoid over-requesting when many roots are configured.
-    // Each root fetches at most this many results; final merge truncates to `limit`.
-    let per_root_limit = std::cmp::max(limit / roots.len().max(1), 5).min(limit);
+    // Fetch `limit` results per root so the final merge can rank globally
+    // across all roots without distorting scores. Post-merge sort + truncate
+    // selects the best results regardless of which root they came from.
+    let per_root_limit = limit;
 
     // Parallel search: collect (root_name, results) pairs so we can tag each match.
     let per_root: Vec<(String, Value)> = roots

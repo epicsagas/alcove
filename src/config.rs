@@ -448,11 +448,20 @@ fn resolve_single_root(raw: &str, label: &str) -> Option<ResolvedDocRoot> {
 
 impl DocRootEntry {
     /// Expand `~` prefix and canonicalize the path.
-    /// Returns `None` if the resolved path points to a blocked system directory.
+    /// Returns `None` if the path doesn't exist or points to a blocked system directory.
     fn expand_path(&self) -> Option<PathBuf> {
         let expanded = expand_tilde(&self.path);
         // Canonicalize to resolve symlinks / `..` traversal, then check safety.
-        let canonical = expanded.canonicalize().unwrap_or(expanded);
+        let canonical = match expanded.canonicalize() {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!(
+                    "[alcove] docs_roots entry '{}' path '{}' does not exist — skipping",
+                    self.name, self.path
+                );
+                return None;
+            }
+        };
         if is_blocked_system_path(&canonical) {
             eprintln!(
                 "[alcove] docs_roots entry '{}' points to blocked system path: {} — skipping",
@@ -631,7 +640,16 @@ impl DocConfig {
                     .map(|path| ResolvedDocRoot::from_entry(e, path))
             })
             .collect();
-        if roots.is_empty() { None } else { Some(roots) }
+        if roots.is_empty() {
+            eprintln!(
+                "[alcove] all {} configured docs_roots entries failed validation — \
+                 falling back to default",
+                entries.len()
+            );
+            None
+        } else {
+            Some(roots)
+        }
     }
 
     /// Priority 4: Built-in default (`~/.alcove/docs`) if the directory exists.

@@ -883,7 +883,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         });
         return ok!(json!({
             "status": "started",
-            "root_count": root_count,
+            "roots_total": root_count,
             "message": format!(
                 "Index build started for {} root(s) in background. \
                  Search will use the updated index once complete. \
@@ -899,53 +899,30 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         };
     }
 
-    // Resolve project early — needed by per-project search and all other tools.
-    // Skip for global search which doesn't need a specific project.
-    let needs_project = call.name != "search_project_docs"
-        || call.arguments.get("scope").and_then(|v| v.as_str()) != Some("global");
-
-    let (docs_root, resolved) = if needs_project {
-        match resolve_project_multi(&all_roots, &id) {
-            Ok(pair) => pair,
-            Err(resp) => return resp,
-        }
-    } else {
-        // Placeholder — won't be used for global search (returns early).
-        (
-            all_roots[0].path.clone(),
-            tools::ResolvedProject {
-                name: String::new(),
-                detected_via: "",
-                repo_path: None,
-            },
-        )
-    };
-
-    // Search: auto mode selection — ranked (BM25) if index available, grep fallback
+    // Global search doesn't need a resolved project — handle it early and return.
     if call.name == "search_project_docs" {
         let scope = call
             .arguments
             .get("scope")
             .and_then(|v| v.as_str())
             .unwrap_or("project");
-        let mode_override = call.arguments.get("mode").and_then(|v| v.as_str());
-
         let is_global = scope == "global";
-        let limit = call
-            .arguments
-            .get("limit")
-            .and_then(serde_json::Value::as_u64)
-            .map(|v| usize::try_from(v).unwrap_or(usize::MAX).clamp(1, 200))
-            .unwrap_or(20);
-        let query = call
-            .arguments
-            .get("query")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        let force_grep = mode_override == Some("grep");
 
         if is_global {
+            let mode_override = call.arguments.get("mode").and_then(|v| v.as_str());
+            let limit = call
+                .arguments
+                .get("limit")
+                .and_then(serde_json::Value::as_u64)
+                .map(|v| usize::try_from(v).unwrap_or(usize::MAX).clamp(1, 200))
+                .unwrap_or(20);
+            let query = call
+                .arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let force_grep = mode_override == Some("grep");
+
             // Multi-root global search: try indexed search across all roots in parallel,
             // fall back to grep-based global search across all roots.
             if !force_grep
@@ -994,8 +971,30 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                 "mode": "grep",
             }));
         }
+    }
 
-        // Per-project search: use already-resolved docs_root and resolved.
+    // All remaining tools require a resolved project.
+    let (docs_root, resolved) = match resolve_project_multi(&all_roots, &id) {
+        Ok(pair) => pair,
+        Err(resp) => return resp,
+    };
+
+    // Per-project search (non-global).
+    if call.name == "search_project_docs" {
+        let mode_override = call.arguments.get("mode").and_then(|v| v.as_str());
+        let limit = call
+            .arguments
+            .get("limit")
+            .and_then(serde_json::Value::as_u64)
+            .map(|v| usize::try_from(v).unwrap_or(usize::MAX).clamp(1, 200))
+            .unwrap_or(20);
+        let query = call
+            .arguments
+            .get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let force_grep = mode_override == Some("grep");
+
         if !force_grep {
             let index_dir = docs_root.join(".alcove").join("index");
             if (index_dir.exists() || crate::index::ensure_index_fresh(&docs_root))
