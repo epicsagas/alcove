@@ -382,6 +382,18 @@ pub struct ResolvedDocRoot {
     pub embedding: Option<EmbeddingConfig>,
 }
 
+impl ResolvedDocRoot {
+    /// Create a single-root entry with the "default" name and no embedding override.
+    pub fn new_default(path: PathBuf) -> Self {
+        Self {
+            name: "default".into(),
+            path,
+            #[cfg(feature = "embed-candle")]
+            embedding: None,
+        }
+    }
+}
+
 /// Expand a leading `~/` to the user's home directory.
 fn expand_tilde(s: &str) -> PathBuf {
     if let Some(stripped) = s.strip_prefix("~/")
@@ -409,12 +421,7 @@ fn resolve_single_root(raw: &str, label: &str) -> Option<Vec<ResolvedDocRoot>> {
         eprintln!("[alcove] {} '{}' does not exist — skipping", label, raw);
         return None;
     }
-    Some(vec![ResolvedDocRoot {
-        name: "default".into(),
-        path: canonical,
-        #[cfg(feature = "embed-candle")]
-        embedding: None,
-    }])
+    Some(vec![ResolvedDocRoot::new_default(canonical)])
 }
 
 impl DocRootEntry {
@@ -612,13 +619,17 @@ impl DocConfig {
     /// Priority 4: Built-in default (`~/.alcove/docs`) if the directory exists.
     fn roots_from_builtin_default() -> Option<Vec<ResolvedDocRoot>> {
         let fallback = default_docs_root();
-        if fallback.is_dir() {
-            Some(vec![ResolvedDocRoot {
-                name: "default".into(),
-                path: fallback,
-                #[cfg(feature = "embed-candle")]
-                embedding: None,
-            }])
+        // Use the same safety checks as resolve_single_root for consistency.
+        let canonical = fallback.canonicalize().unwrap_or(fallback);
+        if is_blocked_system_path(&canonical) {
+            eprintln!(
+                "[alcove] built-in default docs root points to blocked system path: {} — skipping",
+                canonical.display()
+            );
+            return None;
+        }
+        if canonical.is_dir() {
+            Some(vec![ResolvedDocRoot::new_default(canonical)])
         } else {
             None
         }
@@ -1354,6 +1365,16 @@ mod tests {
                 "blocked path must not appear in resolved roots"
             );
         }
+    }
+
+    #[test]
+    fn resolved_doc_root_new_default_creates_correct_entry() {
+        let path = PathBuf::from("/some/path");
+        let root = ResolvedDocRoot::new_default(path.clone());
+        assert_eq!(root.name, "default");
+        assert_eq!(root.path, path);
+        #[cfg(feature = "embed-candle")]
+        assert!(root.embedding.is_none());
     }
 
     #[test]

@@ -949,16 +949,21 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     return ok!(v);
                 }
             }
-            // Grep fallback: merge results from all roots for comprehensive coverage.
+            // Grep fallback: merge results from all roots in parallel for
+            // comprehensive coverage.
+            use rayon::prelude::*;
+            let args_clone = call.arguments.clone();
+            let root_results: Vec<Option<Value>> = all_roots
+                .par_iter()
+                .map(|root| tools::tool_search_global(&root.path, args_clone.clone()).ok())
+                .collect();
             let mut merged_matches: Vec<Value> = Vec::new();
             let mut truncated = false;
-            for root in &all_roots {
-                if let Ok(v) = tools::tool_search_global(&root.path, call.arguments.clone()) {
-                    if let Some(arr) = v["matches"].as_array() {
-                        merged_matches.extend(arr.clone());
-                    }
-                    truncated = truncated || v["truncated"].as_bool().unwrap_or(false);
+            for v in root_results.into_iter().flatten() {
+                if let Some(arr) = v["matches"].as_array() {
+                    merged_matches.extend(arr.clone());
                 }
+                truncated = truncated || v["truncated"].as_bool().unwrap_or(false);
             }
             return ok!(json!({
                 "query": query,

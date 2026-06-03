@@ -686,12 +686,7 @@ pub fn tool_get_file(project_root: &Path, args_value: Value) -> Result<Value> {
 // ---------------------------------------------------------------------------
 
 pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
-    let single = crate::config::ResolvedDocRoot {
-        name: "default".into(),
-        path: docs_root.to_path_buf(),
-        #[cfg(feature = "embed-candle")]
-        embedding: None,
-    };
+    let single = crate::config::ResolvedDocRoot::new_default(docs_root.to_path_buf());
     list_projects_impl(std::slice::from_ref(&single), false)
 }
 
@@ -743,6 +738,8 @@ fn list_projects_impl(
                 continue;
             }
 
+            // Limit traversal depth to avoid runaway scans in deeply nested
+            // node_modules or similar artifacts that may appear under a project.
             let doc_count = WalkDir::new(&path)
                 .max_depth(10)
                 .into_iter()
@@ -776,6 +773,28 @@ fn list_projects_impl(
     }
 
     Ok(json!({ "projects": projects }))
+}
+
+/// Min-max normalize scores within a single root's matches.
+///
+/// When all scores are identical (range == 0), sets each to 0.5 so
+/// cross-root comparison remains fair. Returns an empty vec when `matches` is None.
+fn normalize_root_scores(matches: Option<&Vec<Value>>) -> Vec<Value> {
+    let mut matches = matches.cloned().unwrap_or_default();
+    let scores: Vec<f64> = matches.iter().filter_map(|m| m["score"].as_f64()).collect();
+    let min = scores.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let range = max - min;
+    for m in &mut matches {
+        if let Some(s) = m["score"].as_f64() {
+            m["score"] = if range > 0.0 {
+                json!((s - min) / range)
+            } else {
+                json!(0.5)
+            };
+        }
+    }
+    matches
 }
 
 /// Multi-root global search using Rayon for parallel indexed search.
@@ -822,22 +841,7 @@ pub fn tool_search_global_multi(
     // Normalize scores per-root before merging for fair cross-root comparison.
     let mut merged: Vec<Value> = per_root
         .into_iter()
-        .flat_map(|v| {
-            let mut matches = v["matches"].as_array().cloned().unwrap_or_default();
-            // Min-max normalize scores within this root's results.
-            let scores: Vec<f64> = matches.iter().filter_map(|m| m["score"].as_f64()).collect();
-            let min = scores.iter().copied().fold(f64::INFINITY, f64::min);
-            let max = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-            let range = max - min;
-            if range > 0.0 {
-                for m in &mut matches {
-                    if let Some(s) = m["score"].as_f64() {
-                        m["score"] = json!((s - min) / range);
-                    }
-                }
-            }
-            matches
-        })
+        .flat_map(|v| normalize_root_scores(v["matches"].as_array()))
         .collect();
 
     merged.sort_by(|a, b| {
@@ -845,12 +849,13 @@ pub fn tool_search_global_multi(
         let sb = b["score"].as_f64().unwrap_or(0.0);
         sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
     });
+    let was_truncated = merged.len() > limit;
     merged.truncate(limit);
 
     Ok(json!({
         "query": query,
         "matches": merged,
-        "truncated": false,
+        "truncated": was_truncated,
         "mode": "ranked",
     }))
 }
@@ -3497,5 +3502,50 @@ mod tests {
         let cfg = crate::config::load_project_config(repo.path());
         assert_eq!(cfg.diagram_format(), "plantuml");
         assert_eq!(cfg.core_files(), vec!["SPEC.md"]);
+    }
+
+    // -- normalize_root_scores --
+
+    #[test]
+    fn normalize_scores_scales_to_0_to_1() {
+        let matches = vec![
+            json!({"score": 0.2, "name": "a"}),
+            json!({"score": 0.8, "name": "b"}),
+            json!({"score": 0.5, "name": "c"}),
+        ];
+        let normalized = normalize_root_scores(Some(&matches));
+        assert_eq!(normalized.len(), 3);
+        // min=0.2, max=0.8, range=0.6
+        assert!((normalized[0]["score"].as_f64().unwrap() - 0.0).abs() < 1e-9);
+        assert!((normalized[1]["score"].as_f64().unwrap() - 1.0).abs() < 1e-9);
+        assert!((normalized[2]["score"].as_f64().unwrap() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn normalize_scores_identical_gets_half() {
+        let matches = vec![
+            json!({"score": 0.7, "name": "a"}),
+            json!({"score": 0.7, "name": "b"}),
+        ];
+        let normalized = normalize_root_scores(Some(&matches));
+        // All identical → range=0 → each gets 0.5
+        for m in &normalized {
+            assert!((m["score"].as_f64().unwrap() - 0.5).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn normalize_scores_empty_input() {
+        let normalized = normalize_root_scores(None);
+        assert!(normalized.is_empty());
+    }
+
+    #[test]
+    fn normalize_scores_single_result() {
+        let matches = vec![json!({"score": 42.0, "name": "solo"})];
+        let normalized = normalize_root_scores(Some(&matches));
+        assert_eq!(normalized.len(), 1);
+        // Single result → range=0 → 0.5
+        assert!((normalized[0]["score"].as_f64().unwrap() - 0.5).abs() < 1e-9);
     }
 }
