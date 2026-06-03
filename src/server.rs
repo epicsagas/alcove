@@ -777,7 +777,7 @@ pub async fn run_server(
             "/projects",
             get(rest_routes::get_list_projects).post(rest_routes::post_init_project),
         )
-        .route("/rebuild", post(rest_routes::post_rebuild))
+        .route("/index", post(rest_routes::post_index))
         .route("/changes", get(rest_routes::get_changes))
         .route("/lint", get(rest_routes::get_lint))
         .route("/vaults/search", get(rest_routes::get_vault_search))
@@ -789,6 +789,7 @@ pub async fn run_server(
         .route("/projects/{name}/docs", get(rest_routes::get_project_docs))
         .route("/projects/{name}/audit", get(rest_routes::get_audit))
         .route("/projects/{name}/validate", get(rest_routes::get_validate))
+        .route("/projects/{name}/index", post(rest_routes::post_index_project))
         .route(
             "/projects/{name}/config",
             axum::routing::put(rest_routes::put_configure),
@@ -847,7 +848,8 @@ pub async fn run_server(
     println!("      PUT  /projects/{{name}}/config   - Configure project");
     println!("      GET  /docs/{{path}}         - Read doc file");
     println!("      POST /index-code           - Index code structure");
-    println!("      POST /rebuild              - Rebuild index");
+    println!("      POST /index                - Update index (incremental, all projects)");
+    println!("      POST /projects/{{name}}/index  - Update index (incremental, single project)");
     println!("      GET  /changes              - Check doc changes");
     println!("      GET  /lint                 - Lint project docs");
     println!("      GET  /vaults               - List vaults");

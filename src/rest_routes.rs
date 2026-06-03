@@ -228,7 +228,7 @@ pub async fn post_init_project(
 
 /// POST /rebuild
 #[cfg(feature = "alcove-server")]
-pub async fn post_rebuild(
+pub async fn post_index(
     State(state): State<Arc<ServerState>>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
@@ -240,6 +240,34 @@ pub async fn post_rebuild(
     Ok(Json(json!({
         "status": "started",
         "message": "Index build started in background."
+    })))
+}
+
+/// POST /projects/{name}/rebuild — rebuild index for a single project only
+#[cfg(feature = "alcove-server")]
+pub async fn post_index_project(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&state, &headers)?;
+    let project_root = state.docs_root.join(&name);
+    if !project_root.is_dir() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Project '{name}' not found"),
+                code: 404,
+            }),
+        ));
+    }
+    std::thread::spawn(move || {
+        let _ = crate::index::build_index(&project_root);
+    });
+    Ok(Json(json!({
+        "status": "started",
+        "project": name,
+        "message": format!("Index build started for project '{name}' in background.")
     })))
 }
 

@@ -118,8 +118,11 @@ curl -s -X POST $ALCOVE_URL/index-code \
 ### Index & Maintenance
 
 ```bash
-# Rebuild index
-curl -s -X POST $ALCOVE_URL/rebuild
+# Update index — incremental (changed/added/deleted files only), all projects
+curl -s -X POST $ALCOVE_URL/index
+
+# Update index — single project only
+curl -s -X POST $ALCOVE_URL/projects/PROJECT/index
 
 # Check changed files since last index
 curl -s '$ALCOVE_URL/changes?auto_rebuild=true'
@@ -130,7 +133,8 @@ curl -s '$ALCOVE_URL/lint?project=PROJECT'
 
 | Action | Method | Endpoint |
 |--------|--------|----------|
-| Rebuild index | POST | `/rebuild` |
+| Update index (all projects) | POST | `/index` |
+| Update index (single project) | POST | `/projects/{name}/index` |
 | Check changes | GET | `/changes?auto_rebuild=true` |
 | Lint project | GET | `/lint?project=name` |
 
@@ -209,7 +213,7 @@ Ambiguous → call `audit_project` (broadest).
 - Re-run validate + lint after cleanup
 
 ### Promoting notes
-Path provided → act immediately: `POST /promote` with the source path. No matching project → `inbox/`. Then `POST /rebuild`.
+Path provided → act immediately: `POST /promote` with the source path. No matching project → `inbox/`. Then `POST /index`.
 
 ### After development
 Proactively capture at natural stopping points:
@@ -220,4 +224,4 @@ Proactively capture at natural stopping points:
 - Env var → `SECRETS_MAP.md`
 - Progress → `PROGRESS.md`
 
-Read → append with date → `POST /rebuild`.
+Read → append with date → `POST /index`.
