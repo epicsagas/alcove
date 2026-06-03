@@ -276,8 +276,8 @@ enum ServerCommands {
         #[arg(long)]
         now: bool,
     },
-    /// Print the base URL of the running server (reads from config)
-    Url,
+    /// Print shell env vars for the running server (ALCOVE_URL and optionally ALCOVE_TOKEN)
+    Env,
     /// Internal use: run foreground server for background daemon
     #[command(hide = true)]
     Serve {
@@ -556,10 +556,13 @@ fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()
         ServerCommands::Stop => launchd::stop(kind),
         ServerCommands::Restart { host: _, port: _ } => launchd::restart(kind),
         ServerCommands::Status => launchd::status(kind),
-        ServerCommands::Url => {
+        ServerCommands::Env => {
             let cfg = config::load_config();
             let srv = cfg.server_config();
-            println!("http://{}:{}", srv.host, srv.port);
+            println!("ALCOVE_URL=http://{}:{}", srv.host, srv.port);
+            if let Some(token) = &srv.token {
+                println!("ALCOVE_TOKEN={}", token);
+            }
             Ok(())
         }
         ServerCommands::Enable { now } => {

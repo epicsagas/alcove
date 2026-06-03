@@ -16,15 +16,13 @@ alcove api status   # check if server is running
 alcove api start    # start if not running
 ```
 
-- **Base URL**: `$(alcove api url)` — resolve at runtime, never hardcode the port
-- **Auth**: `Authorization: Bearer $ALCOVE_TOKEN` (if token configured during setup)
-- **Health check**: `curl -s "$(alcove api url)/health"`
-
-Resolve the base URL once at the start of every session:
+Resolve URL and token once at the start of every session:
 ```bash
-ALCOVE_URL=$(alcove api url)   # e.g. http://127.0.0.1:57384
+eval $(alcove api env)
+# sets ALCOVE_URL=http://127.0.0.1:<port>  (always)
+# sets ALCOVE_TOKEN=<token>                (only if configured)
 ```
-All commands below use `$ALCOVE_URL`. If `ALCOVE_TOKEN` is set, add `-H "Authorization: Bearer $ALCOVE_TOKEN"` to every request.
+All commands below use `$ALCOVE_URL`. If `$ALCOVE_TOKEN` is set, add `-H "Authorization: Bearer $ALCOVE_TOKEN"` to every request.
 
 ## When to Use
 
