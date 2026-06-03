@@ -413,12 +413,17 @@ impl ResolvedDocRoot {
     }
 }
 
-/// Expand a leading `~/` to the user's home directory.
+/// Expand a leading `~` to the user's home directory.
+///
+/// Handles both `~/path` and bare `~` forms.
 fn expand_tilde(s: &str) -> PathBuf {
-    if let Some(stripped) = s.strip_prefix("~/")
-        && let Some(home) = dirs::home_dir()
-    {
-        return home.join(stripped);
+    if let Some(home) = dirs::home_dir() {
+        if s == "~" {
+            return home;
+        }
+        if let Some(stripped) = s.strip_prefix("~/") {
+            return home.join(stripped);
+        }
     }
     PathBuf::from(s)
 }
@@ -668,8 +673,10 @@ impl DocConfig {
     /// Priority 4: Built-in default (`~/.alcove/docs`) if the directory exists.
     fn roots_from_builtin_default() -> Option<Vec<ResolvedDocRoot>> {
         let fallback = default_docs_root();
-        // Use the same safety checks as resolve_single_root for consistency.
-        let canonical = fallback.canonicalize().unwrap_or(fallback);
+        // canonicalize() fails when the path doesn't exist — return None so the
+        // caller's priority chain stays clean.  Using `ok()?` also preserves the
+        // ResolvedDocRoot invariant that `path` is always in canonical form.
+        let canonical = fallback.canonicalize().ok()?;
         if is_blocked_system_path(&canonical) {
             eprintln!(
                 "[alcove] built-in default docs root points to blocked system path: {} — skipping",
@@ -1353,12 +1360,50 @@ mod tests {
 
     #[test]
     fn resolved_docs_roots_empty_when_nothing_configured() {
-        // Since we can't control whether ~/.alcove/docs exists in the test env,
-        // just verify no panic and a bounded return.
+        // The built-in default (~/.alcove/docs) may or may not exist in the
+        // test environment, so the result is 0 or 1 roots — both are valid.
         let cfg = DocConfig::default();
         let roots = cfg.resolved_docs_roots();
-        // Either 0 (no default dir) or 1 (default dir exists) — both valid.
         assert!(roots.len() <= 1);
+        // Whatever is returned must never be a raw uncanonicalized path.
+        for r in &roots {
+            assert!(
+                r.path.is_absolute(),
+                "resolved path must be absolute: {:?}",
+                r.path
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_docs_roots_skips_nonexistent_docs_root_env() {
+        // When DOCS_ROOT points to a non-existent path it is skipped, and the
+        // chain falls through to the next source (legacy field, multi field, or
+        // built-in default). Verify that the invalid DOCS_ROOT path never appears
+        // in the returned roots — the chain must not pass through unchecked paths.
+        let prev = std::env::var("DOCS_ROOT").ok();
+        unsafe {
+            std::env::set_var("DOCS_ROOT", "/nonexistent-alcove-test-path-xyzqrs123");
+        }
+        let cfg = DocConfig::default();
+        let roots = cfg.resolved_docs_roots();
+        if let Some(v) = prev {
+            unsafe { std::env::set_var("DOCS_ROOT", v) };
+        } else {
+            unsafe { std::env::remove_var("DOCS_ROOT") };
+        }
+        for r in &roots {
+            assert_ne!(
+                r.path.to_string_lossy().as_ref(),
+                "/nonexistent-alcove-test-path-xyzqrs123",
+                "invalid DOCS_ROOT path must never appear in resolved roots"
+            );
+            assert!(
+                r.path.is_absolute(),
+                "resolved path must be absolute: {:?}",
+                r.path
+            );
+        }
     }
 
     #[test]

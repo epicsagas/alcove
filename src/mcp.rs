@@ -731,17 +731,18 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         );
     }
     // Primary root: first entry (DOCS_ROOT env var, docs_root field, or first docs_roots entry).
-    let docs_root = all_roots[0].path.clone();
+    // NOTE: lint_project, promote_document, and check_doc_changes operate on this root only.
+    // In multi-root configs these tools always target the highest-priority root.
+    let primary_root = all_roots[0].path.clone();
 
-    // lint_project and promote_document operate on docs_root directly
     if call.name == "lint_project" {
-        return match tools::tool_lint_project(&docs_root, call.arguments) {
+        return match tools::tool_lint_project(&primary_root, call.arguments) {
             Ok(v) => ok!(v),
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }
     if call.name == "promote_document" {
-        return match tools::tool_promote_document(&docs_root, call.arguments) {
+        return match tools::tool_promote_document(&primary_root, call.arguments) {
             Ok(v) => ok!(v),
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
@@ -851,9 +852,9 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         };
     }
     if call.name == "init_project" {
-        return match tools::tool_init_project(&docs_root, call.arguments) {
+        return match tools::tool_init_project(&primary_root, call.arguments) {
             Ok(v) => {
-                let _ = crate::index::build_index(&docs_root);
+                let _ = crate::index::build_index(&primary_root);
                 ok!(v)
             }
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
@@ -893,7 +894,7 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         }));
     }
     if call.name == "check_doc_changes" {
-        return match tools::tool_check_doc_changes(&docs_root, call.arguments) {
+        return match tools::tool_check_doc_changes(&primary_root, call.arguments) {
             Ok(v) => ok!(v),
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
@@ -1797,5 +1798,106 @@ mod tests {
         assert!(text.contains("alpha"), "should list alpha vault");
         assert!(text.contains("beta"), "should list beta vault");
         assert!(text.contains("doc_count"), "should contain doc_count field");
+    }
+
+    // -- resolve_project_multi --
+
+    /// Returns a `ResolvedDocRoot` with the given name pointing at `path`.
+    fn make_root(name: &str, path: std::path::PathBuf) -> crate::config::ResolvedDocRoot {
+        let mut r = crate::config::ResolvedDocRoot::new_default(path);
+        r.name = name.into();
+        r
+    }
+
+    /// When `MCP_PROJECT_NAME` matches a project in two roots, the function
+    /// must return the first root and not panic.
+    #[test]
+    #[serial]
+    fn resolve_project_multi_env_ambiguity_uses_first_root() {
+        let root1 = test_tempdir();
+        let root2 = test_tempdir();
+        std::fs::create_dir(root1.path().join("shared")).unwrap();
+        std::fs::create_dir(root2.path().join("shared")).unwrap();
+
+        let prev = std::env::var("MCP_PROJECT_NAME").ok();
+        unsafe { std::env::set_var("MCP_PROJECT_NAME", "shared") };
+
+        let r1 = make_root("oss", root1.path().canonicalize().unwrap());
+        let r2 = make_root("work", root2.path().canonicalize().unwrap());
+        let result = resolve_project_multi(&[r1, r2], &None);
+
+        if let Some(v) = prev {
+            unsafe { std::env::set_var("MCP_PROJECT_NAME", v) };
+        } else {
+            unsafe { std::env::remove_var("MCP_PROJECT_NAME") };
+        }
+
+        let (path, _project) = result.expect("should resolve to first matching root");
+        assert_eq!(
+            path,
+            root1.path().canonicalize().unwrap(),
+            "first root must win on env ambiguity"
+        );
+    }
+
+    /// When `MCP_PROJECT_NAME` is unset and CWD name matches a project inside a
+    /// root but CWD is NOT physically under that root, the match must be rejected.
+    #[test]
+    #[serial]
+    fn resolve_project_multi_cwd_mismatch_skips_non_containing_root() {
+        let root = test_tempdir();
+
+        // Name the project after the last component of CWD — resolve_project()
+        // will detect it via CWD path-walk, but is_cwd_inside_root() must reject
+        // it because CWD is not inside `root` (which is a tempdir elsewhere).
+        let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
+        let cwd_leaf = cwd.file_name().unwrap().to_string_lossy().to_string();
+        std::fs::create_dir(root.path().join(&cwd_leaf)).unwrap();
+
+        let prev = std::env::var("MCP_PROJECT_NAME").ok();
+        unsafe { std::env::remove_var("MCP_PROJECT_NAME") };
+
+        let resolved_root = make_root("default", root.path().canonicalize().unwrap());
+        let result = resolve_project_multi(&[resolved_root], &None);
+
+        if let Some(v) = prev {
+            unsafe { std::env::set_var("MCP_PROJECT_NAME", v) };
+        }
+
+        assert!(
+            result.is_err(),
+            "CWD name match with root mismatch must not resolve; got {:?}",
+            result.ok().map(|(p, r)| (p, r.name))
+        );
+    }
+
+    /// When no root contains a project matching either env or CWD, return an Err
+    /// whose message lists available projects.
+    #[test]
+    #[serial]
+    fn resolve_project_multi_returns_err_with_available_list() {
+        let root = test_tempdir();
+        std::fs::create_dir(root.path().join("alpha")).unwrap();
+        std::fs::create_dir(root.path().join("beta")).unwrap();
+
+        let prev = std::env::var("MCP_PROJECT_NAME").ok();
+        unsafe { std::env::remove_var("MCP_PROJECT_NAME") };
+
+        // Use a project name that cannot possibly match any CWD component.
+        // We don't set MCP_PROJECT_NAME, so only CWD detection runs — and CWD
+        // contains no component named "alpha" or "beta" in normal dev environments.
+        let resolved_root = make_root("default", root.path().canonicalize().unwrap());
+        let result = resolve_project_multi(&[resolved_root], &None);
+
+        if let Some(v) = prev {
+            unsafe { std::env::set_var("MCP_PROJECT_NAME", v) };
+        }
+
+        assert!(result.is_err(), "should return Err when no project matches");
+        let msg = result.unwrap_err().error.unwrap().message;
+        assert!(
+            msg.contains("alpha") || msg.contains("beta"),
+            "error message must list available projects, got: {msg}"
+        );
     }
 }

@@ -16,6 +16,7 @@ use crate::transpile::maybe_transpile_result;
 // Project resolution
 // ---------------------------------------------------------------------------
 
+#[derive(Debug)]
 pub struct ResolvedProject {
     pub name: String,
     pub detected_via: &'static str,
