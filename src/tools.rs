@@ -687,10 +687,12 @@ pub fn tool_get_file(project_root: &Path, args_value: Value) -> Result<Value> {
 
 /// Maximum directory traversal depth for `list_projects` doc counting.
 ///
-/// Behavioral change from the original unlimited traversal: docs nested deeper
-/// than this will not be counted.  10 covers typical project layouts while
-/// preventing runaway scans in deeply nested directories (node_modules, build
-/// artifacts).
+/// **Note (multi-root PR):** The original single-root implementation used
+/// unlimited depth (`WalkDir::new(&path).into_iter()`).  This constant was
+/// introduced alongside multi-root support to prevent runaway scans in deeply
+/// nested directories (node_modules, build artifacts).  10 covers typical
+/// project layouts; if a project has docs nested deeper, they will not be
+/// counted in `total_docs`.
 const MAX_LIST_PROJECTS_DEPTH: usize = 10;
 
 pub fn tool_list_projects(docs_root: &Path) -> Result<Value> {
@@ -824,10 +826,12 @@ pub fn tool_search_global_multi(
         anyhow::bail!("Query must not be empty");
     }
 
-    // Parallel search across all roots that have an index.
-    // Fetch up to `limit` results per root, then merge and truncate for best quality.
-    let per_root_limit = limit;
-    let per_root: Vec<Value> = roots
+    // Cap per-root fetch to avoid over-requesting when many roots are configured.
+    // Each root fetches at most this many results; final merge truncates to `limit`.
+    let per_root_limit = std::cmp::max(limit / roots.len().max(1), 5).min(limit);
+
+    // Parallel search: collect (root_name, results) pairs so we can tag each match.
+    let per_root: Vec<(String, Value)> = roots
         .par_iter()
         .filter(|r| crate::index::index_exists(&r.path))
         .filter_map(|r| {
@@ -835,7 +839,7 @@ pub fn tool_search_global_multi(
             if let Err(ref e) = result {
                 eprintln!("[alcove] index search failed for root '{}': {}", r.name, e);
             }
-            result.ok()
+            result.ok().map(|v| (r.name.clone(), v))
         })
         .collect();
 
@@ -846,10 +850,18 @@ pub fn tool_search_global_multi(
         );
     }
 
-    // Normalize scores per-root before merging for fair cross-root comparison.
+    // Normalize scores per-root before merging for fair cross-root comparison,
+    // and tag each match with its originating root name.
     let mut merged: Vec<Value> = per_root
         .into_iter()
-        .flat_map(|v| normalize_root_scores(v["matches"].as_array()))
+        .flat_map(|(root_name, v)| {
+            normalize_root_scores(v["matches"].as_array())
+                .into_iter()
+                .map(move |mut m| {
+                    m["root"] = json!(root_name);
+                    m
+                })
+        })
         .collect();
 
     merged.sort_by(|a, b| {

@@ -397,6 +397,20 @@ impl ResolvedDocRoot {
             embedding: None,
         }
     }
+
+    /// Create from a `DocRootEntry` with a pre-resolved canonical path.
+    ///
+    /// This is the single conversion point between the two types — the
+    /// `#[cfg(feature = "embed-candle")]` gate for the `embedding` field
+    /// only needs to be maintained here and in the struct definitions.
+    pub fn from_entry(entry: &DocRootEntry, canonical_path: PathBuf) -> Self {
+        Self {
+            name: entry.name.clone(),
+            path: canonical_path,
+            #[cfg(feature = "embed-candle")]
+            embedding: entry.embedding.clone(),
+        }
+    }
 }
 
 /// Expand a leading `~/` to the user's home directory.
@@ -412,42 +426,24 @@ fn expand_tilde(s: &str) -> PathBuf {
 /// Shared logic for resolving a single-root path: expand tilde, canonicalize,
 /// check for blocked system paths, and verify the directory exists.
 ///
-/// When `is_fatal` is true (highest-priority sources: env var, legacy field),
-/// a blocked or missing path is treated as a hard error — the caller should not
-/// fall through to lower-priority sources. When false, the path is silently skipped.
-fn resolve_single_root(raw: &str, label: &str, is_fatal: bool) -> Option<Vec<ResolvedDocRoot>> {
+/// Returns `None` (with a warning) if the path is blocked or missing, allowing
+/// the caller's priority chain to fall through to the next source.
+fn resolve_single_root(raw: &str, label: &str) -> Option<ResolvedDocRoot> {
     let expanded = expand_tilde(raw);
     let canonical = expanded.canonicalize().unwrap_or(expanded);
     if is_blocked_system_path(&canonical) {
-        if is_fatal {
-            eprintln!(
-                "[alcove] ERROR: {} points to blocked system path: {}. \
-                 This is a high-priority source — will NOT fall back to lower-priority roots.",
-                label,
-                canonical.display()
-            );
-        } else {
-            eprintln!(
-                "[alcove] {} points to blocked system path: {} — skipping",
-                label,
-                canonical.display()
-            );
-        }
+        eprintln!(
+            "[alcove] {} points to blocked system path: {} — skipping",
+            label,
+            canonical.display()
+        );
         return None;
     }
     if !canonical.is_dir() {
-        if is_fatal {
-            eprintln!(
-                "[alcove] ERROR: {} '{}' does not exist. \
-                 This is a high-priority source — will NOT fall back to lower-priority roots.",
-                label, raw
-            );
-        } else {
-            eprintln!("[alcove] {} '{}' does not exist — skipping", label, raw);
-        }
+        eprintln!("[alcove] {} '{}' does not exist — skipping", label, raw);
         return None;
     }
-    Some(vec![ResolvedDocRoot::new_default(canonical)])
+    Some(ResolvedDocRoot::new_default(canonical))
 }
 
 impl DocRootEntry {
@@ -616,13 +612,13 @@ impl DocConfig {
     /// Priority 1: `DOCS_ROOT` env var — highest priority single-root override.
     fn roots_from_env() -> Option<Vec<ResolvedDocRoot>> {
         let v = std::env::var("DOCS_ROOT").ok()?;
-        resolve_single_root(&v, "DOCS_ROOT", true)
+        resolve_single_root(&v, "DOCS_ROOT").map(|r| vec![r])
     }
 
     /// Priority 2: Legacy single `docs_root` field.
     fn roots_from_legacy_field(&self) -> Option<Vec<ResolvedDocRoot>> {
         let root = self.docs_root.as_ref()?;
-        resolve_single_root(root, "docs_root", true)
+        resolve_single_root(root, "docs_root").map(|r| vec![r])
     }
 
     /// Priority 3: Multiple named `docs_roots` entries.
@@ -631,14 +627,8 @@ impl DocConfig {
         let roots: Vec<ResolvedDocRoot> = entries
             .iter()
             .filter_map(|e| {
-                e.expand_path().map(|path| ResolvedDocRoot {
-                    name: e.name.clone(),
-                    path,
-                    // cfg-gate sync: must match `ResolvedDocRoot.embedding` and
-                    // `DocRootEntry.embedding` — all three use `#[cfg(feature = "embed-candle")]`.
-                    #[cfg(feature = "embed-candle")]
-                    embedding: e.embedding.clone(),
-                })
+                e.expand_path()
+                    .map(|path| ResolvedDocRoot::from_entry(e, path))
             })
             .collect();
         if roots.is_empty() { None } else { Some(roots) }

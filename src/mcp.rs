@@ -94,7 +94,7 @@ fn resolve_project_multi(
                 id.clone(),
                 -32001,
                 format!(
-                    "Could not detect project. CWD does not match any project in DOCS_ROOT. \
+                    "Could not detect project. CWD does not match any project in the configured doc-roots. \
                      Available projects: [{}]. \
                      Set MCP_PROJECT_NAME env var or run from within a project directory.",
                     available.join(", ")
@@ -886,7 +886,8 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             "root_count": root_count,
             "message": format!(
                 "Index build started for {} root(s) in background. \
-                 Search will use the updated index once complete.",
+                 Search will use the updated index once complete. \
+                 Build failures (if any) are logged to stderr.",
                 root_count
             )
         }));
@@ -960,14 +961,22 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
             // comprehensive coverage.
             use rayon::prelude::*;
             let args_clone = call.arguments.clone();
-            let root_results: Vec<Option<Value>> = all_roots
+            let root_results: Vec<(&ResolvedDocRoot, Option<Value>)> = all_roots
                 .par_iter()
-                .map(|root| tools::tool_search_global(&root.path, args_clone.clone()).ok())
+                .map(|root| {
+                    let result = tools::tool_search_global(&root.path, args_clone.clone()).ok();
+                    (root, result)
+                })
                 .collect();
             let mut merged_matches: Vec<Value> = Vec::new();
-            for v in root_results.into_iter().flatten() {
-                if let Some(arr) = v["matches"].as_array() {
-                    merged_matches.extend(arr.clone());
+            for (root, v) in root_results {
+                let Some(v) = v else { continue };
+                let Some(arr) = v["matches"].as_array() else {
+                    continue;
+                };
+                for mut m in arr.clone() {
+                    m["root"] = json!(root.name);
+                    merged_matches.push(m);
                 }
             }
             // Sort by score descending, then truncate to limit.
