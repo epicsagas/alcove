@@ -929,40 +929,14 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
             port
         );
 
-        // ── Enable as background service ──
+        // Auto-enable background service on supported platforms.
         #[cfg(all(feature = "alcove-server", target_os = "macos"))]
         {
-            let already_enabled = crate::launchd::is_loaded(crate::ServiceKind::Api);
-            let enable_labels = vec![
-                style("← Go back").yellow().to_string(),
-                if already_enabled {
-                    "Keep current (already registered)".to_string()
-                } else {
-                    "Yes — register as login item and start now".to_string()
-                },
-                "No — I'll run `alcove serve` manually".to_string(),
-            ];
-
-            let enable_default = 1;
-
-            let enable_idx = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt("Register alcove serve as a macOS login item?")
-                .items(&enable_labels)
-                .default(enable_default)
-                .interact()?;
-
-            if is_back_selection(enable_idx) {
-                continue; // Re-start server config loop
-            }
-
-            state.enable_server = enable_idx == 1;
-
-            if state.enable_server {
-                println!(
-                    "  {} Background service will be registered in Summary step.",
-                    style("✓").green()
-                );
-            }
+            state.enable_server = true;
+            println!(
+                "  {} Background service will be registered as a login item in Summary step.",
+                style("✓").green()
+            );
         }
 
         #[cfg(not(all(feature = "alcove-server", target_os = "macos")))]
