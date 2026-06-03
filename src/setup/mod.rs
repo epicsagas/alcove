@@ -753,7 +753,7 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
             let cfg = load_fresh_config();
             cfg.as_ref()
                 .and_then(|c| c.server.as_ref())
-                .map(|s| (s.host.clone(), s.port.to_string()))
+                .map(|s| (s.host.clone(), s.port.map(|p| p.to_string()).unwrap_or_else(|| "57384".to_string())))
                 .unwrap_or_else(|| ("127.0.0.1".to_string(), "57384".to_string()))
         });
 
@@ -902,11 +902,16 @@ fn step_server(state: &mut SetupState) -> Result<StepResult> {
         state.use_token = token.is_some();
 
         let host_toml = toml::Value::String(selected_host.to_string()).to_string();
+        let port_line = if port == 57384 {
+            String::new()
+        } else {
+            format!("\nport = {port}")
+        };
         state.server_section = Some(if let Some(ref t) = token {
             let token_toml = toml::Value::String(t.clone()).to_string();
-            format!("\n[server]\nhost = {host_toml}\nport = {port}\ntoken = {token_toml}\n")
+            format!("\n[server]\nhost = {host_toml}{port_line}\ntoken = {token_toml}\n")
         } else {
-            format!("\n[server]\nhost = {host_toml}\nport = {port}\n")
+            format!("\n[server]\nhost = {host_toml}{port_line}\n")
         });
 
         if token.is_some() {

@@ -300,18 +300,12 @@ pub(crate) enum ServiceKind {
     Api,
 }
 
-/// Resolve server port: config.toml `[server].port` (if non-default) → kind-specific default.
-///
-/// The serde default for `ServerConfig.port` is 57384, which matches `Mcp`.
-/// When the user hasn't customized the port, we return the kind-specific default
-/// (57384 for Mcp, 58301 for Api). When they've explicitly set a different port,
-/// we honor it.
+/// Resolve server port: config.toml `[server].port` (if set) → kind-specific default.
 #[cfg(feature = "alcove-server")]
 pub(crate) fn resolve_server_port(cfg: &config::DocConfig, kind: ServiceKind) -> u16 {
     cfg.server
         .as_ref()
-        .map(|s| s.port)
-        .filter(|&p| p != 57384)
+        .and_then(|s| s.port)
         .unwrap_or(match kind {
             ServiceKind::Mcp => 57384,
             ServiceKind::Api => 58301,
@@ -654,7 +648,7 @@ fn detect_proxy_target() -> Option<String> {
     let (host, port) = cfg
         .server
         .as_ref()
-        .map(|s| (s.host.as_str(), s.port))
+        .map(|s| (s.host.as_str(), s.port.unwrap_or(57384)))
         .unwrap_or(("127.0.0.1", 57384));
     let base = format!("http://{host}:{port}");
 
@@ -802,23 +796,22 @@ mod tests {
         let mut cfg = config::DocConfig::default();
         cfg.server = Some(config::ServerConfig {
             host: "127.0.0.1".into(),
-            port: 54321,
+            port: Some(54321),
             token: None,
         });
-        // Custom port honored regardless of kind
+        // Explicit port honored regardless of kind
         assert_eq!(resolve_server_port(&cfg, ServiceKind::Mcp), 54321);
         assert_eq!(resolve_server_port(&cfg, ServiceKind::Api), 54321);
     }
 
     #[test]
-    fn resolve_port_server_section_default_port_falls_through() {
+    fn resolve_port_server_section_none_port_uses_kind_default() {
         let mut cfg = config::DocConfig::default();
         cfg.server = Some(config::ServerConfig {
             host: "127.0.0.1".into(),
-            port: 57384, // same as serde default
+            port: None,
             token: None,
         });
-        // Port 57384 is treated as "not customized" → kind default applies
         assert_eq!(resolve_server_port(&cfg, ServiceKind::Mcp), 57384);
         assert_eq!(resolve_server_port(&cfg, ServiceKind::Api), 58301);
     }

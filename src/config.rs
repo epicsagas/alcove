@@ -165,10 +165,6 @@ fn default_server_host() -> String {
     "127.0.0.1".into()
 }
 
-fn default_server_port() -> u16 {
-    57384
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IndexConfig {
     #[serde(default = "default_index_buffer_mb")]
@@ -198,9 +194,9 @@ pub struct ServerConfig {
     /// Bind address. Default: `"127.0.0.1"` (localhost only).
     #[serde(default = "default_server_host")]
     pub host: String,
-    /// Listen port. Default: `57384` (IANA unregistered ephemeral range).
-    #[serde(default = "default_server_port")]
-    pub port: u16,
+    /// Listen port. When `None`, defaults to 57384 (MCP) or 58301 (API) based on service kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
     /// Bearer token for authentication. Auto-generated on `alcove setup`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
@@ -210,7 +206,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             host: default_server_host(),
-            port: default_server_port(),
+            port: None,
             token: None,
         }
     }
