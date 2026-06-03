@@ -428,12 +428,12 @@ fn expand_tilde(s: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Shared logic for resolving a single-root path: expand tilde, canonicalize,
-/// check for blocked system paths, and verify the directory exists.
+/// Validate a doc-root candidate path: expand tilde, canonicalize, check for
+/// blocked system paths, and verify the path is a directory.
 ///
-/// Returns `None` (with a warning) if the path is blocked or missing, allowing
-/// the caller's priority chain to fall through to the next source.
-fn resolve_single_root(raw: &str, label: &str) -> Option<ResolvedDocRoot> {
+/// On failure, prints a diagnostic to stderr using `label` and `raw` for
+/// context, then returns `None` so the caller's priority chain can fall through.
+fn validate_doc_root_path(raw: &str, label: &str) -> Option<PathBuf> {
     let expanded = expand_tilde(raw);
     let canonical = match expanded.canonicalize() {
         Ok(c) => c,
@@ -454,41 +454,23 @@ fn resolve_single_root(raw: &str, label: &str) -> Option<ResolvedDocRoot> {
         eprintln!("[alcove] {} '{}' is not a directory — skipping", label, raw);
         return None;
     }
-    Some(ResolvedDocRoot::new_default(canonical))
+    Some(canonical)
+}
+
+/// Shared logic for resolving a single-root path.
+///
+/// Returns `None` (with a warning) if the path is blocked or missing, allowing
+/// the caller's priority chain to fall through to the next source.
+fn resolve_single_root(raw: &str, label: &str) -> Option<ResolvedDocRoot> {
+    validate_doc_root_path(raw, label).map(ResolvedDocRoot::new_default)
 }
 
 impl DocRootEntry {
     /// Expand `~` prefix and canonicalize the path.
     /// Returns `None` if the path doesn't exist, is not a directory, or points to a blocked system directory.
     fn expand_path(&self) -> Option<PathBuf> {
-        let expanded = expand_tilde(&self.path);
-        // Canonicalize to resolve symlinks / `..` traversal, then check safety.
-        let canonical = match expanded.canonicalize() {
-            Ok(c) => c,
-            Err(_) => {
-                eprintln!(
-                    "[alcove] docs_roots entry '{}' path '{}' does not exist — skipping",
-                    self.name, self.path
-                );
-                return None;
-            }
-        };
-        if is_blocked_system_path(&canonical) {
-            eprintln!(
-                "[alcove] docs_roots entry '{}' points to blocked system path: {} — skipping",
-                self.name,
-                canonical.display()
-            );
-            return None;
-        }
-        if !canonical.is_dir() {
-            eprintln!(
-                "[alcove] docs_roots entry '{}' path '{}' is not a directory — skipping",
-                self.name, self.path
-            );
-            return None;
-        }
-        Some(canonical)
+        let label = format!("docs_roots entry '{}'", self.name);
+        validate_doc_root_path(&self.path, &label)
     }
 }
 
@@ -628,6 +610,12 @@ impl DocConfig {
     ///   4. built-in default (`~/.alcove/docs`) if the directory exists
     ///
     /// Returns an empty Vec if no root is configured or discoverable.
+    ///
+    /// **Performance note**: this method performs filesystem I/O (`canonicalize` +
+    /// `is_dir`) for each configured root on every call.  It is called once per
+    /// MCP tool dispatch, which is acceptable for typical root counts (1–5).
+    /// TODO: cache the result at server startup when the number of roots or
+    /// call frequency grows large enough to make this a bottleneck.
     pub fn resolved_docs_roots(&self) -> Vec<ResolvedDocRoot> {
         Self::roots_from_env()
             .or_else(|| self.roots_from_legacy_field())

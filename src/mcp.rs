@@ -37,7 +37,7 @@ fn resolve_project_multi(
         .ok()
         .and_then(|c| c.canonicalize().ok());
     let mut found: Option<(std::path::PathBuf, tools::ResolvedProject)> = None;
-    let mut ambiguous_env = false;
+    let mut env_match_count: usize = 0;
     for root in all_roots {
         if let Some(r) = tools::resolve_project(&root.path) {
             if r.detected_via == "cwd" {
@@ -50,20 +50,20 @@ fn resolve_project_multi(
                 found = Some((root.path.clone(), r));
                 break; // CWD detection is unambiguous — stop at first validated match
             } else {
-                // env detection: record first match, flag if a second match appears
-                if found.is_some() {
-                    ambiguous_env = true;
-                    break;
+                // env detection: scan all roots to get the total match count
+                // before emitting a warning, so the message includes the full count.
+                env_match_count += 1;
+                if found.is_none() {
+                    found = Some((root.path.clone(), r));
                 }
-                found = Some((root.path.clone(), r));
-                // continue scanning remaining roots to detect ambiguity
             }
         }
     }
-    if ambiguous_env {
+    if env_match_count > 1 {
         eprintln!(
-            "[alcove] WARNING: MCP_PROJECT_NAME matches projects in multiple roots — \
-             using the first match. Consider running from the project directory instead."
+            "[alcove] WARNING: MCP_PROJECT_NAME matches projects in {} roots — \
+             using the first match. Consider running from the project directory instead.",
+            env_match_count
         );
     }
     match found {
@@ -731,8 +731,13 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         );
     }
     // Primary root: first entry (DOCS_ROOT env var, docs_root field, or first docs_roots entry).
-    // NOTE: lint_project, promote_document, check_doc_changes, and init_project operate on
-    // this root only. In multi-root configs these tools always target the highest-priority root.
+    //
+    // Multi-root routing limitation: lint_project, promote_document, check_doc_changes,
+    // and init_project always operate on primary_root only, regardless of how many roots
+    // are configured.  They do not accept a `root` selector argument.  The `ok_with_root!`
+    // macro injects `"root": primary_root_name` into their responses so callers can see
+    // which root was targeted, but no routing to a non-primary root is possible today.
+    // TODO: add a `root` argument to these tools if per-root targeting becomes needed.
     let primary_root = all_roots[0].path.clone();
     let primary_root_name = all_roots[0].name.clone();
     let multi_root = all_roots.len() > 1;
