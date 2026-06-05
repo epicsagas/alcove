@@ -30,6 +30,7 @@ use fastembed::TextInitOptions;
 pub enum ModelState {
     #[default]
     NotLoaded,
+    Loading,
     Ready,
     Disabled,
     Failed(String),
@@ -40,6 +41,7 @@ impl std::fmt::Display for ModelState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotLoaded => write!(f, "not_loaded"),
+            Self::Loading => write!(f, "loading"),
             Self::Ready => write!(f, "ready"),
             Self::Disabled => write!(f, "disabled"),
             Self::Failed(e) => write!(f, "failed: {}", e),
@@ -405,31 +407,33 @@ impl EmbeddingModelChoice {
     /// Maximum sequence length (tokens) supported by the model.
     pub fn max_seq_length(self) -> usize {
         match self {
-            | Self::AllMiniLML6V2
+            Self::AllMiniLML6V2
             | Self::AllMiniLML6V2Q
             | Self::AllMiniLML12V2
             | Self::AllMiniLML12V2Q => 256,
 
-            | Self::AllMpnetBaseV2 => 384,
+            Self::AllMpnetBaseV2 => 384,
 
-            | Self::BGEM3
+            // Arctic Embed non-Long variants: 512 token limit
+            Self::ArcticEmbedXS
+            | Self::ArcticEmbedXSQ
+            | Self::ArcticEmbedS
+            | Self::ArcticEmbedSQ
+            | Self::ArcticEmbedM
+            | Self::ArcticEmbedMQ
+            | Self::ArcticEmbedL
+            | Self::ArcticEmbedLQ => 512,
+
+            // Long-context models
+            Self::BGEM3
             | Self::NomicEmbedTextV1
             | Self::NomicEmbedTextV15
             | Self::NomicEmbedTextV15Q
             | Self::JinaEmbeddingsV2BaseCode
             | Self::JinaEmbeddingsV2BaseEN
             | Self::EmbeddingGemma300M
-            // Snowflake Arctic
-            | Self::ArcticEmbedXS
-            | Self::ArcticEmbedXSQ
-            | Self::ArcticEmbedS
-            | Self::ArcticEmbedSQ
-            | Self::ArcticEmbedM
-            | Self::ArcticEmbedMQ
             | Self::ArcticEmbedMLong
-            | Self::ArcticEmbedMLongQ
-            | Self::ArcticEmbedL
-            | Self::ArcticEmbedLQ => 8192,
+            | Self::ArcticEmbedMLongQ => 8192,
 
             // All others default to 512
             _ => 512,
@@ -485,7 +489,7 @@ impl EmbeddingModelChoice {
             Self::AllMiniLML6V2 => "Qdrant/all-MiniLM-L6-v2-onnx",
             Self::AllMiniLML6V2Q => "Xenova/all-MiniLM-L6-v2",
             Self::AllMiniLML12V2 => "Xenova/all-MiniLM-L12-v2",
-            Self::AllMiniLML12V2Q => "Xenova/all-MiniLM-L12-v2",
+            Self::AllMiniLML12V2Q => "Qdrant/all-MiniLM-L12-v2-onnx-Q",
             Self::AllMpnetBaseV2 => "Xenova/all-mpnet-base-v2",
             Self::MultilingualE5Small => "intfloat/multilingual-e5-small",
             Self::MultilingualE5Base => "intfloat/multilingual-e5-base",
@@ -507,11 +511,11 @@ impl EmbeddingModelChoice {
             Self::ParaphraseMLMiniLML12V2Q => "Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q",
             Self::ParaphraseMLMpnetBaseV2 => "Xenova/paraphrase-multilingual-mpnet-base-v2",
             Self::MxbaiEmbedLargeV1 => "mixedbread-ai/mxbai-embed-large-v1",
-            Self::MxbaiEmbedLargeV1Q => "mixedbread-ai/mxbai-embed-large-v1",
+            Self::MxbaiEmbedLargeV1Q => "Qdrant/mxbai-embed-large-v1-onnx-Q",
             Self::GTEBaseENV15 => "Alibaba-NLP/gte-base-en-v1.5",
-            Self::GTEBaseENV15Q => "Alibaba-NLP/gte-base-en-v1.5",
+            Self::GTEBaseENV15Q => "Qdrant/gte-base-en-v1.5-onnx-Q",
             Self::GTELargeENV15 => "Alibaba-NLP/gte-large-en-v1.5",
-            Self::GTELargeENV15Q => "Alibaba-NLP/gte-large-en-v1.5",
+            Self::GTELargeENV15Q => "Qdrant/gte-large-en-v1.5-onnx-Q",
             Self::JinaEmbeddingsV2BaseCode => "jinaai/jina-embeddings-v2-base-code",
             Self::JinaEmbeddingsV2BaseEN => "jinaai/jina-embeddings-v2-base-en",
             Self::EmbeddingGemma300M => "onnx-community/embeddinggemma-300m-ONNX",
@@ -611,7 +615,7 @@ impl FastEmbedSession {
     }
 
     /// Embed a batch of texts, returning one normalized Vec<f32> per text.
-    fn embed_batch(&mut self, texts: Vec<String>) -> Result<Vec<Vec<f32>>> {
+    fn embed_batch(&mut self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let embeddings = self.model.embed(texts, None)?;
         // L2 normalize — fastembed returns raw pooled output
         Ok(embeddings
@@ -715,7 +719,7 @@ impl EmbeddingService {
                 return Err("Embedding is disabled in configuration".to_string());
             }
             ModelState::Failed(e) => return Err(e),
-            ModelState::NotLoaded => {
+            ModelState::NotLoaded | ModelState::Loading => {
                 // In test builds, skip model download entirely — the ONNX Runtime
                 // native library increases per-process resource pressure enough to
                 // cause EAGAIN on Tantivy commits when many tests run in parallel.
@@ -737,7 +741,7 @@ impl EmbeddingService {
             match state.clone() {
                 ModelState::Ready => return Ok(()),
                 ModelState::Failed(e) => return Err(e),
-                ModelState::NotLoaded => {
+                ModelState::NotLoaded | ModelState::Loading => {
                     drop(state);
                     self.start_download();
                     state = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -763,10 +767,13 @@ impl EmbeddingService {
 
     fn start_download(&self) {
         {
-            let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
             if *state != ModelState::NotLoaded {
                 return;
             }
+            // Transition to Loading inside the lock so a concurrent caller sees
+            // a non-NotLoaded state and returns early — prevents double-spawn.
+            *state = ModelState::Loading;
         }
 
         let state_arc = Arc::clone(&self.state);
@@ -878,7 +885,7 @@ impl EmbeddingService {
 
         let miss_texts: Vec<String> = miss_indices.iter().map(|&i| texts[i].to_string()).collect();
         let inferred = session
-            .embed_batch(miss_texts.clone())
+            .embed_batch(&miss_texts)
             .map_err(|e| e.to_string())?;
 
         {
@@ -898,12 +905,14 @@ impl EmbeddingService {
 
     #[allow(dead_code)]
     pub fn remove_cache(&self) -> std::result::Result<(), String> {
-        let cache_dir = &self.internal_config.cache_dir;
-        if cache_dir.exists() {
-            // Remove fastembed model cache (hf-hub structure: models--{org}--{repo})
-            if let Err(e) = std::fs::remove_dir_all(cache_dir) {
-                return Err(format!("Failed to remove cache: {}", e));
-            }
+        // hf-hub cache uses "models--{org}--{repo}" folder naming.
+        // Remove only this model's folder so other cached models are unaffected.
+        let model_id = self.internal_config.model.model_id();
+        let folder_name = format!("models--{}", model_id.replace('/', "--"));
+        let model_dir = self.internal_config.cache_dir.join(folder_name);
+        if model_dir.exists() {
+            std::fs::remove_dir_all(&model_dir)
+                .map_err(|e| format!("Failed to remove cache: {}", e))?;
         }
 
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -952,6 +961,53 @@ mod tests {
             assert_eq!(EmbeddingModelChoice::ArcticEmbedL.dimension(), 1024);
             assert_eq!(EmbeddingModelChoice::BGESmallZHV15.dimension(), 512);
             assert_eq!(EmbeddingModelChoice::ArcticEmbedMLong.dimension(), 768);
+        }
+    }
+
+    #[test]
+    fn test_model_max_seq_length() {
+        #[cfg(feature = "embed")]
+        {
+            assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.max_seq_length(), 256);
+            assert_eq!(EmbeddingModelChoice::AllMpnetBaseV2.max_seq_length(), 384);
+            // Arctic non-Long: 512
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedXS.max_seq_length(), 512);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedS.max_seq_length(), 512);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedM.max_seq_length(), 512);
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedL.max_seq_length(), 512);
+            // Arctic Long: 8192
+            assert_eq!(EmbeddingModelChoice::ArcticEmbedMLong.max_seq_length(), 8192);
+            assert_eq!(EmbeddingModelChoice::BGEM3.max_seq_length(), 8192);
+            assert_eq!(EmbeddingModelChoice::NomicEmbedTextV15.max_seq_length(), 8192);
+        }
+    }
+
+    #[test]
+    fn test_model_id_uniqueness() {
+        #[cfg(feature = "embed")]
+        {
+            use std::collections::HashMap;
+            let mut id_to_models: HashMap<&str, Vec<&str>> = HashMap::new();
+            for m in EmbeddingModelChoice::all() {
+                id_to_models.entry(m.model_id()).or_default().push(m.as_str());
+            }
+            // Verify quantized variants no longer share repos with non-Q counterparts
+            assert_ne!(
+                EmbeddingModelChoice::AllMiniLML12V2.model_id(),
+                EmbeddingModelChoice::AllMiniLML12V2Q.model_id()
+            );
+            assert_ne!(
+                EmbeddingModelChoice::GTEBaseENV15.model_id(),
+                EmbeddingModelChoice::GTEBaseENV15Q.model_id()
+            );
+            assert_ne!(
+                EmbeddingModelChoice::GTELargeENV15.model_id(),
+                EmbeddingModelChoice::GTELargeENV15Q.model_id()
+            );
+            assert_ne!(
+                EmbeddingModelChoice::MxbaiEmbedLargeV1.model_id(),
+                EmbeddingModelChoice::MxbaiEmbedLargeV1Q.model_id()
+            );
         }
     }
 
@@ -1041,6 +1097,7 @@ mod tests {
         #[cfg(feature = "embed")]
         {
             assert_eq!(format!("{}", ModelState::NotLoaded), "not_loaded");
+            assert_eq!(format!("{}", ModelState::Loading), "loading");
             assert_eq!(format!("{}", ModelState::Ready), "ready");
             assert_eq!(
                 format!("{}", ModelState::Failed("oops".to_string())),
