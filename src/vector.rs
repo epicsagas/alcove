@@ -7,6 +7,7 @@
 use std::cmp::Ordering;
 #[cfg(feature = "vector")]
 use std::collections::BinaryHeap;
+#[cfg(feature = "embed")]
 use std::path::Path;
 
 #[cfg(feature = "vector")]
@@ -136,6 +137,7 @@ fn evict_stale(cache: &mut std::collections::HashMap<Option<String>, HnswCacheEn
 #[cfg(feature = "vector")]
 impl VectorStore {
     /// Open or create a vector store at the given path
+    #[cfg(feature = "embed")]
     pub fn open(path: &Path, model: &str, dimension: usize) -> Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -213,6 +215,7 @@ impl VectorStore {
     ///
     /// Invalidates the cached entry for every affected project AND the
     /// global `None` entry (which spans all projects).
+    #[cfg(feature = "embed")]
     pub fn batch_upsert(
         &mut self,
         embeddings: impl Iterator<Item = (String, String, u64, Vec<f32>)>,
@@ -273,6 +276,7 @@ impl VectorStore {
     }
 
     /// Check if a file already has vectors in the store
+    #[cfg(feature = "embed")]
     pub fn has_file(&self, project: &str, file: &str) -> Result<bool> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM vectors WHERE project = ?1 AND file = ?2",
@@ -667,7 +671,7 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// RRF score = bm25_weight / (k + rank_bm25) + vector_weight / (k + rank_vector)
 /// Default k = 60 (commonly used value). BM25 is weighted at 0.6 and vector at 0.4
 /// to give slight preference to the lexical signal.
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", feature = "embed"))]
 pub fn reciprocal_rank_fusion(
     bm25_results: &[(String, String, u64, f32)], // (project, file, chunk_id, score)
     vector_results: &[VectorResult],
