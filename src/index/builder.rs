@@ -24,7 +24,7 @@ struct IndexFields {
     line_start: Field,
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 struct VectorCounters {
     vectors_indexed: u64,
     vector_errors: u64,
@@ -35,7 +35,7 @@ use crate::config::load_config;
 use crate::config::{effective_config, is_reserved_dir_name};
 
 use super::cache::{CacheCategory, invalidate_reader_cache};
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 use super::chunker::{ChunkConfig, chunk_content_with_config};
 use super::chunker::{chunk_content, extract_title};
 use super::frontmatter::parse_frontmatter_flags;
@@ -388,13 +388,13 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
 
     // Count projects that opted out of vector indexing (vector_index = false).
     let embedding_enabled_for_count = {
-        #[cfg(feature = "embed-candle")]
+        #[cfg(feature = "embed")]
         {
             crate::config::load_config()
                 .embedding_config_with_defaults()
                 .enabled
         }
-        #[cfg(not(feature = "embed-candle"))]
+        #[cfg(not(feature = "embed"))]
         {
             false
         }
@@ -674,7 +674,7 @@ fn write_tantivy_index(
 /// Embeds `pending` chunks and upserts them into the vector store.
 /// Drains `pending` on success; clears it on embed error.
 /// Updates `vectors_indexed` and `vector_errors` in place.
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn flush_embed_batch(
     pending: &mut Vec<(String, String, u64, String)>,
     service: &crate::embedding::EmbeddingService,
@@ -717,7 +717,7 @@ fn flush_embed_batch(
 }
 
 /// Reads, chunks, and embeds `to_embed` files in batches of `embed_batch`.
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn embed_files_in_batches(
     to_embed: &[ProjectFile],
     service: &crate::embedding::EmbeddingService,
@@ -752,9 +752,9 @@ fn embed_files_in_batches(
     flush_embed_batch(&mut pending, service, store, model, counters);
 }
 
-/// Runs the full embedding pipeline when the `embed-candle` feature is enabled.
+/// Runs the full embedding pipeline when the `embed` feature is enabled.
 /// Returns updated (vector_status, vectors_indexed, vector_errors, embedding_model).
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn run_full_vector_indexing(
     docs_root: &Path,
     files_to_index: Vec<ProjectFile>,
@@ -886,9 +886,9 @@ fn run_vector_indexing(
     if skip_embedding {
         return Ok(("skipped".to_string(), 0, 0, String::new()));
     }
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     return run_full_vector_indexing(docs_root, files_to_index);
-    #[cfg(not(feature = "embed-candle"))]
+    #[cfg(not(feature = "embed"))]
     {
         let _ = (docs_root, files_to_index);
         Ok(("disabled".to_string(), 0, 0, String::new()))
@@ -1036,19 +1036,19 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
     let _ = meta.save(vault_path);
 
     // ---------------------------------------------------------------------------
-    // Vector indexing (embed-candle feature) — uses vault-specific embedding model
+    // Vector indexing (embed feature) — uses vault-specific embedding model
     // with fallback to global config.
     // ---------------------------------------------------------------------------
-    #[cfg_attr(not(feature = "embed-candle"), allow(unused_mut))]
+    #[cfg_attr(not(feature = "embed"), allow(unused_mut))]
     let mut vector_status = "disabled".to_string();
-    #[cfg_attr(not(feature = "embed-candle"), allow(unused_mut))]
+    #[cfg_attr(not(feature = "embed"), allow(unused_mut))]
     let mut vectors_indexed = 0u64;
-    #[cfg_attr(not(feature = "embed-candle"), allow(unused_mut))]
+    #[cfg_attr(not(feature = "embed"), allow(unused_mut))]
     let mut vector_errors = 0u64;
-    #[cfg_attr(not(feature = "embed-candle"), allow(unused_mut))]
+    #[cfg_attr(not(feature = "embed"), allow(unused_mut))]
     let mut embedding_model = String::new();
 
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     {
         use crate::config::vault_embedding_config;
         use crate::embedding::{EmbeddingModelChoice, EmbeddingService};

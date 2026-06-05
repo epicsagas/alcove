@@ -26,7 +26,7 @@ impl ChunkConfig {
     ///
     /// Uses ~2.0 chars/token (conservative for CJK) with 75% utilization
     /// to leave headroom for special tokens, prefix, and overlap.
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     pub(crate) fn for_max_tokens(max_tokens: usize) -> Self {
         let safe_chars = (max_tokens as f64 * 2.0 * 0.75) as usize;
         let prose_size = safe_chars.min(2000);

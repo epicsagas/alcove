@@ -3,7 +3,7 @@ mod bench;
 mod cli;
 mod commands;
 mod config;
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 mod embedding;
 mod index;
 #[cfg(feature = "alcove-server")]
@@ -115,7 +115,7 @@ enum Commands {
         limit: usize,
     },
     /// Manage embedding models for hybrid search
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     Model {
         #[command(subcommand)]
         subcmd: ModelCommands,
@@ -222,7 +222,7 @@ enum VaultCommands {
 }
 
 #[derive(Subcommand)]
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 enum ModelCommands {
     /// List available embedding models
     List,
@@ -476,7 +476,7 @@ fn main() -> Result<()> {
                 Ok(())
             }
         },
-        #[cfg(feature = "embed-candle")]
+        #[cfg(feature = "embed")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Mcp { subcmd }) => handle_server_command(subcmd, ServiceKind::Mcp),

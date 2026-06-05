@@ -720,10 +720,10 @@ pub fn cmd_uninstall() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Model subcommand (embed-candle feature)
+// Model subcommand (embed feature)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
     use crate::ModelCommands;
 
@@ -736,7 +736,7 @@ pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
     }
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn cmd_model_list() -> Result<()> {
     use crate::embedding::EmbeddingModelChoice;
 
@@ -764,15 +764,49 @@ fn cmd_model_list() -> Result<()> {
             ""
         };
         let desc = match model {
-            EmbeddingModelChoice::AllMiniLML6V2 => "Default, fast & lightweight (80MB)",
+            EmbeddingModelChoice::AllMiniLML6V2 => "Fast & lightweight",
+            EmbeddingModelChoice::AllMiniLML6V2Q => "Quantized MiniLM, smaller download",
+            EmbeddingModelChoice::AllMiniLML12V2 => "Larger MiniLM, better quality",
+            EmbeddingModelChoice::AllMiniLML12V2Q => "Quantized L12, smaller download",
+            EmbeddingModelChoice::AllMpnetBaseV2 => "MPNet, strong general purpose",
             EmbeddingModelChoice::MultilingualE5Small => "Multilingual balanced (100+ langs)",
-            EmbeddingModelChoice::MultilingualE5Base => "Large scale docs",
-            EmbeddingModelChoice::MultilingualE5Large => "Best quality, heavy",
-            EmbeddingModelChoice::BGEM3 => "Dense+Sparse+ColBERT",
-            EmbeddingModelChoice::ArcticEmbedXS => "Snowflake XS, best 384-dim quality",
-            EmbeddingModelChoice::ArcticEmbedS => "Snowflake S, improved small retrieval",
-            EmbeddingModelChoice::ArcticEmbedM => "Snowflake M, workhorse retrieval",
-            EmbeddingModelChoice::ArcticEmbedL => "Snowflake L, top retrieval quality",
+            EmbeddingModelChoice::MultilingualE5Base => "Multilingual, larger scale",
+            EmbeddingModelChoice::MultilingualE5Large => "Multilingual, best quality",
+            EmbeddingModelChoice::BGESmallENV15 => "BGE small, fast English",
+            EmbeddingModelChoice::BGESmallENV15Q => "Quantized BGE small",
+            EmbeddingModelChoice::BGEBaseENV15 => "BGE base, balanced English",
+            EmbeddingModelChoice::BGEBaseENV15Q => "Quantized BGE base",
+            EmbeddingModelChoice::BGELargeENV15 => "BGE large, best English quality",
+            EmbeddingModelChoice::BGELargeENV15Q => "Quantized BGE large",
+            EmbeddingModelChoice::BGESmallZHV15 => "BGE small, Chinese",
+            EmbeddingModelChoice::BGELargeZHV15 => "BGE large, Chinese",
+            EmbeddingModelChoice::BGEM3 => "Dense+Sparse+ColBERT multilingual",
+            EmbeddingModelChoice::ModernBertEmbedLarge => "ModernBERT, latest architecture",
+            EmbeddingModelChoice::NomicEmbedTextV1 => "Nomic v1, 8192 context",
+            EmbeddingModelChoice::NomicEmbedTextV15 => "Nomic v1.5, 8192 context",
+            EmbeddingModelChoice::NomicEmbedTextV15Q => "Quantized Nomic v1.5",
+            EmbeddingModelChoice::ParaphraseMLMiniLML12V2 => "Paraphrase multilingual",
+            EmbeddingModelChoice::ParaphraseMLMiniLML12V2Q => "Quantized paraphrase multilingual",
+            EmbeddingModelChoice::ParaphraseMLMpnetBaseV2 => "Paraphrase MPNet multilingual",
+            EmbeddingModelChoice::MxbaiEmbedLargeV1 => "MixedBread, strong retrieval",
+            EmbeddingModelChoice::MxbaiEmbedLargeV1Q => "Quantized MixedBread",
+            EmbeddingModelChoice::GTEBaseENV15 => "GTE base, strong English",
+            EmbeddingModelChoice::GTEBaseENV15Q => "Quantized GTE base",
+            EmbeddingModelChoice::GTELargeENV15 => "GTE large, best English",
+            EmbeddingModelChoice::GTELargeENV15Q => "Quantized GTE large",
+            EmbeddingModelChoice::JinaEmbeddingsV2BaseCode => "Jina, code-optimized, 8192 ctx",
+            EmbeddingModelChoice::JinaEmbeddingsV2BaseEN => "Jina, English, 8192 ctx",
+            EmbeddingModelChoice::EmbeddingGemma300M => "Gemma 300M, Google model",
+            EmbeddingModelChoice::ArcticEmbedXS => "Arctic XS, best 384-dim quality",
+            EmbeddingModelChoice::ArcticEmbedXSQ => "Quantized Arctic XS",
+            EmbeddingModelChoice::ArcticEmbedS => "Arctic S, improved small retrieval",
+            EmbeddingModelChoice::ArcticEmbedSQ => "Quantized Arctic S",
+            EmbeddingModelChoice::ArcticEmbedM => "Arctic M, workhorse retrieval",
+            EmbeddingModelChoice::ArcticEmbedMQ => "Quantized Arctic M",
+            EmbeddingModelChoice::ArcticEmbedMLong => "Arctic M Long, 8192 context",
+            EmbeddingModelChoice::ArcticEmbedMLongQ => "Quantized Arctic M Long",
+            EmbeddingModelChoice::ArcticEmbedL => "Arctic L, top retrieval quality",
+            EmbeddingModelChoice::ArcticEmbedLQ => "Quantized Arctic L",
         };
         println!(
             "{:<30} {:<8} {:<10} {}{}",
@@ -791,9 +825,9 @@ fn cmd_model_list() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn cmd_model_download() -> Result<()> {
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     {
         use crate::embedding::EmbeddingService;
 
@@ -843,19 +877,19 @@ fn cmd_model_download() -> Result<()> {
         println!("Cache location: {}", cfg.cache_dir);
     }
 
-    #[cfg(not(feature = "embed-candle"))]
+    #[cfg(not(feature = "embed"))]
     {
         println!(
-            "{} The 'embed-candle' feature is required for embedding support.",
+            "{} The 'embed' feature is required for embedding support.",
             style("✗").red()
         );
-        println!("Install with: cargo install alcove --features embed-candle");
+        println!("Install with: cargo install alcove --features embed");
     }
 
     Ok(())
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn cmd_model_remove() -> Result<()> {
     let cfg = load_config().embedding_config_with_defaults();
     let cache_dir = std::path::PathBuf::from(
@@ -898,7 +932,7 @@ fn cmd_model_remove() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn cmd_model_set(model_name: &str) -> Result<()> {
     use crate::embedding::EmbeddingModelChoice;
 
@@ -969,7 +1003,7 @@ fn cmd_model_set(model_name: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn cmd_model_status() -> Result<()> {
     let cfg = load_config();
     let emb_cfg = cfg.embedding_config_with_defaults();

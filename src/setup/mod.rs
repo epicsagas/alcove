@@ -279,11 +279,12 @@ fn print_step_header(step: &Step) {
 // ---------------------------------------------------------------------------
 
 /// Embedding model options for setup wizard
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
+    ("AllMiniLML6V2", "Fast & lightweight (~80MB)", 384, 80),
     (
-        "AllMiniLML6V2",
-        "Default, fast & lightweight (~80MB)",
+        "AllMiniLML6V2Q",
+        "Quantized MiniLM, smaller download (~80MB)",
         384,
         80,
     ),
@@ -295,38 +296,61 @@ const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
     ),
     (
         "MultilingualE5Base",
-        "Large scale docs (~1100MB)",
+        "Multilingual, larger scale (~1100MB)",
         768,
         1100,
     ),
     (
         "MultilingualE5Large",
-        "Best quality, heavy (~2200MB)",
+        "Multilingual, best quality (~2200MB)",
         1024,
         2200,
     ),
-    ("BGEM3", "Dense+Sparse+ColBERT (~2300MB)", 1024, 2300),
+    (
+        "BGEM3",
+        "Dense+Sparse+ColBERT multilingual (~600MB)",
+        1024,
+        600,
+    ),
+    (
+        "BGESmallENV15Q",
+        "Quantized BGE small, fast English (~40MB)",
+        384,
+        40,
+    ),
+    (
+        "NomicEmbedTextV15",
+        "Nomic v1.5, 8192 context (~550MB)",
+        768,
+        550,
+    ),
+    (
+        "MxbaiEmbedLargeV1",
+        "MixedBread, strong retrieval (~670MB)",
+        1024,
+        670,
+    ),
     (
         "ArcticEmbedXS",
-        "Snowflake XS, best 384-dim quality (~90MB)",
+        "Arctic XS, best 384-dim quality (~90MB)",
         384,
         90,
     ),
     (
         "ArcticEmbedS",
-        "Snowflake S, improved retrieval (~130MB)",
+        "Arctic S, improved retrieval (~130MB)",
         384,
         130,
     ),
     (
         "ArcticEmbedM",
-        "Snowflake M, workhorse retrieval (~430MB)",
+        "Arctic M, workhorse retrieval (~430MB)",
         768,
         430,
     ),
     (
         "ArcticEmbedL",
-        "Snowflake L, top retrieval quality (~1300MB)",
+        "Arctic L, top retrieval quality (~1300MB)",
         1024,
         1300,
     ),
@@ -556,7 +580,7 @@ fn step_diagram(state: &mut SetupState) -> Result<StepResult> {
 fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
     print_step_header(&Step::Embedding);
 
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     {
         // Check current config
         let current_model = state
@@ -682,7 +706,7 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
         }
     }
 
-    #[cfg(not(feature = "embed-candle"))]
+    #[cfg(not(feature = "embed"))]
     {
         // Add back option for non-full feature
         let labels = vec![
@@ -707,7 +731,7 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
         println!();
         println!("  To enable hybrid search later, reinstall with:");
         println!(
-            "  {} cargo install alcove --features embed-candle",
+            "  {} cargo install alcove --features embed",
             style("→").cyan()
         );
         println!();
@@ -1176,7 +1200,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                 .lines()
                 .find_map(|l| l.strip_prefix("model = ").map(|v| v.trim_matches('"')));
             if let Some(model_name) = model {
-                #[cfg(feature = "embed-candle")]
+                #[cfg(feature = "embed")]
                 {
                     let m = crate::embedding::EmbeddingModelChoice::parse(model_name);
                     println!(
@@ -1186,7 +1210,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                         m.map(|m| m.size_mb()).unwrap_or(235)
                     );
                 }
-                #[cfg(not(feature = "embed-candle"))]
+                #[cfg(not(feature = "embed"))]
                 {
                     println!("  Embedding: {} (configured)", model_name);
                 }
