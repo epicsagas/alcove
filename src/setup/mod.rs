@@ -278,57 +278,45 @@ fn print_step_header(step: &Step) {
 // Embedding model selection
 // ---------------------------------------------------------------------------
 
-/// Embedding model options for setup wizard
-#[cfg(feature = "embed-candle")]
+/// Curated embedding models for setup wizard.
+/// All 43 models remain available via manual config editing.
+#[cfg(feature = "embed")]
 const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
     (
-        "AllMiniLML6V2",
-        "Default, fast & lightweight (~80MB)",
-        384,
-        80,
-    ),
-    (
-        "MultilingualE5Small",
-        "Balanced multilingual (100+ langs, ~470MB)",
-        384,
-        470,
-    ),
-    (
-        "MultilingualE5Base",
-        "Large scale docs (~1100MB)",
-        768,
-        1100,
-    ),
-    (
-        "MultilingualE5Large",
-        "Best quality, heavy (~2200MB)",
-        1024,
-        2200,
-    ),
-    ("BGEM3", "Dense+Sparse+ColBERT (~2300MB)", 1024, 2300),
-    (
         "ArcticEmbedXS",
-        "Snowflake XS, best 384-dim quality (~90MB)",
+        "Default — best size/quality, multilingual (~90MB)",
         384,
         90,
     ),
     (
-        "ArcticEmbedS",
-        "Snowflake S, improved retrieval (~130MB)",
+        "ArcticEmbedXSQ",
+        "Quantized Arctic XS, smaller download (~90MB)",
         384,
-        130,
+        90,
     ),
     (
-        "ArcticEmbedM",
-        "Snowflake M, workhorse retrieval (~430MB)",
+        "MultilingualE5Small",
+        "Best Korean/CJK support, 100+ langs (~470MB)",
+        384,
+        470,
+    ),
+    (
+        "BGEM3",
+        "Premium — Dense+Sparse+ColBERT, 100+ langs (~600MB)",
+        1024,
+        600,
+    ),
+    (
+        "ArcticEmbedMLong",
+        "Long context (8192), multilingual (~430MB)",
         768,
         430,
     ),
     (
-        "ArcticEmbedL",
-        "Snowflake L, top retrieval quality (~1300MB)",
-        1024,
-        1300,
+        "JinaEmbeddingsV2BaseCode",
+        "Code-optimized, 8192 context (~550MB)",
+        768,
+        550,
     ),
     ("disabled", "Disable embedding (BM25 only)", 0, 0),
 ];
@@ -556,7 +544,7 @@ fn step_diagram(state: &mut SetupState) -> Result<StepResult> {
 fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
     print_step_header(&Step::Embedding);
 
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     {
         // Check current config
         let current_model = state
@@ -682,7 +670,7 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
         }
     }
 
-    #[cfg(not(feature = "embed-candle"))]
+    #[cfg(not(feature = "embed"))]
     {
         // Add back option for non-full feature
         let labels = vec![
@@ -707,7 +695,7 @@ fn step_embedding(state: &mut SetupState) -> Result<StepResult> {
         println!();
         println!("  To enable hybrid search later, reinstall with:");
         println!(
-            "  {} cargo install alcove --features embed-candle",
+            "  {} cargo install alcove --features embed",
             style("→").cyan()
         );
         println!();
@@ -1176,7 +1164,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                 .lines()
                 .find_map(|l| l.strip_prefix("model = ").map(|v| v.trim_matches('"')));
             if let Some(model_name) = model {
-                #[cfg(feature = "embed-candle")]
+                #[cfg(feature = "embed")]
                 {
                     let m = crate::embedding::EmbeddingModelChoice::parse(model_name);
                     println!(
@@ -1186,7 +1174,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
                         m.map(|m| m.size_mb()).unwrap_or(235)
                     );
                 }
-                #[cfg(not(feature = "embed-candle"))]
+                #[cfg(not(feature = "embed"))]
                 {
                     println!("  Embedding: {} (configured)", model_name);
                 }

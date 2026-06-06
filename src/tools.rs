@@ -355,7 +355,7 @@ pub fn tool_search(
     let docs_root = project_root.parent().unwrap_or(project_root);
 
     // Try indexed search first (faster and ranked)
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     {
         use crate::config::load_config;
         use crate::embedding::{EmbeddingModelChoice, EmbeddingService};

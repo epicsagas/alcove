@@ -498,20 +498,19 @@ Der Index wird automatisch im Hintergrund erstellt, wenn der API-Server startet,
 
 ### Embedding-Modell wählen
 
-| Modell | Festplatte | Dim | Sprachen | Am besten für | Peak-RAM |
-|--------|------------|-----|----------|---------------|----------|
-| `AllMiniLML6V2` | 90 MB | 384 | Englisch | Kleinster Footprint, schnelle englische Indexierung | ~400 MB |
-| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ Sprachen** | **Standard — mehrsprachige / gemischte Projekte** | **~700 MB** |
-| `MultilingualE5Base` | 555 MB | 768 | 100+ Sprachen | Bessere mehrsprachige Qualität | ~2 GB |
-| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ Sprachen | Maximale mehrsprachige Qualität | ~7 GB |
-| `BGEM3` | 2.3 GB | 1024 | 100+ Sprachen | Modernste mehrsprachige Unterstützung | ~8 GB |
-| `ArcticEmbedXS` | 90 MB | 384 | Englisch | Snowflake — beste Qualität bei 384 dim | ~400 MB |
-| `ArcticEmbedS` | 130 MB | 384 | Englisch | Snowflake — verbesserte Suche bei kleiner Größe | ~500 MB |
-| `ArcticEmbedM` | 430 MB | 768 | Englisch | Snowflake — zuverlässige Suchqualität | ~1.5 GB |
-| `ArcticEmbedL` | 1.3 GB | 1024 | Englisch | Snowflake — konkurrenzfähig mit Closed-Source-APIs | ~5 GB |
+| Modell | Festplatte | Dim | Kontext | Sprachen | Am besten für | Peak-RAM |
+|--------|------------|-----|---------|----------|---------------|----------|
+| **`ArcticEmbedXS`** (Standard) | **90 MB** | **384** | **512** | **Mehrsprachig** | **Standard — bestes Preis-Leistungs-Verhältnis** | **~400 MB** |
+| `ArcticEmbedXSQ` | 90 MB | 384 | 512 | Mehrsprachig | Quantisiert, kleinerer Download | ~400 MB |
+| `MultilingualE5Small` | 470 MB | 384 | 512 | 100+ Sprachen | Beste Korean/CJK-Unterstützung | ~1.2 GB |
+| `BGEM3` | 600 MB | 1024 | 8192 | 100+ Sprachen | Premium — Dense+Sparse+ColBERT | ~2 GB |
+| `ArcticEmbedMLong` | 430 MB | 768 | 8192 | Mehrsprachig | Lange Dokumente | ~1.5 GB |
+| `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | Code+Englisch | Code-optimiert | ~1.5 GB |
+
+> Alle 43 Modelle mit `alcove model list` anzeigen. Jedes Modell kann direkt in der Konfigurationsdatei gesetzt werden.
 
 **Speicherbedarf beim Rebuild:**
-Die Peak-RAM variiert je nach Modell — siehe die Spalte "Peak-RAM" in der Tabelle oben. Große Modelle (BGEM3, MultilingualE5Large, ArcticEmbedL) können während des Rebuilds 5-10 GB verwenden. Nach Abschluss des Rebuilds sinkt der Ruhezustand auf ~50-200 MB je nach Ihrer `[memory]`-Konfiguration. Sie können den Ruhezustand weiter reduzieren mit niedrigerem `max_hnsw_cache` und kürzerem `model_unload_secs`.
+Die Peak-RAM variiert je nach Modell — siehe die Spalte "Peak-RAM" in der Tabelle oben. Große Modelle (BGEM3, ArcticEmbedMLong) können während des Rebuilds 1.5-2 GB verwenden. Nach Abschluss des Rebuilds sinkt der Ruhezustand auf ~50-200 MB je nach Ihrer `[memory]`-Konfiguration. Sie können den Ruhezustand weiter reduzieren mit niedrigerem `max_hnsw_cache` und kürzerem `model_unload_secs`.
 
 ## Projekterkennung
 
@@ -723,7 +722,7 @@ Nein — sie dienen unterschiedlichen Zwecken. Agent-Konfigurationsdateien (CLAU
 
 ### Warum Rust?
 
-Einzelnes Binary, keine Laufzeitabhängigkeiten. Tantivy ist die Referenzimplementierung für BM25. candle-transformers ermöglicht lokale Vektor-Embeddings ohne ONNX oder Python. Ein einfaches `cargo install` oder curl — kein Docker, kein Node.js, kein virtualenv.
+Einzelnes Binary, keine Laufzeitabhängigkeiten. Tantivy ist die Referenzimplementierung für BM25. fastembed (ONNX Runtime) ermöglicht lokale Vektor-Embeddings ohne Python. Ein einfaches `cargo install` oder curl — kein Docker, kein Node.js, kein virtualenv.
 
 ### Was ist mit immer größer werdenden Kontextfenstern?
 

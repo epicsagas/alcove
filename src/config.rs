@@ -213,30 +213,30 @@ impl Default for ServerConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Embedding config (embed-candle feature)
+// Embedding config (embed feature)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn default_embedding_model() -> String {
-    "MultilingualE5Small".into()
+    "ArcticEmbedXS".into()
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn default_embedding_auto_download() -> bool {
     true
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn default_embedding_enabled() -> bool {
     true
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn default_embedding_cache_dir() -> String {
     alcove_home().join("models").to_string_lossy().to_string()
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EmbeddingConfig {
     /// Model name (e.g., "MultilingualE5Small", "BGEM3")
@@ -256,12 +256,12 @@ pub struct EmbeddingConfig {
     pub query_cache_size: usize,
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn default_query_cache_size() -> usize {
     64
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
@@ -274,7 +274,7 @@ impl Default for EmbeddingConfig {
     }
 }
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 impl EmbeddingConfig {
     /// Get the model name as a string
     #[allow(dead_code)]
@@ -362,7 +362,7 @@ pub struct DocRootEntry {
     pub path: String,
     /// Per-root embedding override.  Falls back to global `[embedding]` when absent.
     /// NOTE: cfg-gate must stay in sync with `ResolvedDocRoot.embedding`.
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<EmbeddingConfig>,
 }
@@ -378,7 +378,7 @@ pub struct ResolvedDocRoot {
     /// Per-root embedding override, if configured.
     /// NOTE: cfg-gate must stay in sync with `DocRootEntry.embedding`.
     /// TODO: wire per-root embedding into the index builder.
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     #[allow(dead_code)]
     pub embedding: Option<EmbeddingConfig>,
 }
@@ -389,7 +389,7 @@ impl ResolvedDocRoot {
         Self {
             name: "default".into(),
             path,
-            #[cfg(feature = "embed-candle")]
+            #[cfg(feature = "embed")]
             embedding: None,
         }
     }
@@ -397,13 +397,13 @@ impl ResolvedDocRoot {
     /// Create from a `DocRootEntry` with a pre-resolved canonical path.
     ///
     /// This is the single conversion point between the two types — the
-    /// `#[cfg(feature = "embed-candle")]` gate for the `embedding` field
+    /// `#[cfg(feature = "embed")]` gate for the `embedding` field
     /// only needs to be maintained here and in the struct definitions.
     pub fn from_entry(entry: &DocRootEntry, canonical_path: PathBuf) -> Self {
         Self {
             name: entry.name.clone(),
             path: canonical_path,
-            #[cfg(feature = "embed-candle")]
+            #[cfg(feature = "embed")]
             embedding: entry.embedding.clone(),
         }
     }
@@ -495,8 +495,8 @@ pub struct DocConfig {
     /// Example: `extra_extensions = ["yaml", "json"]`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra_extensions: Option<Vec<String>>,
-    /// Embedding configuration for hybrid search (embed-candle feature)
-    #[cfg(feature = "embed-candle")]
+    /// Embedding configuration for hybrid search (embed feature)
+    #[cfg(feature = "embed")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<EmbeddingConfig>,
     /// HTTP server configuration (`alcove serve`).
@@ -529,7 +529,7 @@ impl DocConfig {
                 .extra_extensions
                 .clone()
                 .or_else(|| base.extra_extensions.clone()),
-            #[cfg(feature = "embed-candle")]
+            #[cfg(feature = "embed")]
             embedding: self.embedding.clone().or_else(|| base.embedding.clone()),
             server: self.server.clone().or_else(|| base.server.clone()),
             memory: self.memory.clone().or_else(|| base.memory.clone()),
@@ -705,7 +705,7 @@ impl DocConfig {
     }
 
     /// Get embedding configuration as TOML struct
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     #[allow(dead_code)]
     pub fn embedding_config(&self) -> &Option<EmbeddingConfig> {
         &self.embedding
@@ -713,7 +713,7 @@ impl DocConfig {
 
     /// Get embedding configuration with defaults applied.
     /// `ALCOVE_EMBEDDING_MODEL` env var overrides the configured model name.
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     pub fn embedding_config_with_defaults(&self) -> EmbeddingConfig {
         let mut cfg = self.embedding.clone().unwrap_or_default();
         if let Ok(model) = std::env::var("ALCOVE_EMBEDDING_MODEL") {
@@ -784,7 +784,7 @@ pub fn load_config() -> &'static DocConfig {
             diagram: None,
             index: None,
             extra_extensions: None,
-            #[cfg(feature = "embed-candle")]
+            #[cfg(feature = "embed")]
             embedding: None,
             server: None,
             memory: None,
@@ -797,7 +797,7 @@ pub fn load_config() -> &'static DocConfig {
 ///
 /// Reads `VAULT_PATH/.alcove/vault.toml` for an `[embedding]` section.
 /// If missing or partially specified, fields fall back to the global config.
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 pub fn vault_embedding_config(vault_path: &Path) -> EmbeddingConfig {
     // Check two locations in priority order:
     //   1. VAULT_PATH/.alcove/vault.toml  (alcove-native, takes precedence)
@@ -1285,7 +1285,7 @@ mod tests {
         assert_eq!(roots[0].name, "default");
         // canonicalize resolves to the same absolute path
         assert!(roots[0].path.is_absolute());
-        #[cfg(feature = "embed-candle")]
+        #[cfg(feature = "embed")]
         assert!(roots[0].embedding.is_none());
     }
 
@@ -1306,7 +1306,7 @@ mod tests {
             docs_roots: Some(vec![DocRootEntry {
                 name: "work".into(),
                 path: work_path.to_string_lossy().to_string(),
-                #[cfg(feature = "embed-candle")]
+                #[cfg(feature = "embed")]
                 embedding: None,
             }]),
             ..DocConfig::default()
@@ -1325,13 +1325,13 @@ mod tests {
                 DocRootEntry {
                     name: "oss".into(),
                     path: oss_path.to_string_lossy().to_string(),
-                    #[cfg(feature = "embed-candle")]
+                    #[cfg(feature = "embed")]
                     embedding: None,
                 },
                 DocRootEntry {
                     name: "work".into(),
                     path: work_path.to_string_lossy().to_string(),
-                    #[cfg(feature = "embed-candle")]
+                    #[cfg(feature = "embed")]
                     embedding: None,
                 },
             ]),
@@ -1453,7 +1453,7 @@ mod tests {
         let root = ResolvedDocRoot::new_default(path.clone());
         assert_eq!(root.name, "default");
         assert_eq!(root.path, path);
-        #[cfg(feature = "embed-candle")]
+        #[cfg(feature = "embed")]
         assert!(root.embedding.is_none());
     }
 

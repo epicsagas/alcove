@@ -504,17 +504,16 @@ alcove model status
 
 #### Elección de modelo
 
-| Modelo | Disco | Dim | Idiomas | Mejor para | RAM pico |
-|--------|-------|-----|---------|------------|----------|
-| `AllMiniLML6V2` | 90 MB | 384 | Inglés | Huella mínima, indexación rápida solo en inglés | ~400 MB |
-| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ idiomas** | **Predeterminado — proyectos multilingües / mixtos** | **~700 MB** |
-| `MultilingualE5Base` | 555 MB | 768 | 100+ idiomas | Mejor calidad multilingüe | ~2 GB |
-| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ idiomas | Máxima calidad multilingüe | ~7 GB |
-| `BGEM3` | 2.3 GB | 1024 | 100+ idiomas | Multilingüe de última generación | ~8 GB |
-| `ArcticEmbedXS` | 90 MB | 384 | Inglés | Snowflake — mejor calidad a 384 dim | ~400 MB |
-| `ArcticEmbedS` | 130 MB | 384 | Inglés | Snowflake — recuperación mejorada en tamaño pequeño | ~500 MB |
-| `ArcticEmbedM` | 430 MB | 768 | Inglés | Snowflake — calidad de recuperación de trabajo | ~1.5 GB |
-| `ArcticEmbedL` | 1.3 GB | 1024 | Inglés | Snowflake — competitivo con APIs de código cerrado | ~5 GB |
+| Modelo | Disco | Dim | Contexto | Idiomas | Recomendado para | RAM pico |
+|--------|-------|-----|----------|---------|-------------------|----------|
+| **`ArcticEmbedXS`** (predet.) | **90 MB** | **384** | **512** | **Multilingüe** | **Predeterminado — mejor relación calidad/tamaño** | **~400 MB** |
+| `ArcticEmbedXSQ` | 90 MB | 384 | 512 | Multilingüe | Cuantizado, descarga más pequeña | ~400 MB |
+| `MultilingualE5Small` | 470 MB | 384 | 512 | 100+ idiomas | Mejor soporte coreano/CJK | ~1.2 GB |
+| `BGEM3` | 600 MB | 1024 | 8192 | 100+ idiomas | Premium — Dense+Sparse+ColBERT | ~2 GB |
+| `ArcticEmbedMLong` | 430 MB | 768 | 8192 | Multilingüe | Documentos largos | ~1.5 GB |
+| `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | Código+inglés | Optimizado para código | ~1.5 GB |
+
+> Ver los 43 modelos disponibles con `alcove model list`. Cualquier modelo puede configurarse directamente en el archivo de configuración.
 
 Una vez que un modelo está descargado y listo, Alcove usará automáticamente Búsqueda Híbrida tanto para búsqueda CLI como para herramientas MCP de agentes. Esto es particularmente efectivo para proyectos multilingües y consultas semánticas complejas.
 
@@ -534,7 +533,7 @@ El índice se construye automáticamente en segundo plano cuando el servidor API
 **Cómo funciona para agentes:** los agentes simplemente llaman a `search_project_docs` con una consulta. Alcove se encarga del resto — ranking, deduplicación (un resultado por archivo), búsqueda entre proyectos y fallback. El agente nunca necesita elegir un modo de búsqueda.
 
 **Memoria durante rebuild:**
-La RAM pico varía según el modelo — consulta la columna "RAM pico" en la tabla anterior. Modelos grandes (BGEM3, MultilingualE5Large, ArcticEmbedL) pueden usar 5-10 GB durante rebuild. Después de rebuild, el estado estable baja a ~50-200 MB según tu configuración `[memory]`. Puedes reducir aún más con un `max_hnsw_cache` más bajo y un `model_unload_secs` más corto.
+La RAM pico varía según el modelo — consulta la columna "RAM pico" en la tabla anterior. Modelos grandes (BGEM3, ArcticEmbedMLong) pueden usar 1.5-2 GB durante rebuild. Después de rebuild, el estado estable baja a ~50-200 MB según tu configuración `[memory]`. Puedes reducir aún más con un `max_hnsw_cache` más bajo y un `model_unload_secs` más corto.
 
 ## Detección de proyecto
 
@@ -746,7 +745,7 @@ No — cumplen propósitos diferentes. Los archivos de configuración del agente
 
 ### ¿Por qué Rust?
 
-Un único binario, sin dependencias de tiempo de ejecución. Tantivy ofrece BM25 de mejor en su clase. candle-transformers nos proporciona embeddings vectoriales locales sin ONNX ni Python. Un solo `cargo install` o curl — sin Docker, sin Node.js, sin virtualenv.
+Un único binario, sin dependencias de tiempo de ejecución. Tantivy ofrece BM25 de mejor en su clase. fastembed (ONNX Runtime) nos proporciona embeddings vectoriales locales sin Python. Un solo `cargo install` o curl — sin Docker, sin Node.js, sin virtualenv.
 
 ### ¿Qué pasa cuando las ventanas de contexto sean más grandes?
 

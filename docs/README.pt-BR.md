@@ -498,17 +498,16 @@ alcove model status
 
 #### Escolha do modelo
 
-| Modelo | Disco | Dim | Idiomas | Melhor para | RAM de pico |
-|--------|-------|-----|---------|-------------|-------------|
-| `AllMiniLML6V2` | 90 MB | 384 | Inglês | Menor footprint, indexação rápida apenas em inglês | ~400 MB |
-| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ idiomas** | **Padrão — projetos multilíngues / mistos** | **~700 MB** |
-| `MultilingualE5Base` | 555 MB | 768 | 100+ idiomas | Melhor qualidade multilíngue | ~2 GB |
-| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ idiomas | Máxima qualidade multilíngue | ~7 GB |
-| `BGEM3` | 2.3 GB | 1024 | 100+ idiomas | Multilíngue de última geração | ~8 GB |
-| `ArcticEmbedXS` | 90 MB | 384 | Inglês | Snowflake — melhor qualidade em 384 dim | ~400 MB |
-| `ArcticEmbedS` | 130 MB | 384 | Inglês | Snowflake — recuperação aprimorada em tamanho pequeno | ~500 MB |
-| `ArcticEmbedM` | 430 MB | 768 | Inglês | Snowflake — qualidade de recuperação de trabalho | ~1.5 GB |
-| `ArcticEmbedL` | 1.3 GB | 1024 | Inglês | Snowflake — competitivo com APIs de código fechado | ~5 GB |
+| Modelo | Disco | Dim | Contexto | Idiomas | Recomendado para | RAM de pico |
+|--------|-------|-----|----------|---------|-------------------|-------------|
+| **`ArcticEmbedXS`** (padrão) | **90 MB** | **384** | **512** | **Multilíngue** | **Padrão — melhor custo-benefício** | **~400 MB** |
+| `ArcticEmbedXSQ` | 90 MB | 384 | 512 | Multilíngue | Quantizado, download menor | ~400 MB |
+| `MultilingualE5Small` | 470 MB | 384 | 512 | 100+ idiomas | Melhor suporte coreano/CJK | ~1.2 GB |
+| `BGEM3` | 600 MB | 1024 | 8192 | 100+ idiomas | Premium — Dense+Sparse+ColBERT | ~2 GB |
+| `ArcticEmbedMLong` | 430 MB | 768 | 8192 | Multilíngue | Documentos longos | ~1.5 GB |
+| `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | Código+inglês | Otimizado para código | ~1.5 GB |
+
+> Veja todos os 43 modelos com `alcove model list`. Qualquer modelo pode ser configurado diretamente no arquivo de configuração.
 
 Uma vez que um modelo está baixado e pronto, o Alcove usará automaticamente Busca Híbrida tanto para busca via CLI quanto para ferramentas MCP baseadas em agentes. Isso é particularmente eficaz para projetos multilíngues e consultas semânticas complexas.
 
@@ -528,7 +527,7 @@ O índice é construído automaticamente em segundo plano quando o servidor MCP 
 **Como funciona para agentes:** agentes simplesmente chamam `search_project_docs` com uma consulta. O Alcove cuida do resto — ranking, deduplicação (um resultado por arquivo), busca entre projetos e fallback. O agente nunca precisa escolher um modo de busca.
 
 **Memória durante rebuild:**
-A RAM de pico varia por modelo — consulte a coluna "RAM de pico" na tabela acima. Modelos grandes (BGEM3, MultilingualE5Large, ArcticEmbedL) podem usar 5-10 GB durante rebuild. Após o rebuild, o estado estacionário cai para ~50-200 MB dependendo da sua configuração `[memory]`. Você pode reduzir ainda mais com `max_hnsw_cache` mais baixo e `model_unload_secs` mais curto.
+A RAM de pico varia por modelo — consulte a coluna "RAM de pico" na tabela acima. Modelos grandes (BGEM3, ArcticEmbedMLong) podem usar 1.5-2 GB durante rebuild. Após o rebuild, o estado estacionário cai para ~50-200 MB dependendo da sua configuração `[memory]`. Você pode reduzir ainda mais com `max_hnsw_cache` mais baixo e `model_unload_secs` mais curto.
 
 ## Detecção de projeto
 
@@ -740,7 +739,7 @@ Não — eles servem a propósitos diferentes. Arquivos de configuração do age
 
 ### Por que Rust?
 
-Binário único, sem dependência de runtime. O Tantivy é o melhor BM25 da categoria. O candle-transformers nos oferece embeddings vetoriais locais sem ONNX ou Python. Um `cargo install` ou curl — sem Docker, sem Node.js, sem virtualenv.
+Binário único, sem dependência de runtime. O Tantivy é o melhor BM25 da categoria. O fastembed (ONNX Runtime) nos oferece embeddings vetoriais locais sem Python. Um `cargo install` ou curl — sem Docker, sem Node.js, sem virtualenv.
 
 ### E as janelas de contexto cada vez maiores?
 

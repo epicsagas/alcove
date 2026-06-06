@@ -12,7 +12,7 @@ pub use crate::commands::{
     cmd_uninstall, cmd_validate,
 };
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 pub use crate::commands::cmd_model;
 
 #[cfg(unix)]
