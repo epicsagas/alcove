@@ -528,7 +528,16 @@ alcove model status
 | `ArcticEmbedMLong` | 430 MB | 768 | 8192 | Multilingual | Long documents | ~1.5 GB |
 | `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | Code+English | Code-optimized | ~1.5 GB |
 
-See all supported models at [EMBEDDING_MODELS.md](docs/EMBEDDING_MODELS.md). Any model can be set directly in config.
+The default model is **ArcticEmbedXS** (90 MB, multilingual). It offers the best balance of size and quality for most projects.
+
+Embedding models are provided by [fastembed-rs](https://github.com/Anush008/fastembed-rs) (ONNX Runtime) and run entirely locally. To use a different model, set it in `config.toml`:
+
+```toml
+[embedding]
+model = "BGEM3"    # any Variable name from the model docs
+```
+
+For the full list of 40+ supported models with dimensions, context length, and language coverage, see **[EMBEDDING_MODELS.md](docs/EMBEDDING_MODELS.md)**.
 
 Once a model is downloaded and ready, Alcove will automatically use Hybrid Search for both CLI search and agent-based MCP tools. This is particularly effective for multilingual projects and complex semantic queries.
 

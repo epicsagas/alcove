@@ -11,7 +11,8 @@ alcove model set <ModelName>
 Or in `~/.alcove/config.toml`:
 
 ```toml
-embedding_model = "BGEM3"
+[embedding]
+model = "BGEM3"
 ```
 
 ## Curated Models
