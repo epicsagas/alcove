@@ -506,7 +506,7 @@ L'index se construit automatiquement en arrière-plan au démarrage du serveur A
 | `ArcticEmbedMLong` | 430 MB | 768 | 8192 | Multilingue | Documents longs | ~1.5 GB |
 | `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | Code+anglais | Optimisé pour le code | ~1.5 GB |
 
-> Voir les 43 modèles avec `alcove model list`. N'importe quel modèle peut être configuré directement dans le fichier de configuration.
+> Tous les modèles supportés sur [fastembed-rs](https://github.com/Anush008/fastembed-rs#supported-models). N'importe quel modèle peut être configuré directement dans le fichier de configuration.
 
 **Mémoire pendant le rebuild :**
 La RAM de pointe varie selon le modèle — consultez la colonne "RAM de pointe" dans le tableau ci-dessus. Les modèles volumineux (BGEM3, ArcticEmbedMLong) peuvent utiliser 1.5–2 Go pendant le rebuild. Une fois le rebuild terminé, l'état stationnaire chute à ~50-200 Mo selon votre configuration `[memory]`. Vous pouvez réduire davantage avec un `max_hnsw_cache` plus bas et un `model_unload_secs` plus court.

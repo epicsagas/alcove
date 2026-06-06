@@ -945,31 +945,15 @@ mod tests {
     fn test_model_id_uniqueness() {
         #[cfg(feature = "embed")]
         {
-            use std::collections::HashMap;
-            let mut id_to_models: HashMap<&str, Vec<&str>> = HashMap::new();
-            for m in EmbeddingModelChoice::all() {
-                id_to_models
-                    .entry(m.model_id())
-                    .or_default()
-                    .push(m.as_str());
+            // Verify quantized variants have distinct model IDs from non-Q counterparts
+            for (a, b) in [
+                (EmbeddingModelChoice::AllMiniLML12V2, EmbeddingModelChoice::AllMiniLML12V2Q),
+                (EmbeddingModelChoice::GTEBaseENV15, EmbeddingModelChoice::GTEBaseENV15Q),
+                (EmbeddingModelChoice::GTELargeENV15, EmbeddingModelChoice::GTELargeENV15Q),
+                (EmbeddingModelChoice::MxbaiEmbedLargeV1, EmbeddingModelChoice::MxbaiEmbedLargeV1Q),
+            ] {
+                assert_ne!(a.model_id(), b.model_id(), "{a:?} and {b:?} share model_id");
             }
-            // Verify quantized variants no longer share repos with non-Q counterparts
-            assert_ne!(
-                EmbeddingModelChoice::AllMiniLML12V2.model_id(),
-                EmbeddingModelChoice::AllMiniLML12V2Q.model_id()
-            );
-            assert_ne!(
-                EmbeddingModelChoice::GTEBaseENV15.model_id(),
-                EmbeddingModelChoice::GTEBaseENV15Q.model_id()
-            );
-            assert_ne!(
-                EmbeddingModelChoice::GTELargeENV15.model_id(),
-                EmbeddingModelChoice::GTELargeENV15Q.model_id()
-            );
-            assert_ne!(
-                EmbeddingModelChoice::MxbaiEmbedLargeV1.model_id(),
-                EmbeddingModelChoice::MxbaiEmbedLargeV1Q.model_id()
-            );
         }
     }
 

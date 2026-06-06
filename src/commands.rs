@@ -804,7 +804,7 @@ fn cmd_model_list() -> Result<()> {
         style("ℹ").dim()
     );
     println!(
-        "  {} See all 43 models: https://docs.fastembed.rs/models",
+        "  {} See all supported models: https://github.com/Anush008/fastembed-rs#supported-models",
         style("ℹ").dim()
     );
     println!();

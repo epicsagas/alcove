@@ -506,7 +506,7 @@ Der Index wird automatisch im Hintergrund erstellt, wenn der API-Server startet,
 | `ArcticEmbedMLong` | 430 MB | 768 | 8192 | Mehrsprachig | Lange Dokumente | ~1.5 GB |
 | `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | Code+Englisch | Code-optimiert | ~1.5 GB |
 
-> Alle 43 Modelle mit `alcove model list` anzeigen. Jedes Modell kann direkt in der Konfigurationsdatei gesetzt werden.
+> Alle unterstützten Modelle unter [fastembed-rs](https://github.com/Anush008/fastembed-rs#supported-models) ansehen. Jedes Modell kann direkt in der Konfigurationsdatei gesetzt werden.
 
 **Speicherbedarf beim Rebuild:**
 Die Peak-RAM variiert je nach Modell — siehe die Spalte "Peak-RAM" in der Tabelle oben. Große Modelle (BGEM3, ArcticEmbedMLong) können während des Rebuilds 1.5-2 GB verwenden. Nach Abschluss des Rebuilds sinkt der Ruhezustand auf ~50-200 MB je nach Ihrer `[memory]`-Konfiguration. Sie können den Ruhezustand weiter reduzieren mit niedrigerem `max_hnsw_cache` und kürzerem `model_unload_secs`.

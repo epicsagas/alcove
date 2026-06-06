@@ -502,7 +502,7 @@ alcove model status
 | `ArcticEmbedMLong` | 430 MB | 768 | 8192 | 다국어 | 장문서 | ~1.5 GB |
 | `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | 코드+영어 | 코드 문서 | ~1.5 GB |
 
-> `alcove model list`로 전체 43개 모델을 확인할 수 있습니다. 어떤 모델이든 config에 직접 입력하여 사용 가능합니다.
+> [fastembed-rs](https://github.com/Anush008/fastembed-rs#supported-models)에서 지원 모델 전체를 확인할 수 있습니다. 어떤 모델이든 config에 직접 입력하여 사용 가능합니다.
 
 모델이 준비되면 Alcove는 CLI 검색과 에이전트 기반 API 모두에서 자동으로 하이브리드 검색을 사용합니다. 이는 다국어 프로젝트나 복잡한 의미론적 쿼리에 특히 효과적입니다.
 
