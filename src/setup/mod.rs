@@ -278,81 +278,45 @@ fn print_step_header(step: &Step) {
 // Embedding model selection
 // ---------------------------------------------------------------------------
 
-/// Embedding model options for setup wizard
+/// Curated embedding models for setup wizard.
+/// All 43 models remain available via manual config editing.
 #[cfg(feature = "embed")]
 const EMBEDDING_OPTIONS: &[(&str, &str, usize, usize)] = &[
-    ("AllMiniLML6V2", "Fast & lightweight (~80MB)", 384, 80),
-    (
-        "AllMiniLML6V2Q",
-        "Quantized MiniLM, smaller download (~80MB)",
-        384,
-        80,
-    ),
-    (
-        "MultilingualE5Small",
-        "Balanced multilingual (100+ langs, ~470MB)",
-        384,
-        470,
-    ),
-    (
-        "MultilingualE5Base",
-        "Multilingual, larger scale (~1100MB)",
-        768,
-        1100,
-    ),
-    (
-        "MultilingualE5Large",
-        "Multilingual, best quality (~2200MB)",
-        1024,
-        2200,
-    ),
-    (
-        "BGEM3",
-        "Dense+Sparse+ColBERT multilingual (~600MB)",
-        1024,
-        600,
-    ),
-    (
-        "BGESmallENV15Q",
-        "Quantized BGE small, fast English (~40MB)",
-        384,
-        40,
-    ),
-    (
-        "NomicEmbedTextV15",
-        "Nomic v1.5, 8192 context (~550MB)",
-        768,
-        550,
-    ),
-    (
-        "MxbaiEmbedLargeV1",
-        "MixedBread, strong retrieval (~670MB)",
-        1024,
-        670,
-    ),
     (
         "ArcticEmbedXS",
-        "Arctic XS, best 384-dim quality (~90MB)",
+        "Default — best size/quality, multilingual (~90MB)",
         384,
         90,
     ),
     (
-        "ArcticEmbedS",
-        "Arctic S, improved retrieval (~130MB)",
+        "ArcticEmbedXSQ",
+        "Quantized Arctic XS, smaller download (~90MB)",
         384,
-        130,
+        90,
     ),
     (
-        "ArcticEmbedM",
-        "Arctic M, workhorse retrieval (~430MB)",
+        "MultilingualE5Small",
+        "Best Korean/CJK support, 100+ langs (~470MB)",
+        384,
+        470,
+    ),
+    (
+        "BGEM3",
+        "Premium — Dense+Sparse+ColBERT, 100+ langs (~600MB)",
+        1024,
+        600,
+    ),
+    (
+        "ArcticEmbedMLong",
+        "Long context (8192), multilingual (~430MB)",
         768,
         430,
     ),
     (
-        "ArcticEmbedL",
-        "Arctic L, top retrieval quality (~1300MB)",
-        1024,
-        1300,
+        "JinaEmbeddingsV2BaseCode",
+        "Code-optimized, 8192 context (~550MB)",
+        768,
+        550,
     ),
     ("disabled", "Disable embedding (BM25 only)", 0, 0),
 ];

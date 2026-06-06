@@ -511,7 +511,7 @@ During `alcove setup`, you can choose an embedding model and download it immedia
 
 ```bash
 # Set and download an embedding model
-alcove model set MultilingualE5Small
+alcove model set ArcticEmbedXS
 alcove model download
 
 # Check model status
@@ -520,21 +520,16 @@ alcove model status
 
 #### Choosing a model
 
-| Model | Disk | Dim | Tokens | Pooling | Prefix | Languages | Best for | Peak RAM |
-|-------|------|-----|--------|---------|--------|-----------|----------|----------|
-| `AllMiniLML6V2` | 90 MB | 384 | 256 | Mean | — | English | Smallest footprint, fast English-only indexing | ~400 MB |
-| **`MultilingualE5Small`** | **235 MB** | **384** | **512** | **Mean** | **`query:`/`passage:`** | **100+** | **Default — multilingual / mixed-language projects** | **~700 MB** |
-| `MultilingualE5Base` | 555 MB | 768 | 512 | Mean | `query:`/`passage:` | 100+ | Better multilingual quality | ~2 GB |
-| `MultilingualE5Large` | 2.2 GB | 1024 | 512 | Mean | `query:`/`passage:` | 100+ | Maximum multilingual quality | ~7 GB |
-| `BGEM3` | 2.3 GB | 1024 | 8192 | CLS | — | 100+ | State-of-the-art multilingual | ~8 GB |
-| `ArcticEmbedXS` | 90 MB | 384 | 512 | CLS | `Represent…` | English | Snowflake — best quality at 384 dim | ~400 MB |
-| `ArcticEmbedS` | 130 MB | 384 | 512 | CLS | `Represent…` | English | Snowflake — improved retrieval at small size | ~500 MB |
-| `ArcticEmbedM` | 430 MB | 768 | 512 | CLS | `Represent…` | English | Snowflake — workhorse retrieval quality | ~1.5 GB |
-| `ArcticEmbedL` | 1.3 GB | 1024 | 512 | CLS | `Represent…` | English | Snowflake — competitive with closed-source APIs | ~5 GB |
+| Model | Disk | Dim | Context | Languages | Best for | Peak RAM |
+|-------|------|-----|---------|-----------|----------|----------|
+| **`ArcticEmbedXS`** (default) | **90 MB** | **384** | **512** | **Multilingual** | **Best default — size/quality** | **~400 MB** |
+| `ArcticEmbedXSQ` | 90 MB | 384 | 512 | Multilingual | Quantized, smaller download | ~400 MB |
+| `MultilingualE5Small` | 470 MB | 384 | 512 | 100+ langs | Best Korean/CJK support | ~1.2 GB |
+| `BGEM3` | 600 MB | 1024 | 8192 | 100+ langs | Premium — Dense+Sparse+ColBERT | ~2 GB |
+| `ArcticEmbedMLong` | 430 MB | 768 | 8192 | Multilingual | Long documents | ~1.5 GB |
+| `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | Code+English | Code-optimized | ~1.5 GB |
 
-**Key:** *Tokens* = max input sequence length. *Pooling* = how the final embedding is extracted (CLS = first token, Mean = mask-weighted average). *Prefix* = automatic input prefix prepended for asymmetric retrieval (queries vs documents).
-
-Chunk sizes are automatically derived from the model's token limit (~2 chars/token for CJK, 75% utilization). No manual tuning required.
+See all 43 models with `alcove model list`. Any model can also be set directly in config.
 
 Once a model is downloaded and ready, Alcove will automatically use Hybrid Search for both CLI search and agent-based MCP tools. This is particularly effective for multilingual projects and complex semantic queries.
 
@@ -566,8 +561,8 @@ Understanding when to run `alcove index` vs `alcove rebuild`:
 alcove index            # builds full-text index (no model needed)
 
 # Step 2: Enable Hybrid Search (optional)
-alcove model set MultilingualE5Small
-alcove model download   # ~235 MB download
+alcove model set ArcticEmbedXS
+alcove model download   # ~90 MB download
 
 # Step 3: Build vector index for all existing docs
 alcove rebuild          # one-time full rebuild with embeddings
@@ -585,7 +580,7 @@ alcove rebuild                            # required: vectors are model-specific
 ```
 
 **Memory during rebuild:**
-Peak RAM varies by model — see the "Peak RAM" column in the table above. Larger models (BGEM3, MultilingualE5Large, ArcticEmbedL) can use 5–10 GB during rebuild. After rebuild completes, steady-state drops to ~50–200 MB depending on your `[memory]` config. You can reduce steady-state further with lower `max_hnsw_cache` and shorter `model_unload_secs`.
+Peak RAM varies by model — see the "Peak RAM" column in the table above. Larger models (BGEM3, ArcticEmbedMLong) can use 1.5–2 GB during rebuild. After rebuild completes, steady-state drops to ~50–200 MB depending on your `[memory]` config. You can reduce steady-state further with lower `max_hnsw_cache` and shorter `model_unload_secs`.
 
 ### Global search
 
@@ -851,7 +846,7 @@ No — they serve different purposes. Agent config files (CLAUDE.md, AGENTS.md) 
 
 ### Why Rust?
 
-Single binary, no runtime dependency. Tantivy is best-in-class BM25. candle-transformers gives us local vector embeddings without ONNX or Python. One `cargo install` or curl — no Docker, no Node.js, no virtualenv.
+Single binary, no runtime dependency. Tantivy is best-in-class BM25. fastembed (ONNX Runtime) gives us local vector embeddings without Python. One `cargo install` or curl — no Docker, no Node.js, no virtualenv.
 
 ### What about context windows getting bigger?
 

@@ -218,7 +218,7 @@ impl Default for ServerConfig {
 
 #[cfg(feature = "embed")]
 fn default_embedding_model() -> String {
-    "MultilingualE5Small".into()
+    "ArcticEmbedXS".into()
 }
 
 #[cfg(feature = "embed")]

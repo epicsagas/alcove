@@ -61,7 +61,6 @@ impl std::fmt::Display for ModelState {
 pub enum EmbeddingModelChoice {
     // ── MiniLM ───────────────────────────────────────────────
     AllMiniLML6V2,
-    #[default]
     AllMiniLML6V2Q,
     AllMiniLML12V2,
     AllMiniLML12V2Q,
@@ -107,6 +106,7 @@ pub enum EmbeddingModelChoice {
     // ── Gemma ────────────────────────────────────────────────
     EmbeddingGemma300M,
     // ── Snowflake Arctic (backward-compat aliases) ──────────
+    #[default]
     ArcticEmbedXS,
     ArcticEmbedXSQ,
     ArcticEmbedS,
