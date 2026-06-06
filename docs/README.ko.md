@@ -158,8 +158,6 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **참고**: 사전 빌드 바이너리는 macOS Apple Silicon 전용입니다. Linux 및 Windows 사용자는 아래 원라인 인스톨러를 사용하세요.
-
 ### Linux (x86_64 / ARM64)
 
 ```bash
@@ -185,14 +183,15 @@ agy plugins install https://github.com/epicsagas/alcove
 alcove setup   # run once after plugin install
 ```
 
-### Rust 툴체인
+### Rust 툴체인으로 설치
 
 ```bash
-cargo binstall alcove   # 사전 빌드 바이너리 (빠름)
-cargo install alcove    # 소스에서 빌드
+cargo binstall alcove   # 사전 빌드 바이너리, 하이브리드 검색 포함
+cargo install alcove --features full-macos   # 소스 빌드 (macOS)
+cargo install alcove --features full-cross   # 소스 빌드 (Linux/Windows)
 ```
 
-> **참고**: 사전 빌드 바이너리는 Linux(x86\_64), macOS(Apple Silicon 및 Intel), Windows에 제공됩니다.
+> **참고**: `cargo binstall`은 하이브리드 검색(벡터 + BM25)이 포함된 사전 빌드 바이너리를 다운로드합니다. 소스에서 빌드할 때는 하이브리드 검색을 위해 `--features full-macos` 또는 `--features full-cross`가 필요합니다. features 없이 빌드하면 BM25(키워드) 검색만 사용할 수 있습니다.
 
 ### 최초 설정 (필수)
 
@@ -670,7 +669,7 @@ ALCOVE_LANG=ko alcove setup
 | Homebrew | `brew upgrade alcove` |
 | curl 설치 스크립트 | 위 설치 스크립트를 다시 실행 |
 | cargo binstall | `cargo binstall alcove@latest` |
-| cargo install | `cargo install alcove@latest` |
+| cargo install | `cargo install alcove@latest --features full-macos` |
 | Claude Code 플러그인 | `claude plugin update epicsagas/alcove` |
 
 ```bash

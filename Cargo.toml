@@ -1,6 +1,6 @@
 [package]
 name = "alcove"
-version = "0.11.6"
+version = "0.11.7-dev"
 edition = "2024"
 description = "A quiet place for your project docs. MCP server that gives AI agents scoped access to private documentation."
 license = "Apache-2.0"
@@ -122,10 +122,7 @@ lang-all = [
 
 # Preset feature groups
 full-macos = ["core", "embed", "vector", "pdf", "office", "alcove-server", "lang-all"]
-# Note: embed (fastembed/ort-sys) excluded from full-cross because ort-sys lacks
-# prebuilt binaries for some cross-compile targets (aarch64-linux, macOS x86_64).
-# Tested via full-macos on macOS ARM where ort-sys has native prebuilts.
-full-cross = ["core", "vector", "office", "alcove-server", "lang-all"]
+full-cross = ["core", "embed", "vector", "office", "alcove-server", "lang-all"]
 # Backward compat: full = full-macos on existing macOS ARM builds
 full = ["full-cross"]
 

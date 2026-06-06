@@ -162,8 +162,6 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **注意**：预构建二进制文件仅适用于 macOS Apple Silicon。Linux 和 Windows 用户请使用上方的一行安装命令。
-
 ### Linux (x86_64 / ARM64)
 
 ```bash
@@ -192,11 +190,12 @@ alcove setup   # run once after plugin install
 ### 通过 Rust 工具链
 
 ```bash
-cargo binstall alcove   # 预构建二进制（快速）
-cargo install alcove    # 从源码构建
+cargo binstall alcove   # 预编译二进制，包含混合搜索
+cargo install alcove --features full-macos   # 从源码构建 (macOS)
+cargo install alcove --features full-cross   # 从源码构建 (Linux/Windows)
 ```
 
-> **注意**：预构建二进制文件适用于 Linux（x86\_64）、macOS（Apple Silicon 和 Intel）以及 Windows。
+> **注意**：`cargo binstall` 下载包含混合搜索（向量 + BM25）的预编译二进制。从源码构建时，需要 `--features full-macos` 或 `--features full-cross` 才能启用混合搜索。不指定 features 只能使用 BM25（关键词）搜索。
 
 ### 首次设置（必选）
 
@@ -677,7 +676,7 @@ ALCOVE_LANG=zh-CN alcove setup
 | Homebrew | `brew upgrade alcove` |
 | curl 安装脚本 | 重新运行上述安装脚本 |
 | cargo binstall | `cargo binstall alcove@latest` |
-| cargo install | `cargo install alcove@latest` |
+| cargo install | `cargo install alcove@latest --features full-macos` |
 | Claude Code 插件 | `claude plugin update epicsagas/alcove` |
 
 ```bash

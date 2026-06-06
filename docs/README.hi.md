@@ -154,8 +154,6 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **नोट**: प्रीबिल्ट बाइनरी केवल macOS Apple Silicon के लिए उपलब्ध हैं। Linux और Windows उपयोगकर्ता ऊपर दिए गए वन-लाइन इंस्टॉलर का उपयोग कर सकते हैं।
-
 ### Linux (x86_64 / ARM64)
 
 ```bash
@@ -184,11 +182,12 @@ alcove setup   # run once after plugin install
 ### Rust टूलचेन
 
 ```bash
-cargo binstall alcove   # प्रीबिल्ट बाइनरी (तेज़)
-cargo install alcove    # सोर्स से बिल्ड
+cargo binstall alcove   # प्रीबिल्ट बायनरी, हाइब्रिड सर्च सहित
+cargo install alcove --features full-macos   # सोर्स से बिल्ड (macOS)
+cargo install alcove --features full-cross   # सोर्स से बिल्ड (Linux/Windows)
 ```
 
-> **नोट**: प्रीबिल्ट बाइनरी Linux (x86\_64), macOS (Apple Silicon और Intel), और Windows के लिए उपलब्ध हैं।
+> **नोट**: `cargo binstall` हाइब्रिड सर्च (वेक्टर + BM25) सहित प्रीबिल्ट बायनरी डाउनलोड करता है। सोर्स से बिल्ड करते समय हाइब्रिड सर्च के लिए `--features full-macos` या `--features full-cross` आवश्यक है। बिना features के केवल BM25 (कीवर्ड) सर्च उपलब्ध है।
 
 ### पहली बार सेटअप (आवश्यक)
 
@@ -616,7 +615,7 @@ ALCOVE_LANG=hi alcove setup
 | Homebrew | `brew upgrade alcove` |
 | curl इंस्टॉलर | ऊपर दिया गया इंस्टॉल स्क्रिप्ट फिर से चलाएं |
 | cargo binstall | `cargo binstall alcove@latest` |
-| cargo install | `cargo install alcove@latest` |
+| cargo install | `cargo install alcove@latest --features full-macos` |
 | Claude Code Plugin | `claude plugin update epicsagas/alcove` |
 
 ```bash

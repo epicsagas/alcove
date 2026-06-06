@@ -268,53 +268,6 @@ impl EmbeddingModelChoice {
         }
     }
 
-    pub fn all() -> &'static [Self] {
-        &[
-            Self::AllMiniLML6V2,
-            Self::AllMiniLML6V2Q,
-            Self::AllMiniLML12V2,
-            Self::AllMiniLML12V2Q,
-            Self::AllMpnetBaseV2,
-            Self::MultilingualE5Small,
-            Self::MultilingualE5Base,
-            Self::MultilingualE5Large,
-            Self::BGESmallENV15,
-            Self::BGESmallENV15Q,
-            Self::BGEBaseENV15,
-            Self::BGEBaseENV15Q,
-            Self::BGELargeENV15,
-            Self::BGELargeENV15Q,
-            Self::BGESmallZHV15,
-            Self::BGELargeZHV15,
-            Self::BGEM3,
-            Self::ModernBertEmbedLarge,
-            Self::NomicEmbedTextV1,
-            Self::NomicEmbedTextV15,
-            Self::NomicEmbedTextV15Q,
-            Self::ParaphraseMLMiniLML12V2,
-            Self::ParaphraseMLMiniLML12V2Q,
-            Self::ParaphraseMLMpnetBaseV2,
-            Self::MxbaiEmbedLargeV1,
-            Self::MxbaiEmbedLargeV1Q,
-            Self::GTEBaseENV15,
-            Self::GTEBaseENV15Q,
-            Self::GTELargeENV15,
-            Self::GTELargeENV15Q,
-            Self::JinaEmbeddingsV2BaseCode,
-            Self::JinaEmbeddingsV2BaseEN,
-            Self::EmbeddingGemma300M,
-            Self::ArcticEmbedXS,
-            Self::ArcticEmbedXSQ,
-            Self::ArcticEmbedS,
-            Self::ArcticEmbedSQ,
-            Self::ArcticEmbedM,
-            Self::ArcticEmbedMQ,
-            Self::ArcticEmbedMLong,
-            Self::ArcticEmbedMLongQ,
-            Self::ArcticEmbedL,
-            Self::ArcticEmbedLQ,
-        ]
-    }
 
     /// Map to the corresponding fastembed EmbeddingModel variant.
     #[cfg(feature = "embed")]

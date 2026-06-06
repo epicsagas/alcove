@@ -162,8 +162,6 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **Nota**: Los binarios precompilados están disponibles solo para macOS Apple Silicon. Los usuarios de Linux y Windows pueden usar los instaladores de una línea anteriores.
-
 ### Linux (x86_64 / ARM64)
 
 ```bash
@@ -192,11 +190,12 @@ alcove setup   # run once after plugin install
 ### Vía la cadena de herramientas de Rust
 
 ```bash
-cargo binstall alcove   # binario precompilado (rápido)
-cargo install alcove    # compilar desde el código fuente
+cargo binstall alcove   # binario precompilado, incluye búsqueda híbrida
+cargo install alcove --features full-macos   # compilar desde fuente (macOS)
+cargo install alcove --features full-cross   # compilar desde fuente (Linux/Windows)
 ```
 
-> **Nota**: Los binarios precompilados están disponibles para Linux (x86\_64), macOS (Apple Silicon e Intel) y Windows.
+> **Nota**: `cargo binstall` descarga un binario precompilado con búsqueda híbrida (vectorial + BM25). Al compilar desde fuente, se necesita `--features full-macos` o `--features full-cross` para búsqueda híbrida. Sin features, solo está disponible la búsqueda BM25 (por palabras clave).
 
 ### Configuración inicial (obligatoria)
 
@@ -636,7 +635,7 @@ ALCOVE_LANG=es alcove setup
 | Homebrew | `brew upgrade alcove` |
 | curl installer | Volver a ejecutar el script de instalación arriba |
 | cargo binstall | `cargo binstall alcove@latest` |
-| cargo install | `cargo install alcove@latest` |
+| cargo install | `cargo install alcove@latest --features full-macos` |
 | Claude Code Plugin | `claude plugin update epicsagas/alcove` |
 
 ```bash

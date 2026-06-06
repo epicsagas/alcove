@@ -740,7 +740,17 @@ pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
 fn cmd_model_list() -> Result<()> {
     use crate::embedding::EmbeddingModelChoice;
 
-    println!("{}", style("Available embedding models:").bold());
+    /// Curated models shown in `model list`. All 43 models remain available via manual config.
+    const CURATED: &[(&str, &str)] = &[
+        ("ArcticEmbedXS", "Default — best size/quality, multilingual"),
+        ("ArcticEmbedXSQ", "Quantized Arctic XS, smaller download"),
+        ("MultilingualE5Small", "Best Korean/CJK support, 100+ langs"),
+        ("BGEM3", "Premium — Dense+Sparse+ColBERT, 100+ langs"),
+        ("ArcticEmbedMLong", "Long context (8192), multilingual"),
+        ("JinaEmbeddingsV2BaseCode", "Code-optimized, 8192 context"),
+    ];
+
+    println!("{}", style("Recommended embedding models:").bold());
     println!();
     println!(
         "{:<30} {:<8} {:<10} {}",
@@ -755,62 +765,18 @@ fn cmd_model_list() -> Result<()> {
         .embedding
         .as_ref()
         .map(|e| e.model.as_str())
-        .unwrap_or("MultilingualE5Small");
+        .unwrap_or("ArcticEmbedXS");
 
-    for model in EmbeddingModelChoice::all() {
-        let marker = if model.as_str() == current {
+    for &(name, desc) in CURATED {
+        let model = EmbeddingModelChoice::parse(name).unwrap();
+        let marker = if name == current {
             " [current]"
         } else {
             ""
         };
-        let desc = match model {
-            EmbeddingModelChoice::AllMiniLML6V2 => "Fast & lightweight",
-            EmbeddingModelChoice::AllMiniLML6V2Q => "Quantized MiniLM, smaller download",
-            EmbeddingModelChoice::AllMiniLML12V2 => "Larger MiniLM, better quality",
-            EmbeddingModelChoice::AllMiniLML12V2Q => "Quantized L12, smaller download",
-            EmbeddingModelChoice::AllMpnetBaseV2 => "MPNet, strong general purpose",
-            EmbeddingModelChoice::MultilingualE5Small => "Multilingual balanced (100+ langs)",
-            EmbeddingModelChoice::MultilingualE5Base => "Multilingual, larger scale",
-            EmbeddingModelChoice::MultilingualE5Large => "Multilingual, best quality",
-            EmbeddingModelChoice::BGESmallENV15 => "BGE small, fast English",
-            EmbeddingModelChoice::BGESmallENV15Q => "Quantized BGE small",
-            EmbeddingModelChoice::BGEBaseENV15 => "BGE base, balanced English",
-            EmbeddingModelChoice::BGEBaseENV15Q => "Quantized BGE base",
-            EmbeddingModelChoice::BGELargeENV15 => "BGE large, best English quality",
-            EmbeddingModelChoice::BGELargeENV15Q => "Quantized BGE large",
-            EmbeddingModelChoice::BGESmallZHV15 => "BGE small, Chinese",
-            EmbeddingModelChoice::BGELargeZHV15 => "BGE large, Chinese",
-            EmbeddingModelChoice::BGEM3 => "Dense+Sparse+ColBERT multilingual",
-            EmbeddingModelChoice::ModernBertEmbedLarge => "ModernBERT, latest architecture",
-            EmbeddingModelChoice::NomicEmbedTextV1 => "Nomic v1, 8192 context",
-            EmbeddingModelChoice::NomicEmbedTextV15 => "Nomic v1.5, 8192 context",
-            EmbeddingModelChoice::NomicEmbedTextV15Q => "Quantized Nomic v1.5",
-            EmbeddingModelChoice::ParaphraseMLMiniLML12V2 => "Paraphrase multilingual",
-            EmbeddingModelChoice::ParaphraseMLMiniLML12V2Q => "Quantized paraphrase multilingual",
-            EmbeddingModelChoice::ParaphraseMLMpnetBaseV2 => "Paraphrase MPNet multilingual",
-            EmbeddingModelChoice::MxbaiEmbedLargeV1 => "MixedBread, strong retrieval",
-            EmbeddingModelChoice::MxbaiEmbedLargeV1Q => "Quantized MixedBread",
-            EmbeddingModelChoice::GTEBaseENV15 => "GTE base, strong English",
-            EmbeddingModelChoice::GTEBaseENV15Q => "Quantized GTE base",
-            EmbeddingModelChoice::GTELargeENV15 => "GTE large, best English",
-            EmbeddingModelChoice::GTELargeENV15Q => "Quantized GTE large",
-            EmbeddingModelChoice::JinaEmbeddingsV2BaseCode => "Jina, code-optimized, 8192 ctx",
-            EmbeddingModelChoice::JinaEmbeddingsV2BaseEN => "Jina, English, 8192 ctx",
-            EmbeddingModelChoice::EmbeddingGemma300M => "Gemma 300M, Google model",
-            EmbeddingModelChoice::ArcticEmbedXS => "Arctic XS, best 384-dim quality",
-            EmbeddingModelChoice::ArcticEmbedXSQ => "Quantized Arctic XS",
-            EmbeddingModelChoice::ArcticEmbedS => "Arctic S, improved small retrieval",
-            EmbeddingModelChoice::ArcticEmbedSQ => "Quantized Arctic S",
-            EmbeddingModelChoice::ArcticEmbedM => "Arctic M, workhorse retrieval",
-            EmbeddingModelChoice::ArcticEmbedMQ => "Quantized Arctic M",
-            EmbeddingModelChoice::ArcticEmbedMLong => "Arctic M Long, 8192 context",
-            EmbeddingModelChoice::ArcticEmbedMLongQ => "Quantized Arctic M Long",
-            EmbeddingModelChoice::ArcticEmbedL => "Arctic L, top retrieval quality",
-            EmbeddingModelChoice::ArcticEmbedLQ => "Quantized Arctic L",
-        };
         println!(
             "{:<30} {:<8} {:<10} {}{}",
-            model.as_str(),
+            name,
             model.dimension(),
             format!("~{}MB", model.size_mb()),
             desc,
@@ -818,9 +784,32 @@ fn cmd_model_list() -> Result<()> {
         );
     }
 
+    // If the user has a non-curated model configured, show it too
+    if !CURATED.iter().any(|(n, _)| *n == current) {
+        if let Some(model) = EmbeddingModelChoice::parse(current) {
+            println!(
+                "{:<30} {:<8} {:<10} {}{}",
+                current,
+                model.dimension(),
+                format!("~{}MB", model.size_mb()),
+                "(custom selection)",
+                style(" [current]").cyan()
+            );
+        }
+    }
+
     println!();
-    println!("Change model: alcove model set <ModelName>");
-    println!("Check status: alcove model status");
+    println!(
+        "  {} Other models can be set directly in config.toml.",
+        style("ℹ").dim()
+    );
+    println!(
+        "  {} See all 43 models: https://docs.fastembed.rs/models",
+        style("ℹ").dim()
+    );
+    println!();
+    println!("  Change model: alcove model set <ModelName>");
+    println!("  Check status: alcove model status");
 
     Ok(())
 }
