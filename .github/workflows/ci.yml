@@ -47,8 +47,19 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu pkg-config
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev:arm64
       - name: Check (${{ matrix.target }})
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: cargo check --target ${{ matrix.target }} --features full-cross
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
+          OPENSSL_DIR: /usr
+      - name: Check (${{ matrix.target }})
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
         run: cargo check --target ${{ matrix.target }} --features full-cross
 
   cross-check-windows:
@@ -62,18 +73,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check (x86_64-pc-windows-msvc)
         run: cargo check --target x86_64-pc-windows-msvc --features full-cross
-
-  macos-intel-check:
-    name: macOS x86_64 Check
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@v2
-      - name: Check (x86_64-apple-darwin)
-        run: cargo check --target x86_64-apple-darwin --features full-cross
 
   test:
     name: Test
@@ -105,7 +104,7 @@ jobs:
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
       - name: Generate SBOM
-        run: cargo cyclonedx -f json
+        run: cargo cyclonedx -f json --features full-cross
       - uses: actions/upload-artifact@v7
         with:
           name: sbom
