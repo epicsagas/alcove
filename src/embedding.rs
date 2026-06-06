@@ -976,9 +976,15 @@ mod tests {
             assert_eq!(EmbeddingModelChoice::ArcticEmbedM.max_seq_length(), 512);
             assert_eq!(EmbeddingModelChoice::ArcticEmbedL.max_seq_length(), 512);
             // Arctic Long: 8192
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedMLong.max_seq_length(), 8192);
+            assert_eq!(
+                EmbeddingModelChoice::ArcticEmbedMLong.max_seq_length(),
+                8192
+            );
             assert_eq!(EmbeddingModelChoice::BGEM3.max_seq_length(), 8192);
-            assert_eq!(EmbeddingModelChoice::NomicEmbedTextV15.max_seq_length(), 8192);
+            assert_eq!(
+                EmbeddingModelChoice::NomicEmbedTextV15.max_seq_length(),
+                8192
+            );
         }
     }
 
@@ -989,7 +995,10 @@ mod tests {
             use std::collections::HashMap;
             let mut id_to_models: HashMap<&str, Vec<&str>> = HashMap::new();
             for m in EmbeddingModelChoice::all() {
-                id_to_models.entry(m.model_id()).or_default().push(m.as_str());
+                id_to_models
+                    .entry(m.model_id())
+                    .or_default()
+                    .push(m.as_str());
             }
             // Verify quantized variants no longer share repos with non-Q counterparts
             assert_ne!(
