@@ -167,14 +167,14 @@ pub fn read_plist_port(kind: ServiceKind) -> Option<u16> {
     // Plist contains: <string>--port</string>\n        <string>NNNNN</string>
     let mut lines = content.lines();
     while let Some(line) = lines.next() {
-        if line.trim() == "<string>--port</string>" {
-            if let Some(port_line) = lines.next() {
-                let port_str = port_line
-                    .trim()
-                    .trim_start_matches("<string>")
-                    .trim_end_matches("</string>");
-                return port_str.parse().ok();
-            }
+        if line.trim() == "<string>--port</string>"
+            && let Some(port_line) = lines.next()
+        {
+            let port_str = port_line
+                .trim()
+                .trim_start_matches("<string>")
+                .trim_end_matches("</string>");
+            return port_str.parse().ok();
         }
     }
     None
