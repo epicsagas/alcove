@@ -574,8 +574,8 @@ fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()
             // Prefer the port from the plist (if it exists) over config defaults,
             // since the plist may have been generated when config had a different
             // port value and never regenerated.
-            let bind_port = launchd::read_plist_port(kind)
-                .unwrap_or_else(|| resolve_server_port(cfg, kind));
+            let bind_port =
+                launchd::read_plist_port(kind).unwrap_or_else(|| resolve_server_port(cfg, kind));
             println!("ALCOVE_URL=http://{}:{}", srv.host, bind_port);
             if let Some(token) = &srv.token {
                 println!("ALCOVE_TOKEN={}", token);
