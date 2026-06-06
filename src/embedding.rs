@@ -268,7 +268,6 @@ impl EmbeddingModelChoice {
         }
     }
 
-
     /// Map to the corresponding fastembed EmbeddingModel variant.
     #[cfg(feature = "embed")]
     pub(crate) fn to_fastembed(self) -> FastEmbedModel {
@@ -947,10 +946,22 @@ mod tests {
         {
             // Verify quantized variants have distinct model IDs from non-Q counterparts
             for (a, b) in [
-                (EmbeddingModelChoice::AllMiniLML12V2, EmbeddingModelChoice::AllMiniLML12V2Q),
-                (EmbeddingModelChoice::GTEBaseENV15, EmbeddingModelChoice::GTEBaseENV15Q),
-                (EmbeddingModelChoice::GTELargeENV15, EmbeddingModelChoice::GTELargeENV15Q),
-                (EmbeddingModelChoice::MxbaiEmbedLargeV1, EmbeddingModelChoice::MxbaiEmbedLargeV1Q),
+                (
+                    EmbeddingModelChoice::AllMiniLML12V2,
+                    EmbeddingModelChoice::AllMiniLML12V2Q,
+                ),
+                (
+                    EmbeddingModelChoice::GTEBaseENV15,
+                    EmbeddingModelChoice::GTEBaseENV15Q,
+                ),
+                (
+                    EmbeddingModelChoice::GTELargeENV15,
+                    EmbeddingModelChoice::GTELargeENV15Q,
+                ),
+                (
+                    EmbeddingModelChoice::MxbaiEmbedLargeV1,
+                    EmbeddingModelChoice::MxbaiEmbedLargeV1Q,
+                ),
             ] {
                 assert_ne!(a.model_id(), b.model_id(), "{a:?} and {b:?} share model_id");
             }

@@ -769,11 +769,7 @@ fn cmd_model_list() -> Result<()> {
 
     for &(name, desc) in CURATED {
         let model = EmbeddingModelChoice::parse(name).unwrap();
-        let marker = if name == current {
-            " [current]"
-        } else {
-            ""
-        };
+        let marker = if name == current { " [current]" } else { "" };
         println!(
             "{:<30} {:<8} {:<10} {}{}",
             name,
