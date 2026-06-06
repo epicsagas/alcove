@@ -52,7 +52,9 @@ chrono = { version = "0.4", features = ["clock"] }
 # NOTE: ONNX Runtime ships native shared libraries (~30-50 MB per platform).
 # Linked at build time and bundled into release binaries.
 # `cargo audit` covers ONNX Runtime CVEs transitively via the ort crate.
-fastembed = { version = "5", optional = true }
+# default-features = false: drops hf-hub-native-tls + ort-download-binaries-native-tls
+# to avoid openssl-sys on cross-compile targets; replaced with rustls equivalents.
+fastembed = { version = "5", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
 # Pinned to match fastembed's exact ort version — DirectMLExecutionProvider type must be compatible.
 ort = { version = "=2.0.0-rc.12", optional = true }
 
@@ -67,7 +69,8 @@ quick-xml = { version = "0.39", optional = true }
 calamine = { version = "0.34", optional = true }
 
 # Lightweight sync HTTP client for MCP proxy mode
-ureq = "3"
+# rustls avoids the native-tls/openssl dependency for cross-compilation compatibility
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Token-optimized document transpiler (optional, transpile feature)
 llm-transpile = { version = "0.2.4", optional = true }
