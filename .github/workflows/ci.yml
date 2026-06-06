@@ -47,17 +47,13 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu pkg-config
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev:arm64
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
       - name: Check (${{ matrix.target }})
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: cargo check --target ${{ matrix.target }} --features full-cross
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
-          OPENSSL_DIR: /usr
+          OPENSSL_VENDORED: 1
       - name: Check (${{ matrix.target }})
         if: matrix.target != 'aarch64-unknown-linux-gnu'
         run: cargo check --target ${{ matrix.target }} --features full-cross
