@@ -53,6 +53,8 @@ chrono = { version = "0.4", features = ["clock"] }
 # Linked at build time and bundled into release binaries.
 # `cargo audit` covers ONNX Runtime CVEs transitively via the ort crate.
 fastembed = { version = "5", optional = true }
+# Pinned to match fastembed's exact ort version — DirectMLExecutionProvider type must be compatible.
+ort = { version = "=2.0.0-rc.12", optional = true }
 
 # Storage & indexing
 rusqlite = { version = "0.39", features = ["bundled"], optional = true }
@@ -97,7 +99,7 @@ tower-http = { version = "0.6", features = ["cors"], optional = true }
 default = ["core"]
 core = ["rusqlite", "alcove-server", "lang-rust"]
 embed = ["fastembed"]
-embed-directml = ["embed"]  # Windows DirectML GPU acceleration
+embed-directml = ["embed", "dep:ort"]  # Windows DirectML GPU acceleration
 vector = ["hnsw_rs"]
 pdf = ["pdf-extract"]
 office = ["zip", "quick-xml", "calamine"]
