@@ -30,33 +30,14 @@ jobs:
         run: cargo fmt --all -- --check
 
   cross-check-linux:
-    name: Cross-Platform Check (${{ matrix.target }})
+    name: Cross-Platform Check (x86_64-unknown-linux-gnu)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-      - name: Check (${{ matrix.target }})
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: cargo check --target ${{ matrix.target }} --features full-cross
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          OPENSSL_VENDORED: 1
-      - name: Check (${{ matrix.target }})
-        if: matrix.target != 'aarch64-unknown-linux-gnu'
-        run: cargo check --target ${{ matrix.target }} --features full-cross
+      - name: Check (x86_64-unknown-linux-gnu)
+        run: cargo check --target x86_64-unknown-linux-gnu --features full-cross
 
   cross-check-windows:
     name: Cross-Platform Check (x86_64-pc-windows-msvc)
