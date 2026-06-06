@@ -512,7 +512,7 @@ alcove model status
 | `ArcticEmbedMLong` | 430 MB | 768 | 8192 | Multilingüe | Documentos largos | ~1.5 GB |
 | `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | Código+inglés | Optimizado para código | ~1.5 GB |
 
-> Ver todos los modelos compatibles en [fastembed-rs](https://github.com/Anush008/fastembed-rs#supported-models). Cualquier modelo puede configurarse directamente en el archivo de configuración.
+> Ver todos los modelos compatibles en [EMBEDDING_MODELS.md](../docs/EMBEDDING_MODELS.md). Cualquier modelo puede configurarse directamente en el archivo de configuración.
 
 Una vez que un modelo está descargado y listo, Alcove usará automáticamente Búsqueda Híbrida tanto para búsqueda CLI como para herramientas MCP de agentes. Esto es particularmente efectivo para proyectos multilingües y consultas semánticas complejas.
 

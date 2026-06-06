@@ -785,17 +785,16 @@ fn cmd_model_list() -> Result<()> {
     }
 
     // If the user has a non-curated model configured, show it too
-    if !CURATED.iter().any(|(n, _)| *n == current) {
-        if let Some(model) = EmbeddingModelChoice::parse(current) {
-            println!(
-                "{:<30} {:<8} {:<10} {}{}",
-                current,
-                model.dimension(),
-                format!("~{}MB", model.size_mb()),
-                "(custom selection)",
-                style(" [current]").cyan()
-            );
-        }
+    if !CURATED.iter().any(|(n, _)| *n == current)
+        && let Some(model) = EmbeddingModelChoice::parse(current)
+    {
+        println!(
+            "{:<30} {:<8} {:<10} (custom selection){}",
+            current,
+            model.dimension(),
+            format!("~{}MB", model.size_mb()),
+            style(" [current]").cyan()
+        );
     }
 
     println!();
@@ -804,7 +803,7 @@ fn cmd_model_list() -> Result<()> {
         style("ℹ").dim()
     );
     println!(
-        "  {} See all supported models: https://github.com/Anush008/fastembed-rs#supported-models",
+        "  {} See all supported models: https://github.com/epicsagas/alcove/blob/main/docs/EMBEDDING_MODELS.md",
         style("ℹ").dim()
     );
     println!();
