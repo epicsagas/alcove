@@ -24,13 +24,20 @@ use fastembed::TextInitOptions;
 // ModelState
 // ---------------------------------------------------------------------------
 
-/// Model state for graceful degradation
+/// Model state for graceful degradation.
+///
+/// NOTE: `Loading` replaces the former candle `Downloading { progress_pct }`.
+/// fastembed's `with_show_download_progress(true)` prints download progress
+/// to stderr via hf-hub's built-in progress bar. No programmatic callback
+/// is available in the fastembed API.
 #[cfg(feature = "embed")]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum ModelState {
     #[default]
     NotLoaded,
     Loading,
+    /// Model weights are present in the HuggingFace cache but not loaded into memory.
+    Cached,
     Ready,
     Disabled,
     Failed(String),
@@ -42,6 +49,7 @@ impl std::fmt::Display for ModelState {
         match self {
             Self::NotLoaded => write!(f, "not_loaded"),
             Self::Loading => write!(f, "loading"),
+            Self::Cached => write!(f, "cached"),
             Self::Ready => write!(f, "ready"),
             Self::Disabled => write!(f, "disabled"),
             Self::Failed(e) => write!(f, "failed: {}", e),
@@ -568,20 +576,9 @@ impl FastEmbedSession {
 
     /// Embed a batch of texts, returning one normalized Vec<f32> per text.
     fn embed_batch(&mut self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        let embeddings = self.model.embed(texts, None)?;
-        // L2 normalize — fastembed returns raw pooled output
-        Ok(embeddings
-            .into_iter()
-            .map(|mut e| {
-                let norm: f64 = e.iter().map(|v| (*v as f64).powi(2)).sum::<f64>().sqrt();
-                if norm > 0.0 {
-                    for v in e.iter_mut() {
-                        *v /= norm as f32;
-                    }
-                }
-                e
-            })
-            .collect())
+        // fastembed's embed() already L2-normalizes via output::transformer_with_precedence
+        // (see fastembed src/text_embedding/output.rs — normalize() per row).
+        self.model.embed(texts, None)
     }
 }
 
@@ -617,16 +614,19 @@ impl EmbeddingService {
         });
 
         let enabled = config.enabled;
+        let cache_dir = PathBuf::from(&config.cache_dir);
         let internal_config = InternalEmbeddingConfig {
             model: model_choice,
-            cache_dir: PathBuf::from(&config.cache_dir),
+            cache_dir: cache_dir.clone(),
             enabled,
         };
 
-        let initial_state = if enabled {
-            ModelState::NotLoaded
-        } else {
+        let initial_state = if !enabled {
             ModelState::Disabled
+        } else if Self::is_model_cached(model_choice, &cache_dir) {
+            ModelState::Cached
+        } else {
+            ModelState::NotLoaded
         };
 
         Self {
@@ -671,7 +671,7 @@ impl EmbeddingService {
                 return Err("Embedding is disabled in configuration".to_string());
             }
             ModelState::Failed(e) => return Err(e),
-            ModelState::NotLoaded | ModelState::Loading => {
+            ModelState::NotLoaded | ModelState::Cached | ModelState::Loading => {
                 // In test builds, skip model download entirely — the ONNX Runtime
                 // native library increases per-process resource pressure enough to
                 // cause EAGAIN on Tantivy commits when many tests run in parallel.
@@ -693,7 +693,7 @@ impl EmbeddingService {
             match state.clone() {
                 ModelState::Ready => return Ok(()),
                 ModelState::Failed(e) => return Err(e),
-                ModelState::NotLoaded | ModelState::Loading => {
+                ModelState::NotLoaded | ModelState::Cached | ModelState::Loading => {
                     drop(state);
                     self.start_download();
                     state = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -720,7 +720,7 @@ impl EmbeddingService {
     fn start_download(&self) {
         {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            if *state != ModelState::NotLoaded {
+            if *state != ModelState::NotLoaded && *state != ModelState::Cached {
                 return;
             }
             // Transition to Loading inside the lock so a concurrent caller sees
@@ -797,7 +797,8 @@ impl EmbeddingService {
         }
         let mut session = self.session.lock().unwrap_or_else(|e| e.into_inner());
         *session = None;
-        *state = ModelState::NotLoaded;
+        // Session unloaded but cache remains on disk — next call will load from cache.
+        *state = ModelState::Cached;
         true
     }
 
@@ -853,6 +854,13 @@ impl EmbeddingService {
         *self.last_embed_at.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
 
         Ok(results.into_iter().flatten().collect())
+    }
+
+    /// Check if model weights are present in the HuggingFace Hub cache directory.
+    fn is_model_cached(model: EmbeddingModelChoice, cache_dir: &Path) -> bool {
+        let model_id = model.model_id();
+        let folder_name = format!("models--{}", model_id.replace('/', "--"));
+        cache_dir.join(folder_name).exists()
     }
 
     #[allow(dead_code)]
@@ -1055,6 +1063,7 @@ mod tests {
         {
             assert_eq!(format!("{}", ModelState::NotLoaded), "not_loaded");
             assert_eq!(format!("{}", ModelState::Loading), "loading");
+            assert_eq!(format!("{}", ModelState::Cached), "cached");
             assert_eq!(format!("{}", ModelState::Ready), "ready");
             assert_eq!(
                 format!("{}", ModelState::Failed("oops".to_string())),

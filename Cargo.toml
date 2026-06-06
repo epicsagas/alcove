@@ -48,7 +48,10 @@ sys-locale = "0.3.2"
 tantivy = "0.26"
 chrono = { version = "0.4", features = ["clock"] }
 
-# Embedding backend (ONNX Runtime via fastembed)
+# Embedding backend (ONNX Runtime via fastembed).
+# NOTE: ONNX Runtime ships native shared libraries (~30-50 MB per platform).
+# Linked at build time and bundled into release binaries.
+# `cargo audit` covers ONNX Runtime CVEs transitively via the ort crate.
 fastembed = { version = "5", optional = true }
 
 # Storage & indexing
