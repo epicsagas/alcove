@@ -768,15 +768,14 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
     #[cfg(feature = "embed")]
     {
         use crate::config::vault_embedding_config;
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::embedding::EmbeddingService;
         use crate::vector::{VectorStore, reciprocal_rank_fusion};
 
         let emb_cfg = vault_embedding_config(vault_path);
 
         if emb_cfg.enabled {
-            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
             let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-                model: model.as_str().to_string(),
+                model: emb_cfg.model.clone(),
                 auto_download: emb_cfg.auto_download,
                 cache_dir: emb_cfg.cache_dir.clone(),
                 enabled: true,

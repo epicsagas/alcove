@@ -1,8 +1,9 @@
 //! Embedding service for hybrid search (embed feature)
 //!
-//! Uses fastembed-rs (ONNX Runtime) for local inference with lazy model
-//! download via HuggingFace Hub and LRU query caching. Graceful degradation
-//! ensures BM25-only search works even when models aren't ready.
+//! Uses llm-kernel for the model catalog (`EmbeddingModel`), LRU cache
+//! (`EmbeddingCache`), and metadata lookups. `FastEmbedSession` wraps
+//! `fastembed::TextEmbedding` directly for full prefix control — call sites
+//! handle query/doc prefixes manually.
 
 #[cfg(feature = "embed")]
 use std::path::{Path, PathBuf};
@@ -14,11 +15,14 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "embed")]
 use anyhow::{Context, Result};
 #[cfg(feature = "embed")]
-use fastembed::EmbeddingModel as FastEmbedModel;
-#[cfg(feature = "embed")]
 use fastembed::TextEmbedding;
 #[cfg(feature = "embed")]
 use fastembed::TextInitOptions;
+#[cfg(feature = "embed")]
+use llm_kernel::embedding::EmbeddingCache;
+
+// Re-export EmbeddingModel from llm-kernel for downstream use.
+pub use llm_kernel::embedding::EmbeddingModel;
 
 // ---------------------------------------------------------------------------
 // ModelState
@@ -58,493 +62,64 @@ impl std::fmt::Display for ModelState {
 }
 
 // ---------------------------------------------------------------------------
-// EmbeddingModelChoice
+// Legacy model name parser
 // ---------------------------------------------------------------------------
 
-/// Supported embedding models via fastembed-rs (ONNX Runtime).
+/// Default model used when parsing fails.
+const DEFAULT_MODEL: EmbeddingModel = EmbeddingModel::MultilingualE5Small;
+
+/// Parse a model name, handling backward-compatible Arctic aliases.
 ///
-/// Config names are matched by `parse()`. Models prefixed with `Arctic` are
-/// backward-compatible aliases for the Snowflake Arctic Embed series.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum EmbeddingModelChoice {
-    // ── MiniLM ───────────────────────────────────────────────
-    AllMiniLML6V2,
-    AllMiniLML6V2Q,
-    AllMiniLML12V2,
-    AllMiniLML12V2Q,
-    // ── MPNet ────────────────────────────────────────────────
-    AllMpnetBaseV2,
-    // ── E5 multilingual ─────────────────────────────────────
-    MultilingualE5Small,
-    MultilingualE5Base,
-    MultilingualE5Large,
-    // ── BGE English ──────────────────────────────────────────
-    BGESmallENV15,
-    BGESmallENV15Q,
-    BGEBaseENV15,
-    BGEBaseENV15Q,
-    BGELargeENV15,
-    BGELargeENV15Q,
-    // ── BGE Chinese ──────────────────────────────────────────
-    BGESmallZHV15,
-    BGELargeZHV15,
-    // ── BGE Multilingual ────────────────────────────────────
-    BGEM3,
-    // ── ModernBERT ───────────────────────────────────────────
-    ModernBertEmbedLarge,
-    // ── Nomic ────────────────────────────────────────────────
-    NomicEmbedTextV1,
-    NomicEmbedTextV15,
-    NomicEmbedTextV15Q,
-    // ── Paraphrase multilingual ─────────────────────────────
-    ParaphraseMLMiniLML12V2,
-    ParaphraseMLMiniLML12V2Q,
-    ParaphraseMLMpnetBaseV2,
-    // ── MixedBread ───────────────────────────────────────────
-    MxbaiEmbedLargeV1,
-    MxbaiEmbedLargeV1Q,
-    // ── GTE ──────────────────────────────────────────────────
-    GTEBaseENV15,
-    GTEBaseENV15Q,
-    GTELargeENV15,
-    GTELargeENV15Q,
-    // ── Jina ─────────────────────────────────────────────────
-    JinaEmbeddingsV2BaseCode,
-    JinaEmbeddingsV2BaseEN,
-    // ── Gemma ────────────────────────────────────────────────
-    EmbeddingGemma300M,
-    // ── Snowflake Arctic (backward-compat aliases) ──────────
-    #[default]
-    ArcticEmbedXS,
-    ArcticEmbedXSQ,
-    ArcticEmbedS,
-    ArcticEmbedSQ,
-    ArcticEmbedM,
-    ArcticEmbedMQ,
-    ArcticEmbedMLong,
-    ArcticEmbedMLongQ,
-    ArcticEmbedL,
-    ArcticEmbedLQ,
+/// New code should use `EmbeddingModel::parse()` directly. This function
+/// maps legacy names (e.g., `"ArcticEmbedXS"`) to their current equivalents
+/// (e.g., `EmbeddingModel::SnowflakeArcticEmbedXS`).
+pub fn parse_legacy_model(name: &str) -> Option<EmbeddingModel> {
+    // Try llm-kernel's case-insensitive parse first
+    if let Ok(model) = EmbeddingModel::parse(name) {
+        return Some(model);
+    }
+    // Legacy Arctic aliases (old alcove names → Snowflake-prefixed variants)
+    let legacy = match name {
+        "ArcticEmbedXS" => EmbeddingModel::SnowflakeArcticEmbedXS,
+        "ArcticEmbedXSQ" => EmbeddingModel::SnowflakeArcticEmbedXSQ,
+        "ArcticEmbedS" => EmbeddingModel::SnowflakeArcticEmbedS,
+        "ArcticEmbedSQ" => EmbeddingModel::SnowflakeArcticEmbedSQ,
+        "ArcticEmbedM" => EmbeddingModel::SnowflakeArcticEmbedM,
+        "ArcticEmbedMQ" => EmbeddingModel::SnowflakeArcticEmbedMQ,
+        "ArcticEmbedMLong" => EmbeddingModel::SnowflakeArcticEmbedMLong,
+        "ArcticEmbedMLongQ" => EmbeddingModel::SnowflakeArcticEmbedMLongQ,
+        "ArcticEmbedL" => EmbeddingModel::SnowflakeArcticEmbedL,
+        "ArcticEmbedLQ" => EmbeddingModel::SnowflakeArcticEmbedLQ,
+        _ => return None,
+    };
+    Some(legacy)
 }
 
-impl EmbeddingModelChoice {
-    pub fn dimension(&self) -> usize {
-        match self {
-            Self::AllMiniLML6V2
-            | Self::AllMiniLML6V2Q
-            | Self::AllMiniLML12V2
-            | Self::AllMiniLML12V2Q
-            | Self::MultilingualE5Small
-            | Self::BGESmallENV15
-            | Self::BGESmallENV15Q
-            | Self::ParaphraseMLMiniLML12V2
-            | Self::ParaphraseMLMiniLML12V2Q
-            | Self::ArcticEmbedXS
-            | Self::ArcticEmbedXSQ
-            | Self::ArcticEmbedS
-            | Self::ArcticEmbedSQ => 384,
-
-            Self::BGESmallZHV15 => 512,
-
-            Self::AllMpnetBaseV2
-            | Self::MultilingualE5Base
-            | Self::BGEBaseENV15
-            | Self::BGEBaseENV15Q
-            | Self::NomicEmbedTextV1
-            | Self::NomicEmbedTextV15
-            | Self::NomicEmbedTextV15Q
-            | Self::ParaphraseMLMpnetBaseV2
-            | Self::GTEBaseENV15
-            | Self::GTEBaseENV15Q
-            | Self::JinaEmbeddingsV2BaseCode
-            | Self::JinaEmbeddingsV2BaseEN
-            | Self::EmbeddingGemma300M
-            | Self::ArcticEmbedM
-            | Self::ArcticEmbedMQ
-            | Self::ArcticEmbedMLong
-            | Self::ArcticEmbedMLongQ => 768,
-
-            Self::MultilingualE5Large
-            | Self::BGELargeENV15
-            | Self::BGELargeENV15Q
-            | Self::BGELargeZHV15
-            | Self::BGEM3
-            | Self::ModernBertEmbedLarge
-            | Self::MxbaiEmbedLargeV1
-            | Self::MxbaiEmbedLargeV1Q
-            | Self::GTELargeENV15
-            | Self::GTELargeENV15Q
-            | Self::ArcticEmbedL
-            | Self::ArcticEmbedLQ => 1024,
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "AllMiniLML6V2" => Some(Self::AllMiniLML6V2),
-            "AllMiniLML6V2Q" => Some(Self::AllMiniLML6V2Q),
-            "AllMiniLML12V2" => Some(Self::AllMiniLML12V2),
-            "AllMiniLML12V2Q" => Some(Self::AllMiniLML12V2Q),
-            "AllMpnetBaseV2" => Some(Self::AllMpnetBaseV2),
-            "MultilingualE5Small" => Some(Self::MultilingualE5Small),
-            "MultilingualE5Base" => Some(Self::MultilingualE5Base),
-            "MultilingualE5Large" => Some(Self::MultilingualE5Large),
-            "BGESmallENV15" => Some(Self::BGESmallENV15),
-            "BGESmallENV15Q" => Some(Self::BGESmallENV15Q),
-            "BGEBaseENV15" => Some(Self::BGEBaseENV15),
-            "BGEBaseENV15Q" => Some(Self::BGEBaseENV15Q),
-            "BGELargeENV15" => Some(Self::BGELargeENV15),
-            "BGELargeENV15Q" => Some(Self::BGELargeENV15Q),
-            "BGESmallZHV15" => Some(Self::BGESmallZHV15),
-            "BGELargeZHV15" => Some(Self::BGELargeZHV15),
-            "BGEM3" => Some(Self::BGEM3),
-            "ModernBertEmbedLarge" => Some(Self::ModernBertEmbedLarge),
-            "NomicEmbedTextV1" => Some(Self::NomicEmbedTextV1),
-            "NomicEmbedTextV15" => Some(Self::NomicEmbedTextV15),
-            "NomicEmbedTextV15Q" => Some(Self::NomicEmbedTextV15Q),
-            "ParaphraseMLMiniLML12V2" => Some(Self::ParaphraseMLMiniLML12V2),
-            "ParaphraseMLMiniLML12V2Q" => Some(Self::ParaphraseMLMiniLML12V2Q),
-            "ParaphraseMLMpnetBaseV2" => Some(Self::ParaphraseMLMpnetBaseV2),
-            "MxbaiEmbedLargeV1" => Some(Self::MxbaiEmbedLargeV1),
-            "MxbaiEmbedLargeV1Q" => Some(Self::MxbaiEmbedLargeV1Q),
-            "GTEBaseENV15" => Some(Self::GTEBaseENV15),
-            "GTEBaseENV15Q" => Some(Self::GTEBaseENV15Q),
-            "GTELargeENV15" => Some(Self::GTELargeENV15),
-            "GTELargeENV15Q" => Some(Self::GTELargeENV15Q),
-            "JinaEmbeddingsV2BaseCode" => Some(Self::JinaEmbeddingsV2BaseCode),
-            "JinaEmbeddingsV2BaseEN" => Some(Self::JinaEmbeddingsV2BaseEN),
-            "EmbeddingGemma300M" => Some(Self::EmbeddingGemma300M),
-            "ArcticEmbedXS" => Some(Self::ArcticEmbedXS),
-            "ArcticEmbedXSQ" => Some(Self::ArcticEmbedXSQ),
-            "ArcticEmbedS" => Some(Self::ArcticEmbedS),
-            "ArcticEmbedSQ" => Some(Self::ArcticEmbedSQ),
-            "ArcticEmbedM" => Some(Self::ArcticEmbedM),
-            "ArcticEmbedMQ" => Some(Self::ArcticEmbedMQ),
-            "ArcticEmbedMLong" => Some(Self::ArcticEmbedMLong),
-            "ArcticEmbedMLongQ" => Some(Self::ArcticEmbedMLongQ),
-            "ArcticEmbedL" => Some(Self::ArcticEmbedL),
-            "ArcticEmbedLQ" => Some(Self::ArcticEmbedLQ),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::AllMiniLML6V2 => "AllMiniLML6V2",
-            Self::AllMiniLML6V2Q => "AllMiniLML6V2Q",
-            Self::AllMiniLML12V2 => "AllMiniLML12V2",
-            Self::AllMiniLML12V2Q => "AllMiniLML12V2Q",
-            Self::AllMpnetBaseV2 => "AllMpnetBaseV2",
-            Self::MultilingualE5Small => "MultilingualE5Small",
-            Self::MultilingualE5Base => "MultilingualE5Base",
-            Self::MultilingualE5Large => "MultilingualE5Large",
-            Self::BGESmallENV15 => "BGESmallENV15",
-            Self::BGESmallENV15Q => "BGESmallENV15Q",
-            Self::BGEBaseENV15 => "BGEBaseENV15",
-            Self::BGEBaseENV15Q => "BGEBaseENV15Q",
-            Self::BGELargeENV15 => "BGELargeENV15",
-            Self::BGELargeENV15Q => "BGELargeENV15Q",
-            Self::BGESmallZHV15 => "BGESmallZHV15",
-            Self::BGELargeZHV15 => "BGELargeZHV15",
-            Self::BGEM3 => "BGEM3",
-            Self::ModernBertEmbedLarge => "ModernBertEmbedLarge",
-            Self::NomicEmbedTextV1 => "NomicEmbedTextV1",
-            Self::NomicEmbedTextV15 => "NomicEmbedTextV15",
-            Self::NomicEmbedTextV15Q => "NomicEmbedTextV15Q",
-            Self::ParaphraseMLMiniLML12V2 => "ParaphraseMLMiniLML12V2",
-            Self::ParaphraseMLMiniLML12V2Q => "ParaphraseMLMiniLML12V2Q",
-            Self::ParaphraseMLMpnetBaseV2 => "ParaphraseMLMpnetBaseV2",
-            Self::MxbaiEmbedLargeV1 => "MxbaiEmbedLargeV1",
-            Self::MxbaiEmbedLargeV1Q => "MxbaiEmbedLargeV1Q",
-            Self::GTEBaseENV15 => "GTEBaseENV15",
-            Self::GTEBaseENV15Q => "GTEBaseENV15Q",
-            Self::GTELargeENV15 => "GTELargeENV15",
-            Self::GTELargeENV15Q => "GTELargeENV15Q",
-            Self::JinaEmbeddingsV2BaseCode => "JinaEmbeddingsV2BaseCode",
-            Self::JinaEmbeddingsV2BaseEN => "JinaEmbeddingsV2BaseEN",
-            Self::EmbeddingGemma300M => "EmbeddingGemma300M",
-            Self::ArcticEmbedXS => "ArcticEmbedXS",
-            Self::ArcticEmbedXSQ => "ArcticEmbedXSQ",
-            Self::ArcticEmbedS => "ArcticEmbedS",
-            Self::ArcticEmbedSQ => "ArcticEmbedSQ",
-            Self::ArcticEmbedM => "ArcticEmbedM",
-            Self::ArcticEmbedMQ => "ArcticEmbedMQ",
-            Self::ArcticEmbedMLong => "ArcticEmbedMLong",
-            Self::ArcticEmbedMLongQ => "ArcticEmbedMLongQ",
-            Self::ArcticEmbedL => "ArcticEmbedL",
-            Self::ArcticEmbedLQ => "ArcticEmbedLQ",
-        }
-    }
-
-    /// Map to the corresponding fastembed EmbeddingModel variant.
-    #[cfg(feature = "embed")]
-    pub(crate) fn to_fastembed(self) -> FastEmbedModel {
-        match self {
-            Self::AllMiniLML6V2 => FastEmbedModel::AllMiniLML6V2,
-            Self::AllMiniLML6V2Q => FastEmbedModel::AllMiniLML6V2Q,
-            Self::AllMiniLML12V2 => FastEmbedModel::AllMiniLML12V2,
-            Self::AllMiniLML12V2Q => FastEmbedModel::AllMiniLML12V2Q,
-            Self::AllMpnetBaseV2 => FastEmbedModel::AllMpnetBaseV2,
-            Self::MultilingualE5Small => FastEmbedModel::MultilingualE5Small,
-            Self::MultilingualE5Base => FastEmbedModel::MultilingualE5Base,
-            Self::MultilingualE5Large => FastEmbedModel::MultilingualE5Large,
-            Self::BGESmallENV15 => FastEmbedModel::BGESmallENV15,
-            Self::BGESmallENV15Q => FastEmbedModel::BGESmallENV15Q,
-            Self::BGEBaseENV15 => FastEmbedModel::BGEBaseENV15,
-            Self::BGEBaseENV15Q => FastEmbedModel::BGEBaseENV15Q,
-            Self::BGELargeENV15 => FastEmbedModel::BGELargeENV15,
-            Self::BGELargeENV15Q => FastEmbedModel::BGELargeENV15Q,
-            Self::BGESmallZHV15 => FastEmbedModel::BGESmallZHV15,
-            Self::BGELargeZHV15 => FastEmbedModel::BGELargeZHV15,
-            Self::BGEM3 => FastEmbedModel::BGEM3,
-            Self::ModernBertEmbedLarge => FastEmbedModel::ModernBertEmbedLarge,
-            Self::NomicEmbedTextV1 => FastEmbedModel::NomicEmbedTextV1,
-            Self::NomicEmbedTextV15 => FastEmbedModel::NomicEmbedTextV15,
-            Self::NomicEmbedTextV15Q => FastEmbedModel::NomicEmbedTextV15Q,
-            Self::ParaphraseMLMiniLML12V2 => FastEmbedModel::ParaphraseMLMiniLML12V2,
-            Self::ParaphraseMLMiniLML12V2Q => FastEmbedModel::ParaphraseMLMiniLML12V2Q,
-            Self::ParaphraseMLMpnetBaseV2 => FastEmbedModel::ParaphraseMLMpnetBaseV2,
-            Self::MxbaiEmbedLargeV1 => FastEmbedModel::MxbaiEmbedLargeV1,
-            Self::MxbaiEmbedLargeV1Q => FastEmbedModel::MxbaiEmbedLargeV1Q,
-            Self::GTEBaseENV15 => FastEmbedModel::GTEBaseENV15,
-            Self::GTEBaseENV15Q => FastEmbedModel::GTEBaseENV15Q,
-            Self::GTELargeENV15 => FastEmbedModel::GTELargeENV15,
-            Self::GTELargeENV15Q => FastEmbedModel::GTELargeENV15Q,
-            Self::JinaEmbeddingsV2BaseCode => FastEmbedModel::JinaEmbeddingsV2BaseCode,
-            Self::JinaEmbeddingsV2BaseEN => FastEmbedModel::JinaEmbeddingsV2BaseEN,
-            Self::EmbeddingGemma300M => FastEmbedModel::EmbeddingGemma300M,
-            // Arctic backward-compat aliases → Snowflake fastembed variants
-            Self::ArcticEmbedXS => FastEmbedModel::SnowflakeArcticEmbedXS,
-            Self::ArcticEmbedXSQ => FastEmbedModel::SnowflakeArcticEmbedXSQ,
-            Self::ArcticEmbedS => FastEmbedModel::SnowflakeArcticEmbedS,
-            Self::ArcticEmbedSQ => FastEmbedModel::SnowflakeArcticEmbedSQ,
-            Self::ArcticEmbedM => FastEmbedModel::SnowflakeArcticEmbedM,
-            Self::ArcticEmbedMQ => FastEmbedModel::SnowflakeArcticEmbedMQ,
-            Self::ArcticEmbedMLong => FastEmbedModel::SnowflakeArcticEmbedMLong,
-            Self::ArcticEmbedMLongQ => FastEmbedModel::SnowflakeArcticEmbedMLongQ,
-            Self::ArcticEmbedL => FastEmbedModel::SnowflakeArcticEmbedL,
-            Self::ArcticEmbedLQ => FastEmbedModel::SnowflakeArcticEmbedLQ,
-        }
-    }
-
-    pub fn query_prefix(self) -> Option<&'static str> {
-        match self {
-            Self::MultilingualE5Small | Self::MultilingualE5Base | Self::MultilingualE5Large => {
-                Some("query: ")
-            }
-
-            Self::NomicEmbedTextV15 | Self::NomicEmbedTextV15Q => Some("search_query: "),
-
-            Self::ArcticEmbedXS
-            | Self::ArcticEmbedXSQ
-            | Self::ArcticEmbedS
-            | Self::ArcticEmbedSQ
-            | Self::ArcticEmbedM
-            | Self::ArcticEmbedMQ
-            | Self::ArcticEmbedMLong
-            | Self::ArcticEmbedMLongQ
-            | Self::ArcticEmbedL
-            | Self::ArcticEmbedLQ => {
-                Some("Represent this sentence for searching relevant passages: ")
-            }
-
-            _ => None,
-        }
-    }
-
-    pub fn doc_prefix(self) -> Option<&'static str> {
-        match self {
-            Self::MultilingualE5Small | Self::MultilingualE5Base | Self::MultilingualE5Large => {
-                Some("passage: ")
-            }
-
-            Self::NomicEmbedTextV15 | Self::NomicEmbedTextV15Q => Some("search_document: "),
-
-            _ => None,
-        }
-    }
-
-    /// Maximum sequence length (tokens) supported by the model.
-    pub fn max_seq_length(self) -> usize {
-        match self {
-            Self::AllMiniLML6V2
-            | Self::AllMiniLML6V2Q
-            | Self::AllMiniLML12V2
-            | Self::AllMiniLML12V2Q => 256,
-
-            Self::AllMpnetBaseV2 => 384,
-
-            // Arctic Embed non-Long variants: 512 token limit
-            Self::ArcticEmbedXS
-            | Self::ArcticEmbedXSQ
-            | Self::ArcticEmbedS
-            | Self::ArcticEmbedSQ
-            | Self::ArcticEmbedM
-            | Self::ArcticEmbedMQ
-            | Self::ArcticEmbedL
-            | Self::ArcticEmbedLQ => 512,
-
-            // Long-context models
-            Self::BGEM3
-            | Self::NomicEmbedTextV1
-            | Self::NomicEmbedTextV15
-            | Self::NomicEmbedTextV15Q
-            | Self::JinaEmbeddingsV2BaseCode
-            | Self::JinaEmbeddingsV2BaseEN
-            | Self::EmbeddingGemma300M
-            | Self::ArcticEmbedMLong
-            | Self::ArcticEmbedMLongQ => 8192,
-
-            // All others default to 512
-            _ => 512,
-        }
-    }
-
-    /// Approximate model size in MB (ONNX format estimates).
-    pub fn size_mb(&self) -> usize {
-        match self {
-            Self::AllMiniLML6V2 | Self::AllMiniLML6V2Q => 80,
-            Self::AllMiniLML12V2 | Self::AllMiniLML12V2Q => 120,
-            Self::AllMpnetBaseV2 => 420,
-            Self::MultilingualE5Small => 470,
-            Self::MultilingualE5Base => 1100,
-            Self::MultilingualE5Large => 2200,
-            Self::BGESmallENV15 => 130,
-            Self::BGESmallENV15Q => 40,
-            Self::BGEBaseENV15 => 430,
-            Self::BGEBaseENV15Q => 130,
-            Self::BGELargeENV15 => 1300,
-            Self::BGELargeENV15Q => 400,
-            Self::BGESmallZHV15 => 100,
-            Self::BGELargeZHV15 => 1300,
-            Self::BGEM3 => 600,
-            Self::ModernBertEmbedLarge => 600,
-            Self::NomicEmbedTextV1 => 550,
-            Self::NomicEmbedTextV15 | Self::NomicEmbedTextV15Q => 550,
-            Self::ParaphraseMLMiniLML12V2 => 420,
-            Self::ParaphraseMLMiniLML12V2Q => 130,
-            Self::ParaphraseMLMpnetBaseV2 => 1100,
-            Self::MxbaiEmbedLargeV1 => 670,
-            Self::MxbaiEmbedLargeV1Q => 200,
-            Self::GTEBaseENV15 => 430,
-            Self::GTEBaseENV15Q => 130,
-            Self::GTELargeENV15 => 1300,
-            Self::GTELargeENV15Q => 400,
-            Self::JinaEmbeddingsV2BaseCode => 550,
-            Self::JinaEmbeddingsV2BaseEN => 550,
-            Self::EmbeddingGemma300M => 600,
-            Self::ArcticEmbedXS | Self::ArcticEmbedXSQ => 90,
-            Self::ArcticEmbedS | Self::ArcticEmbedSQ => 130,
-            Self::ArcticEmbedM
-            | Self::ArcticEmbedMQ
-            | Self::ArcticEmbedMLong
-            | Self::ArcticEmbedMLongQ => 430,
-            Self::ArcticEmbedL | Self::ArcticEmbedLQ => 1300,
-        }
-    }
-
-    /// HuggingFace model repo ID for cache management.
-    pub fn model_id(self) -> &'static str {
-        match self {
-            Self::AllMiniLML6V2 => "Qdrant/all-MiniLM-L6-v2-onnx",
-            Self::AllMiniLML6V2Q => "Xenova/all-MiniLM-L6-v2",
-            Self::AllMiniLML12V2 => "Xenova/all-MiniLM-L12-v2",
-            Self::AllMiniLML12V2Q => "Qdrant/all-MiniLM-L12-v2-onnx-Q",
-            Self::AllMpnetBaseV2 => "Xenova/all-mpnet-base-v2",
-            Self::MultilingualE5Small => "intfloat/multilingual-e5-small",
-            Self::MultilingualE5Base => "intfloat/multilingual-e5-base",
-            Self::MultilingualE5Large => "Qdrant/multilingual-e5-large-onnx",
-            Self::BGESmallENV15 => "Xenova/bge-small-en-v1.5",
-            Self::BGESmallENV15Q => "Qdrant/bge-small-en-v1.5-onnx-Q",
-            Self::BGEBaseENV15 => "Xenova/bge-base-en-v1.5",
-            Self::BGEBaseENV15Q => "Qdrant/bge-base-en-v1.5-onnx-Q",
-            Self::BGELargeENV15 => "Xenova/bge-large-en-v1.5",
-            Self::BGELargeENV15Q => "Qdrant/bge-large-en-v1.5-onnx-Q",
-            Self::BGESmallZHV15 => "Xenova/bge-small-zh-v1.5",
-            Self::BGELargeZHV15 => "Xenova/bge-large-zh-v1.5",
-            Self::BGEM3 => "BAAI/bge-m3",
-            Self::ModernBertEmbedLarge => "lightonai/modernbert-embed-large",
-            Self::NomicEmbedTextV1 => "nomic-ai/nomic-embed-text-v1",
-            Self::NomicEmbedTextV15 => "nomic-ai/nomic-embed-text-v1.5",
-            Self::NomicEmbedTextV15Q => "nomic-ai/nomic-embed-text-v1.5",
-            Self::ParaphraseMLMiniLML12V2 => "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
-            Self::ParaphraseMLMiniLML12V2Q => "Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q",
-            Self::ParaphraseMLMpnetBaseV2 => "Xenova/paraphrase-multilingual-mpnet-base-v2",
-            Self::MxbaiEmbedLargeV1 => "mixedbread-ai/mxbai-embed-large-v1",
-            Self::MxbaiEmbedLargeV1Q => "Qdrant/mxbai-embed-large-v1-onnx-Q",
-            Self::GTEBaseENV15 => "Alibaba-NLP/gte-base-en-v1.5",
-            Self::GTEBaseENV15Q => "Qdrant/gte-base-en-v1.5-onnx-Q",
-            Self::GTELargeENV15 => "Alibaba-NLP/gte-large-en-v1.5",
-            Self::GTELargeENV15Q => "Qdrant/gte-large-en-v1.5-onnx-Q",
-            Self::JinaEmbeddingsV2BaseCode => "jinaai/jina-embeddings-v2-base-code",
-            Self::JinaEmbeddingsV2BaseEN => "jinaai/jina-embeddings-v2-base-en",
-            Self::EmbeddingGemma300M => "onnx-community/embeddinggemma-300m-ONNX",
-            Self::ArcticEmbedXS | Self::ArcticEmbedXSQ => "snowflake/snowflake-arctic-embed-xs",
-            Self::ArcticEmbedS | Self::ArcticEmbedSQ => "snowflake/snowflake-arctic-embed-s",
-            Self::ArcticEmbedM | Self::ArcticEmbedMQ => "Snowflake/snowflake-arctic-embed-m",
-            Self::ArcticEmbedMLong | Self::ArcticEmbedMLongQ => {
-                "snowflake/snowflake-arctic-embed-m-long"
-            }
-            Self::ArcticEmbedL | Self::ArcticEmbedLQ => "snowflake/snowflake-arctic-embed-l",
-        }
-    }
+/// Resolve a model name with fallback to the default.
+///
+/// Single entry-point for all call sites — avoids duplicating
+/// `parse_legacy_model().unwrap_or(DEFAULT_MODEL)` everywhere.
+pub fn resolve_model(name: &str) -> EmbeddingModel {
+    parse_legacy_model(name).unwrap_or(DEFAULT_MODEL)
 }
 
-impl std::fmt::Display for EmbeddingModelChoice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", (*self).as_str())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// LRU cache backed by IndexMap
-// ---------------------------------------------------------------------------
-
-pub struct QueryEmbedCache {
-    capacity: usize,
-    map: indexmap::IndexMap<String, Vec<f32>>,
-}
-
-impl QueryEmbedCache {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            capacity,
-            map: indexmap::IndexMap::new(),
-        }
-    }
-
-    pub fn get(&mut self, key: &str) -> Option<&Vec<f32>> {
-        if self.capacity == 0 {
-            return None;
-        }
-        if let Some((k, v)) = self.map.shift_remove_entry(key) {
-            self.map.insert(k, v);
-            self.map.get(key)
-        } else {
-            None
-        }
-    }
-
-    pub fn insert(&mut self, key: String, value: Vec<f32>) {
-        if self.capacity == 0 {
-            return;
-        }
-        if let Some((k, _)) = self.map.shift_remove_entry(&key) {
-            self.map.insert(k, value);
-        } else {
-            if self.map.len() >= self.capacity {
-                self.map.shift_remove_index(0);
-            }
-            self.map.insert(key, value);
-        }
-    }
+/// Build the HuggingFace Hub cache folder name for a model.
+///
+/// Uses `model_code()` (the actual download repo) rather than the canonical
+/// model name, matching the folder layout created by `hf-hub`.
+#[cfg(feature = "embed")]
+fn hf_cache_folder(model: EmbeddingModel) -> String {
+    format!("models--{}", model.model_code().replace('/', "--"))
 }
 
 // ---------------------------------------------------------------------------
 // FastEmbed session (ONNX Runtime inference engine)
 // ---------------------------------------------------------------------------
 
-/// Holds a loaded fastembed TextEmbedding, ready for inference.
+/// Holds a loaded fastembed `TextEmbedding`, ready for inference.
+///
+/// Wraps `TextEmbedding` directly (not via llm-kernel's `FastembedProvider`)
+/// to retain full prefix control — call sites handle query/doc prefixes.
 #[cfg(feature = "embed")]
 struct FastEmbedSession {
     model: TextEmbedding,
@@ -554,9 +129,9 @@ struct FastEmbedSession {
 impl FastEmbedSession {
     /// Download model (if needed) via fastembed's HuggingFace Hub integration
     /// and build an ONNX Runtime session.
-    fn load(choice: &EmbeddingModelChoice, cache_dir: &Path) -> Result<Self> {
+    fn load(model: EmbeddingModel, cache_dir: &Path) -> Result<Self> {
         #[allow(unused_mut)]
-        let mut opts = TextInitOptions::new(choice.to_fastembed())
+        let mut opts = TextInitOptions::new(model.as_fastembed())
             .with_cache_dir(cache_dir.to_path_buf())
             .with_show_download_progress(true);
 
@@ -576,8 +151,7 @@ impl FastEmbedSession {
 
     /// Embed a batch of texts, returning one normalized Vec<f32> per text.
     fn embed_batch(&mut self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        // fastembed's embed() already L2-normalizes via output::transformer_with_precedence
-        // (see fastembed src/text_embedding/output.rs — normalize() per row).
+        // fastembed's embed() already L2-normalizes
         self.model.embed(texts, None)
     }
 }
@@ -595,12 +169,12 @@ pub struct EmbeddingService {
     #[allow(dead_code)]
     previous_dimension: Arc<Mutex<Option<usize>>>,
     last_embed_at: Arc<Mutex<Instant>>,
-    query_cache: Arc<Mutex<QueryEmbedCache>>,
+    query_cache: Arc<Mutex<EmbeddingCache>>,
 }
 
 #[cfg(feature = "embed")]
 struct InternalEmbeddingConfig {
-    model: EmbeddingModelChoice,
+    model: EmbeddingModel,
     cache_dir: PathBuf,
     enabled: bool,
 }
@@ -608,10 +182,20 @@ struct InternalEmbeddingConfig {
 #[cfg(feature = "embed")]
 impl EmbeddingService {
     pub fn new(config: crate::config::EmbeddingConfig) -> Self {
-        let model_choice = EmbeddingModelChoice::parse(&config.model).unwrap_or_else(|| {
-            eprintln!("Warning: Unknown model '{}', using default", config.model);
-            EmbeddingModelChoice::default()
-        });
+        let model_choice = match parse_legacy_model(&config.model) {
+            Some(m) => m,
+            None => {
+                let default = DEFAULT_MODEL;
+                eprintln!(
+                    "Warning: Unknown model '{}', using {} ({}d). \
+                     Run 'alcove index' to rebuild the vector index if you changed models.",
+                    config.model,
+                    default.as_str(),
+                    default.dimension()
+                );
+                default
+            }
+        };
 
         let enabled = config.enabled;
         let cache_dir = PathBuf::from(&config.cache_dir);
@@ -623,7 +207,7 @@ impl EmbeddingService {
 
         let initial_state = if !enabled {
             ModelState::Disabled
-        } else if Self::is_model_cached(model_choice, &cache_dir) {
+        } else if llm_kernel::embedding::is_model_cached(model_choice, &cache_dir) {
             ModelState::Cached
         } else {
             ModelState::NotLoaded
@@ -636,7 +220,7 @@ impl EmbeddingService {
             session: Arc::new(Mutex::new(None)),
             previous_dimension: Arc::new(Mutex::new(None)),
             last_embed_at: Arc::new(Mutex::new(Instant::now())),
-            query_cache: Arc::new(Mutex::new(QueryEmbedCache::new(config.query_cache_size))),
+            query_cache: Arc::new(Mutex::new(EmbeddingCache::new(config.query_cache_size))),
         }
     }
 
@@ -752,7 +336,7 @@ impl EmbeddingService {
                         return;
                     }
 
-                    match FastEmbedSession::load(&model, &cache_dir) {
+                    match FastEmbedSession::load(model, &cache_dir) {
                         Ok(session) => {
                             let mut state_guard =
                                 state_arc.lock().unwrap_or_else(|e| e.into_inner());
@@ -856,19 +440,9 @@ impl EmbeddingService {
         Ok(results.into_iter().flatten().collect())
     }
 
-    /// Check if model weights are present in the HuggingFace Hub cache directory.
-    fn is_model_cached(model: EmbeddingModelChoice, cache_dir: &Path) -> bool {
-        let model_id = model.model_id();
-        let folder_name = format!("models--{}", model_id.replace('/', "--"));
-        cache_dir.join(folder_name).exists()
-    }
-
     #[allow(dead_code)]
     pub fn remove_cache(&self) -> std::result::Result<(), String> {
-        // hf-hub cache uses "models--{org}--{repo}" folder naming.
-        // Remove only this model's folder so other cached models are unaffected.
-        let model_id = self.internal_config.model.model_id();
-        let folder_name = format!("models--{}", model_id.replace('/', "--"));
+        let folder_name = hf_cache_folder(self.internal_config.model);
         let model_dir = self.internal_config.cache_dir.join(folder_name);
         if model_dir.exists() {
             std::fs::remove_dir_all(&model_dir)
@@ -892,7 +466,7 @@ impl EmbeddingService {
         self.internal_config.model.as_str()
     }
 
-    pub fn model_choice(&self) -> EmbeddingModelChoice {
+    pub fn model_choice(&self) -> EmbeddingModel {
         self.internal_config.model
     }
 }
@@ -910,17 +484,17 @@ mod tests {
     fn test_model_choice_dimension() {
         #[cfg(feature = "embed")]
         {
-            assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.dimension(), 384);
-            assert_eq!(EmbeddingModelChoice::MultilingualE5Small.dimension(), 384);
-            assert_eq!(EmbeddingModelChoice::MultilingualE5Base.dimension(), 768);
-            assert_eq!(EmbeddingModelChoice::MultilingualE5Large.dimension(), 1024);
-            assert_eq!(EmbeddingModelChoice::BGEM3.dimension(), 1024);
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedXS.dimension(), 384);
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedS.dimension(), 384);
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedM.dimension(), 768);
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedL.dimension(), 1024);
-            assert_eq!(EmbeddingModelChoice::BGESmallZHV15.dimension(), 512);
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedMLong.dimension(), 768);
+            assert_eq!(EmbeddingModel::AllMiniLML6V2.dimension(), 384);
+            assert_eq!(EmbeddingModel::MultilingualE5Small.dimension(), 384);
+            assert_eq!(EmbeddingModel::MultilingualE5Base.dimension(), 768);
+            assert_eq!(EmbeddingModel::MultilingualE5Large.dimension(), 1024);
+            assert_eq!(EmbeddingModel::BGEM3.dimension(), 1024);
+            assert_eq!(EmbeddingModel::SnowflakeArcticEmbedXS.dimension(), 384);
+            assert_eq!(EmbeddingModel::SnowflakeArcticEmbedS.dimension(), 384);
+            assert_eq!(EmbeddingModel::SnowflakeArcticEmbedM.dimension(), 768);
+            assert_eq!(EmbeddingModel::SnowflakeArcticEmbedL.dimension(), 1024);
+            assert_eq!(EmbeddingModel::BGESmallZHV15.dimension(), 512);
+            assert_eq!(EmbeddingModel::SnowflakeArcticEmbedMLong.dimension(), 768);
         }
     }
 
@@ -928,51 +502,18 @@ mod tests {
     fn test_model_max_seq_length() {
         #[cfg(feature = "embed")]
         {
-            assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.max_seq_length(), 256);
-            assert_eq!(EmbeddingModelChoice::AllMpnetBaseV2.max_seq_length(), 384);
-            // Arctic non-Long: 512
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedXS.max_seq_length(), 512);
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedS.max_seq_length(), 512);
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedM.max_seq_length(), 512);
-            assert_eq!(EmbeddingModelChoice::ArcticEmbedL.max_seq_length(), 512);
-            // Arctic Long: 8192
+            assert_eq!(EmbeddingModel::AllMiniLML6V2.max_seq_length(), 256);
+            assert_eq!(EmbeddingModel::AllMpnetBaseV2.max_seq_length(), 384);
+            assert_eq!(EmbeddingModel::SnowflakeArcticEmbedXS.max_seq_length(), 512);
+            assert_eq!(EmbeddingModel::SnowflakeArcticEmbedS.max_seq_length(), 512);
+            assert_eq!(EmbeddingModel::SnowflakeArcticEmbedM.max_seq_length(), 512);
+            assert_eq!(EmbeddingModel::SnowflakeArcticEmbedL.max_seq_length(), 512);
             assert_eq!(
-                EmbeddingModelChoice::ArcticEmbedMLong.max_seq_length(),
+                EmbeddingModel::SnowflakeArcticEmbedMLong.max_seq_length(),
                 8192
             );
-            assert_eq!(EmbeddingModelChoice::BGEM3.max_seq_length(), 8192);
-            assert_eq!(
-                EmbeddingModelChoice::NomicEmbedTextV15.max_seq_length(),
-                8192
-            );
-        }
-    }
-
-    #[test]
-    fn test_model_id_uniqueness() {
-        #[cfg(feature = "embed")]
-        {
-            // Verify quantized variants have distinct model IDs from non-Q counterparts
-            for (a, b) in [
-                (
-                    EmbeddingModelChoice::AllMiniLML12V2,
-                    EmbeddingModelChoice::AllMiniLML12V2Q,
-                ),
-                (
-                    EmbeddingModelChoice::GTEBaseENV15,
-                    EmbeddingModelChoice::GTEBaseENV15Q,
-                ),
-                (
-                    EmbeddingModelChoice::GTELargeENV15,
-                    EmbeddingModelChoice::GTELargeENV15Q,
-                ),
-                (
-                    EmbeddingModelChoice::MxbaiEmbedLargeV1,
-                    EmbeddingModelChoice::MxbaiEmbedLargeV1Q,
-                ),
-            ] {
-                assert_ne!(a.model_id(), b.model_id(), "{a:?} and {b:?} share model_id");
-            }
+            assert_eq!(EmbeddingModel::BGEM3.max_seq_length(), 8192);
+            assert_eq!(EmbeddingModel::NomicEmbedTextV15.max_seq_length(), 8192);
         }
     }
 
@@ -980,36 +521,36 @@ mod tests {
     fn test_model_prefixes() {
         #[cfg(feature = "embed")]
         {
-            assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.query_prefix(), None);
-            assert_eq!(EmbeddingModelChoice::AllMiniLML6V2.doc_prefix(), None);
+            assert_eq!(EmbeddingModel::AllMiniLML6V2.query_prefix(), None);
+            assert_eq!(EmbeddingModel::AllMiniLML6V2.doc_prefix(), None);
 
             for m in [
-                EmbeddingModelChoice::MultilingualE5Small,
-                EmbeddingModelChoice::MultilingualE5Base,
-                EmbeddingModelChoice::MultilingualE5Large,
+                EmbeddingModel::MultilingualE5Small,
+                EmbeddingModel::MultilingualE5Base,
+                EmbeddingModel::MultilingualE5Large,
             ] {
                 assert_eq!(m.query_prefix(), Some("query: "), "{:?} query prefix", m);
                 assert_eq!(m.doc_prefix(), Some("passage: "), "{:?} doc prefix", m);
             }
 
-            assert_eq!(EmbeddingModelChoice::BGEM3.query_prefix(), None);
-            assert_eq!(EmbeddingModelChoice::BGEM3.doc_prefix(), None);
+            assert_eq!(EmbeddingModel::BGEM3.query_prefix(), None);
+            assert_eq!(EmbeddingModel::BGEM3.doc_prefix(), None);
 
             assert_eq!(
-                EmbeddingModelChoice::NomicEmbedTextV15.query_prefix(),
+                EmbeddingModel::NomicEmbedTextV15.query_prefix(),
                 Some("search_query: ")
             );
             assert_eq!(
-                EmbeddingModelChoice::NomicEmbedTextV15.doc_prefix(),
+                EmbeddingModel::NomicEmbedTextV15.doc_prefix(),
                 Some("search_document: ")
             );
 
             let arctic_query_prefix = "Represent this sentence for searching relevant passages: ";
             for m in [
-                EmbeddingModelChoice::ArcticEmbedXS,
-                EmbeddingModelChoice::ArcticEmbedS,
-                EmbeddingModelChoice::ArcticEmbedM,
-                EmbeddingModelChoice::ArcticEmbedL,
+                EmbeddingModel::SnowflakeArcticEmbedXS,
+                EmbeddingModel::SnowflakeArcticEmbedS,
+                EmbeddingModel::SnowflakeArcticEmbedM,
+                EmbeddingModel::SnowflakeArcticEmbedL,
             ] {
                 assert_eq!(
                     m.query_prefix(),
@@ -1023,37 +564,34 @@ mod tests {
     }
 
     #[test]
-    fn test_model_choice_parse() {
+    fn test_parse_legacy_model() {
         #[cfg(feature = "embed")]
         {
-            // Backward compat names
+            // New names work directly
             assert_eq!(
-                EmbeddingModelChoice::parse("AllMiniLML6V2"),
-                Some(EmbeddingModelChoice::AllMiniLML6V2)
+                parse_legacy_model("AllMiniLML6V2"),
+                Some(EmbeddingModel::AllMiniLML6V2)
+            );
+            assert_eq!(parse_legacy_model("BGEM3"), Some(EmbeddingModel::BGEM3));
+            assert_eq!(
+                parse_legacy_model("SnowflakeArcticEmbedXS"),
+                Some(EmbeddingModel::SnowflakeArcticEmbedXS)
+            );
+            // Legacy Arctic aliases
+            assert_eq!(
+                parse_legacy_model("ArcticEmbedXS"),
+                Some(EmbeddingModel::SnowflakeArcticEmbedXS)
             );
             assert_eq!(
-                EmbeddingModelChoice::parse("BGEM3"),
-                Some(EmbeddingModelChoice::BGEM3)
+                parse_legacy_model("ArcticEmbedL"),
+                Some(EmbeddingModel::SnowflakeArcticEmbedL)
             );
             assert_eq!(
-                EmbeddingModelChoice::parse("ArcticEmbedXS"),
-                Some(EmbeddingModelChoice::ArcticEmbedXS)
-            );
-            assert_eq!(
-                EmbeddingModelChoice::parse("ArcticEmbedL"),
-                Some(EmbeddingModelChoice::ArcticEmbedL)
-            );
-            // New models
-            assert_eq!(
-                EmbeddingModelChoice::parse("BGESmallENV15"),
-                Some(EmbeddingModelChoice::BGESmallENV15)
-            );
-            assert_eq!(
-                EmbeddingModelChoice::parse("NomicEmbedTextV15"),
-                Some(EmbeddingModelChoice::NomicEmbedTextV15)
+                parse_legacy_model("ArcticEmbedMLong"),
+                Some(EmbeddingModel::SnowflakeArcticEmbedMLong)
             );
             // Unknown
-            assert_eq!(EmbeddingModelChoice::parse("InvalidModel"), None);
+            assert_eq!(parse_legacy_model("InvalidModel"), None);
         }
     }
 
@@ -1073,8 +611,9 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "embed")]
     fn test_embedding_cache_hit_skips_inference() {
-        let mut cache = super::QueryEmbedCache::new(2);
+        let mut cache = EmbeddingCache::new(2);
         assert!(cache.get("hello").is_none());
         cache.insert("hello".to_string(), vec![1.0, 2.0]);
         assert_eq!(cache.get("hello"), Some(&vec![1.0, 2.0]));
@@ -1091,8 +630,9 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "embed")]
     fn test_embedding_cache_lru_order() {
-        let mut cache = super::QueryEmbedCache::new(2);
+        let mut cache = EmbeddingCache::new(2);
         cache.insert("a".to_string(), vec![1.0]);
         cache.insert("b".to_string(), vec![2.0]);
         let _ = cache.get("a");

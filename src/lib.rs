@@ -27,7 +27,9 @@ pub use vault::{
 #[cfg(feature = "embed")]
 pub use config::EmbeddingConfig;
 #[cfg(feature = "embed")]
-pub use embedding::{EmbeddingModelChoice, EmbeddingService, ModelState};
+pub use embedding::{
+    EmbeddingModel, EmbeddingService, ModelState, parse_legacy_model, resolve_model,
+};
 
 #[cfg(feature = "embed")]
 pub use index::search_hybrid;

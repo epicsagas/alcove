@@ -647,22 +647,13 @@ impl VectorStore {
 // Helper functions
 // ---------------------------------------------------------------------------
 
-/// Compute cosine similarity between two vectors
+/// Compute cosine similarity between two vectors.
+///
+/// Delegates to `llm_kernel::embedding::cosine_similarity` which accumulates
+/// in f64 for better ranking stability with high-dimensional (384–1024) vectors.
 #[cfg(feature = "vector")]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let mag_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let mag_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-    if mag_a < f32::EPSILON || mag_b < f32::EPSILON {
-        return 0.0;
-    }
-
-    dot / (mag_a * mag_b)
+    llm_kernel::embedding::cosine_similarity(a, b) as f32
 }
 
 /// Reciprocal Rank Fusion (RRF) for combining BM25 and vector search results
