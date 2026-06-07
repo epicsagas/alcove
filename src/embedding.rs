@@ -182,16 +182,20 @@ struct InternalEmbeddingConfig {
 #[cfg(feature = "embed")]
 impl EmbeddingService {
     pub fn new(config: crate::config::EmbeddingConfig) -> Self {
-        let model_choice = resolve_model(&config.model);
-        if parse_legacy_model(&config.model).is_none() {
-            eprintln!(
-                "Warning: Unknown model '{}', using {} ({}d). \
-                 Run 'alcove index' to rebuild the vector index if you changed models.",
-                config.model,
-                model_choice.as_str(),
-                model_choice.dimension()
-            );
-        }
+        let model_choice = match parse_legacy_model(&config.model) {
+            Some(m) => m,
+            None => {
+                let default = DEFAULT_MODEL;
+                eprintln!(
+                    "Warning: Unknown model '{}', using {} ({}d). \
+                     Run 'alcove index' to rebuild the vector index if you changed models.",
+                    config.model,
+                    default.as_str(),
+                    default.dimension()
+                );
+                default
+            }
+        };
 
         let enabled = config.enabled;
         let cache_dir = PathBuf::from(&config.cache_dir);
