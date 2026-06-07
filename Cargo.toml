@@ -48,15 +48,11 @@ sys-locale = "0.3.2"
 tantivy = "0.26"
 chrono = { version = "0.4", features = ["clock"] }
 
-# Embedding backend (ONNX Runtime via fastembed).
-# NOTE: ONNX Runtime ships native shared libraries (~30-50 MB per platform).
-# Linked at build time and bundled into release binaries.
-# `cargo audit` covers ONNX Runtime CVEs transitively via the ort crate.
-# default-features = false: drops hf-hub-native-tls + ort-download-binaries-native-tls
-# to avoid openssl-sys on cross-compile targets; replaced with rustls equivalents.
-fastembed = { version = "5", optional = true, default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"] }
-# Pinned to match fastembed's exact ort version — DirectMLExecutionProvider type must be compatible.
-ort = { version = "=2.0.0-rc.12", optional = true }
+# Embedding backend — delegates to llm-kernel for model catalog, metadata,
+# and LRU cache. fastembed remains a direct dep for FastEmbedSession
+# (prefix control). llm-kernel uses the same rustls-based defaults.
+llm-kernel = { version = "0.2.4", default-features = false }
+fastembed = { version = "5", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"], optional = true }
 
 # Storage & indexing
 rusqlite = { version = "0.39", features = ["bundled"], optional = true }
@@ -101,8 +97,8 @@ tower-http = { version = "0.6", features = ["cors"], optional = true }
 [features]
 default = ["core"]
 core = ["rusqlite", "alcove-server", "lang-rust"]
-embed = ["fastembed"]
-embed-directml = ["embed", "dep:ort"]  # Windows DirectML GPU acceleration
+embed = ["llm-kernel/embedding-fastembed", "dep:fastembed"]
+embed-directml = ["embed", "llm-kernel/embedding-fastembed-directml"]
 vector = ["hnsw_rs"]
 pdf = ["pdf-extract"]
 office = ["zip", "quick-xml", "calamine"]

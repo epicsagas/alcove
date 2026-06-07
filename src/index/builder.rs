@@ -679,7 +679,7 @@ fn flush_embed_batch(
     pending: &mut Vec<(String, String, u64, String)>,
     service: &crate::embedding::EmbeddingService,
     store: &mut crate::vector::VectorStore,
-    model: &crate::embedding::EmbeddingModelChoice,
+    model: &crate::embedding::EmbeddingModel,
     counters: &mut VectorCounters,
 ) {
     if pending.is_empty() {
@@ -722,7 +722,7 @@ fn embed_files_in_batches(
     to_embed: &[ProjectFile],
     service: &crate::embedding::EmbeddingService,
     store: &mut crate::vector::VectorStore,
-    model: &crate::embedding::EmbeddingModelChoice,
+    model: &crate::embedding::EmbeddingModel,
     embed_batch: usize,
     vpb: &ProgressBar,
     counters: &mut VectorCounters,
@@ -760,7 +760,7 @@ fn run_full_vector_indexing(
     files_to_index: Vec<ProjectFile>,
 ) -> Result<(String, u64, u64, String)> {
     use crate::config::{effective_config, load_config};
-    use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+    use crate::embedding::{EmbeddingModel, EmbeddingService, parse_legacy_model};
     use crate::vector::VectorStore;
 
     let cfg = load_config();
@@ -769,7 +769,7 @@ fn run_full_vector_indexing(
         return Ok(("disabled".to_string(), 0, 0, String::new()));
     }
 
-    let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+    let model = parse_legacy_model(&emb_cfg.model).unwrap_or(EmbeddingModel::MultilingualE5Small);
     let service = EmbeddingService::new(crate::config::EmbeddingConfig {
         model: model.as_str().to_string(),
         auto_download: emb_cfg.auto_download,
@@ -1051,13 +1051,14 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
     #[cfg(feature = "embed")]
     {
         use crate::config::vault_embedding_config;
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::embedding::{EmbeddingModel, EmbeddingService, parse_legacy_model};
         use crate::vector::VectorStore;
 
         let emb_cfg = vault_embedding_config(vault_path);
 
         if emb_cfg.enabled {
-            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+            let model =
+                parse_legacy_model(&emb_cfg.model).unwrap_or(EmbeddingModel::MultilingualE5Small);
             embedding_model = model.as_str().to_string();
 
             let service = EmbeddingService::new(crate::config::EmbeddingConfig {

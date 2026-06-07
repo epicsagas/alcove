@@ -1166,7 +1166,7 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
             if let Some(model_name) = model {
                 #[cfg(feature = "embed")]
                 {
-                    let m = crate::embedding::EmbeddingModelChoice::parse(model_name);
+                    let m = crate::embedding::parse_legacy_model(model_name);
                     println!(
                         "  Embedding: {} ({}d, ~{}MB)",
                         model_name,

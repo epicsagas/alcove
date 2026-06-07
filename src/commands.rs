@@ -738,13 +738,14 @@ pub fn cmd_model(subcmd: crate::ModelCommands) -> Result<()> {
 
 #[cfg(feature = "embed")]
 fn cmd_model_list() -> Result<()> {
-    use crate::embedding::EmbeddingModelChoice;
-
     /// Curated models shown in `model list`. All 43 models remain available via manual config.
     const CURATED: &[(&str, &str)] = &[
-        ("ArcticEmbedXS", "Default — best size/quality, multilingual"),
+        (
+            "MultilingualE5Small",
+            "Default — best Korean/CJK support, 100+ langs",
+        ),
+        ("ArcticEmbedXS", "Best size/quality, multilingual"),
         ("ArcticEmbedXSQ", "Quantized Arctic XS, smaller download"),
-        ("MultilingualE5Small", "Best Korean/CJK support, 100+ langs"),
         ("BGEM3", "Premium — Dense+Sparse+ColBERT, 100+ langs"),
         ("ArcticEmbedMLong", "Long context (8192), multilingual"),
         ("JinaEmbeddingsV2BaseCode", "Code-optimized, 8192 context"),
@@ -765,10 +766,10 @@ fn cmd_model_list() -> Result<()> {
         .embedding
         .as_ref()
         .map(|e| e.model.as_str())
-        .unwrap_or("ArcticEmbedXS");
+        .unwrap_or("MultilingualE5Small");
 
     for &(name, desc) in CURATED {
-        let model = EmbeddingModelChoice::parse(name).unwrap();
+        let model = crate::embedding::parse_legacy_model(name).unwrap();
         let marker = if name == current { " [current]" } else { "" };
         println!(
             "{:<30} {:<8} {:<10} {}{}",
@@ -782,7 +783,7 @@ fn cmd_model_list() -> Result<()> {
 
     // If the user has a non-curated model configured, show it too
     if !CURATED.iter().any(|(n, _)| *n == current)
-        && let Some(model) = EmbeddingModelChoice::parse(current)
+        && let Some(model) = crate::embedding::parse_legacy_model(current)
     {
         println!(
             "{:<30} {:<8} {:<10} (custom selection){}",
@@ -817,8 +818,8 @@ fn cmd_model_download() -> Result<()> {
 
         let cfg = load_config().embedding_config_with_defaults();
         let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-            model: crate::embedding::EmbeddingModelChoice::parse(&cfg.model)
-                .unwrap_or_default()
+            model: crate::embedding::parse_legacy_model(&cfg.model)
+                .unwrap_or(crate::embedding::EmbeddingModel::MultilingualE5Small)
                 .as_str()
                 .to_string(),
             auto_download: true,
@@ -918,10 +919,8 @@ fn cmd_model_remove() -> Result<()> {
 
 #[cfg(feature = "embed")]
 fn cmd_model_set(model_name: &str) -> Result<()> {
-    use crate::embedding::EmbeddingModelChoice;
-
     // Validate model name
-    let model = EmbeddingModelChoice::parse(model_name).ok_or_else(|| {
+    let model = crate::embedding::parse_legacy_model(model_name).ok_or_else(|| {
         anyhow::anyhow!(
             "Unknown model: {}. Run 'alcove model list' to see available models.",
             model_name
@@ -1000,8 +999,8 @@ fn cmd_model_status() -> Result<()> {
         style(&emb_cfg.model).cyan()
     );
 
-    let model_choice =
-        crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+    let model_choice = crate::embedding::parse_legacy_model(&emb_cfg.model)
+        .unwrap_or(crate::embedding::EmbeddingModel::MultilingualE5Small);
 
     println!(
         "{:<20} {}d",
@@ -1017,8 +1016,11 @@ fn cmd_model_status() -> Result<()> {
     println!("{:<20} {}", style("Cache dir:").dim(), emb_cfg.cache_dir);
 
     let cache_path = expand_path(&emb_cfg.cache_dir);
-    let model_id = model_choice.model_id();
-    let folder_name = format!("models--{}", model_id.replace('/', "--"));
+    let model_code = model_choice.model_code();
+    let mut parts = model_code.splitn(2, '/');
+    let org = parts.next().unwrap_or("");
+    let repo = parts.next().unwrap_or("");
+    let folder_name = format!("models--{org}--{repo}");
     let model_dir = cache_path.join(folder_name);
 
     println!();

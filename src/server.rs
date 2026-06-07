@@ -733,13 +733,14 @@ pub async fn run_server(
     #[cfg(feature = "embed")]
     let embedding_service = {
         use crate::config::load_config;
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::embedding::{EmbeddingModel, EmbeddingService, parse_legacy_model};
 
         let cfg = load_config();
         let emb_cfg = cfg.embedding_config_with_defaults();
 
         if emb_cfg.enabled {
-            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+            let model =
+                parse_legacy_model(&emb_cfg.model).unwrap_or(EmbeddingModel::MultilingualE5Small);
             let cache_dir = std::path::PathBuf::from(
                 emb_cfg
                     .cache_dir

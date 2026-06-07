@@ -358,7 +358,7 @@ pub fn tool_search(
     #[cfg(feature = "embed")]
     {
         use crate::config::load_config;
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::embedding::{EmbeddingModel, EmbeddingService, parse_legacy_model};
         use crate::index::search_hybrid;
 
         if crate::index::index_exists(docs_root) {
@@ -368,7 +368,8 @@ pub fn tool_search(
 
             // Create embedding service if enabled
             if emb_cfg.enabled {
-                let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+                let model = parse_legacy_model(&emb_cfg.model)
+                    .unwrap_or(EmbeddingModel::MultilingualE5Small);
                 let service = EmbeddingService::new(crate::config::EmbeddingConfig {
                     model: model.as_str().to_string(),
                     auto_download: emb_cfg.auto_download,
