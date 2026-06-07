@@ -53,6 +53,8 @@ chrono = { version = "0.4", features = ["clock"] }
 # (prefix control). llm-kernel uses the same rustls-based defaults.
 llm-kernel = { version = "0.2.4", default-features = false }
 fastembed = { version = "5", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"], optional = true }
+# Pinned to match fastembed's exact ort version — DirectMLExecutionProvider type must be compatible.
+ort = { version = "=2.0.0-rc.12", default-features = false, optional = true }
 
 # Storage & indexing
 rusqlite = { version = "0.40", features = ["bundled"], optional = true }
@@ -98,7 +100,7 @@ tower-http = { version = "0.6", features = ["cors"], optional = true }
 default = ["core"]
 core = ["rusqlite", "alcove-server", "lang-rust"]
 embed = ["llm-kernel/embedding-fastembed", "dep:fastembed"]
-embed-directml = ["embed", "llm-kernel/embedding-fastembed-directml"]
+embed-directml = ["embed", "dep:ort"]
 vector = ["hnsw_rs"]
 pdf = ["pdf-extract"]
 office = ["zip", "quick-xml", "calamine"]
