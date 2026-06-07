@@ -760,7 +760,7 @@ fn run_full_vector_indexing(
     files_to_index: Vec<ProjectFile>,
 ) -> Result<(String, u64, u64, String)> {
     use crate::config::{effective_config, load_config};
-    use crate::embedding::{EmbeddingModel, EmbeddingService, parse_legacy_model};
+    use crate::embedding::{EmbeddingService, resolve_model};
     use crate::vector::VectorStore;
 
     let cfg = load_config();
@@ -769,9 +769,9 @@ fn run_full_vector_indexing(
         return Ok(("disabled".to_string(), 0, 0, String::new()));
     }
 
-    let model = parse_legacy_model(&emb_cfg.model).unwrap_or(EmbeddingModel::MultilingualE5Small);
+    let model = resolve_model(&emb_cfg.model);
     let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-        model: model.as_str().to_string(),
+        model: emb_cfg.model.clone(),
         auto_download: emb_cfg.auto_download,
         cache_dir: emb_cfg.cache_dir.clone(),
         enabled: true,
@@ -1051,18 +1051,17 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
     #[cfg(feature = "embed")]
     {
         use crate::config::vault_embedding_config;
-        use crate::embedding::{EmbeddingModel, EmbeddingService, parse_legacy_model};
+        use crate::embedding::{EmbeddingService, resolve_model};
         use crate::vector::VectorStore;
 
         let emb_cfg = vault_embedding_config(vault_path);
 
         if emb_cfg.enabled {
-            let model =
-                parse_legacy_model(&emb_cfg.model).unwrap_or(EmbeddingModel::MultilingualE5Small);
+            let model = resolve_model(&emb_cfg.model);
             embedding_model = model.as_str().to_string();
 
             let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-                model: model.as_str().to_string(),
+                model: emb_cfg.model.clone(),
                 auto_download: emb_cfg.auto_download,
                 cache_dir: emb_cfg.cache_dir.clone(),
                 enabled: true,

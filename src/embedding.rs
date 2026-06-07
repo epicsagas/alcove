@@ -65,6 +65,9 @@ impl std::fmt::Display for ModelState {
 // Legacy model name parser
 // ---------------------------------------------------------------------------
 
+/// Default model used when parsing fails.
+const DEFAULT_MODEL: EmbeddingModel = EmbeddingModel::MultilingualE5Small;
+
 /// Parse a model name, handling backward-compatible Arctic aliases.
 ///
 /// New code should use `EmbeddingModel::parse()` directly. This function
@@ -90,6 +93,23 @@ pub fn parse_legacy_model(name: &str) -> Option<EmbeddingModel> {
         _ => return None,
     };
     Some(legacy)
+}
+
+/// Resolve a model name with fallback to the default.
+///
+/// Single entry-point for all call sites — avoids duplicating
+/// `parse_legacy_model().unwrap_or(DEFAULT_MODEL)` everywhere.
+pub fn resolve_model(name: &str) -> EmbeddingModel {
+    parse_legacy_model(name).unwrap_or(DEFAULT_MODEL)
+}
+
+/// Build the HuggingFace Hub cache folder name for a model.
+///
+/// Uses `model_code()` (the actual download repo) rather than the canonical
+/// model name, matching the folder layout created by `hf-hub`.
+#[cfg(feature = "embed")]
+fn hf_cache_folder(model: EmbeddingModel) -> String {
+    format!("models--{}", model.model_code().replace('/', "--"))
 }
 
 // ---------------------------------------------------------------------------
@@ -162,10 +182,16 @@ struct InternalEmbeddingConfig {
 #[cfg(feature = "embed")]
 impl EmbeddingService {
     pub fn new(config: crate::config::EmbeddingConfig) -> Self {
-        let model_choice = parse_legacy_model(&config.model).unwrap_or_else(|| {
-            eprintln!("Warning: Unknown model '{}', using default", config.model);
-            EmbeddingModel::MultilingualE5Small
-        });
+        let model_choice = resolve_model(&config.model);
+        if parse_legacy_model(&config.model).is_none() {
+            eprintln!(
+                "Warning: Unknown model '{}', using {} ({}d). \
+                 Run 'alcove index' to rebuild the vector index if you changed models.",
+                config.model,
+                model_choice.as_str(),
+                model_choice.dimension()
+            );
+        }
 
         let enabled = config.enabled;
         let cache_dir = PathBuf::from(&config.cache_dir);
@@ -412,13 +438,7 @@ impl EmbeddingService {
 
     #[allow(dead_code)]
     pub fn remove_cache(&self) -> std::result::Result<(), String> {
-        // hf-hub cache uses "models--{org}--{repo}" folder naming.
-        // Use model_code() which matches the actual HF repo used by fastembed-rs.
-        let model_code = self.internal_config.model.model_code();
-        let mut parts = model_code.splitn(2, '/');
-        let org = parts.next().unwrap_or("");
-        let repo = parts.next().unwrap_or("");
-        let folder_name = format!("models--{org}--{repo}");
+        let folder_name = hf_cache_folder(self.internal_config.model);
         let model_dir = self.internal_config.cache_dir.join(folder_name);
         if model_dir.exists() {
             std::fs::remove_dir_all(&model_dir)

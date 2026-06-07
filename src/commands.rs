@@ -818,10 +818,7 @@ fn cmd_model_download() -> Result<()> {
 
         let cfg = load_config().embedding_config_with_defaults();
         let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-            model: crate::embedding::parse_legacy_model(&cfg.model)
-                .unwrap_or(crate::embedding::EmbeddingModel::MultilingualE5Small)
-                .as_str()
-                .to_string(),
+            model: cfg.model.clone(),
             auto_download: true,
             cache_dir: cfg
                 .cache_dir
@@ -999,8 +996,7 @@ fn cmd_model_status() -> Result<()> {
         style(&emb_cfg.model).cyan()
     );
 
-    let model_choice = crate::embedding::parse_legacy_model(&emb_cfg.model)
-        .unwrap_or(crate::embedding::EmbeddingModel::MultilingualE5Small);
+    let model_choice = crate::embedding::resolve_model(&emb_cfg.model);
 
     println!(
         "{:<20} {}d",
@@ -1016,11 +1012,7 @@ fn cmd_model_status() -> Result<()> {
     println!("{:<20} {}", style("Cache dir:").dim(), emb_cfg.cache_dir);
 
     let cache_path = expand_path(&emb_cfg.cache_dir);
-    let model_code = model_choice.model_code();
-    let mut parts = model_code.splitn(2, '/');
-    let org = parts.next().unwrap_or("");
-    let repo = parts.next().unwrap_or("");
-    let folder_name = format!("models--{org}--{repo}");
+    let folder_name = format!("models--{}", model_choice.model_code().replace('/', "--"));
     let model_dir = cache_path.join(folder_name);
 
     println!();

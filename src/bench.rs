@@ -264,8 +264,7 @@ fn get_docs_root() -> Result<PathBuf> {
 fn create_embedding_service(
     emb_cfg: &crate::config::EmbeddingConfig,
 ) -> crate::embedding::EmbeddingService {
-    let model = crate::embedding::parse_legacy_model(&emb_cfg.model)
-        .unwrap_or(crate::embedding::EmbeddingModel::MultilingualE5Small);
+    let model = crate::embedding::resolve_model(&emb_cfg.model);
     let cache_dir = if emb_cfg.cache_dir.starts_with('~') {
         std::env::var("HOME")
             .ok()
