@@ -55,21 +55,21 @@ llm-kernel = { version = "0.2.4", default-features = false }
 fastembed = { version = "5", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"], optional = true }
 
 # Storage & indexing
-rusqlite = { version = "0.39", features = ["bundled"], optional = true }
+rusqlite = { version = "0.40", features = ["bundled"], optional = true }
 hnsw_rs = { version = "0.3", optional = true }
 
 # Document parsers
 pdf-extract = { version = "0.10", optional = true }  # Unix-only
 zip = { version = "8.5", optional = true }
-quick-xml = { version = "0.39", optional = true }
-calamine = { version = "0.34", optional = true }
+quick-xml = { version = "0.40", optional = true }
+calamine = { version = "0.35", optional = true }
 
 # Lightweight sync HTTP client for MCP proxy mode
 # rustls avoids the native-tls/openssl dependency for cross-compilation compatibility
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Token-optimized document transpiler (optional, transpile feature)
-llm-transpile = { version = "0.2.4", optional = true }
+llm-transpile = { version = "0.3", optional = true }
 
 # Code structure indexing (core always present; grammars are feature-gated)
 tree-sitter = "0.26"
@@ -91,7 +91,7 @@ tree-sitter-c-sharp = { version = "0.23", optional = true }
 # HTTP server dependencies
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
-socket2 = { version = "0.5", optional = true }
+socket2 = { version = "0.6", optional = true }
 tower-http = { version = "0.6", features = ["cors"], optional = true }
 
 [features]
