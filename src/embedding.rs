@@ -140,7 +140,8 @@ impl FastEmbedSession {
         {
             use fastembed::ExecutionProviderDispatch;
             opts = opts.with_execution_providers(vec![ExecutionProviderDispatch::from(
-                ort::execution_providers::DirectMLExecutionProvider::default(),
+                llm_kernel::embedding::ort::execution_providers::DirectMLExecutionProvider::default(
+                ),
             )]);
         }
 
