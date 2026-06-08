@@ -15,6 +15,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Regression detection with configurable thresholds (`--baseline`, `--save-baseline`)
 - Baseline reference benchmark (`benches/baseline.json`) at v0.11.7
 
+## [0.11.7] — 2026-06-07
+
+### Added
+
+- `EMBEDDING_MODELS.md`: curated model reference with RAM estimates, architecture, and performance notes
+
+### Changed
+
+- Embedding layer migrated from candle-transformers to fastembed-rs
+- Adopted llm-kernel for model catalog, cache, and metadata re-exports
+- Default embedding model changed to `ArcticEmbedXS`; curated supported model list to 6 options
+- Removed redundant L2 normalization; embedding state tracks Cached/Uncached
+
+### Fixed
+
+- Port now read from plist in `api env` command instead of config defaults
+- Replaced openssl-sys with rustls for fastembed and ureq dependencies
+- aarch64 cross-compile and CI check failures resolved
+- DirectML ORT symbols re-exported via llm-kernel
+- Clippy: `collapsible_if` in launchd module
+
+### CI
+
+- Added aarch64 and DirectML cross-check jobs plus Linux test job
+
+## [0.11.6] — 2026-06-04
+
+### Fixed
+
+- `/index` endpoints made synchronous for consistent client behavior
+
+## [0.11.5] — 2026-06-03
+
+### Fixed
+
+- Restore `set_nonblocking(true)` before `tokio::net::TcpListener::from_std`
+
+## [0.11.4] — 2026-06-03
+
+### Added
+
+- 15 REST API endpoints for skill-driven documentation access
+- `alcove api env` subcommand for one-shot URL+token resolution (replaces `api url`)
+- Multi doc-root support via `doc_roots` config field
+- `validate_project_name` guard on `/projects/{name}/index` endpoint
+
+### Changed
+
+- API: `/rebuild` renamed to `/index`; added `/projects/{name}/index` endpoint
+- Skill: migrated from MCP proxy to CLI-based documentation commands
+- Install: skip MCP seeding, guide users to `registry/mcp.json`
+- Config: `server.port` uses `Option<u16>` for kind-specific defaulting
+- Install script consolidated to single file with brew + binstall cascade
+
+### Fixed
+
+- launchd: XML-escape token in plist and use kind-specific port
+- CLI `api env`: outputs correct kind-specific default port
+- Embedding: BGE-M3 loading, prefix detection efficiency, Arctic model fixes
+- Test: corrected install.js extension in hooks test
+
+## [0.11.3] — 2026-05-27
+
+### Fixed
+
+- Embedding: add truncation, fix pooling, model-aware chunking
+
+## [0.11.2] — 2026-05-27
+
+### Added
+
+- Claude Code plugin manifest with MCP configuration (`.claude-plugin/`)
+
+### Changed
+
+- Plugins: dropped Antigravity direct MCP; hooks moved to per-plugin directories
+- Plugins: adopted epic-harness cross-platform architecture
+
+### Fixed
+
+- Plugin hooks path corrected to `.claude-plugin/hooks.json`
+- Antigravity: uses Node.js install script matching Claude Code pattern
+
+## [0.11.1] — 2026-05-26
+
+### Added
+
+- Antigravity plugin package for agy ecosystem
+
+### Fixed
+
+- `vector_index` now inherits `embedding.enabled` when unset
+
+## [0.11.0] — 2026-05-26
+
+### Added
+
+- Snowflake Arctic Embed models (XS/S/M/L) support
+- New logo image
+
+### Changed
+
+- BGE-M3 prefix detection refactored for efficiency and readability
+- Antigravity removed from supported agents; Codex plugin description enhanced
+- Setup callout reorganized to Quick Start section
+
+### Fixed
+
+- BGE-M3 loading fixed; XLM-RoBERTa model loading improved
+
 ## [0.10.4] — 2026-05-25
 
 ### Fixed
