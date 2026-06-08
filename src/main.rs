@@ -172,6 +172,14 @@ enum Commands {
         #[arg(default_value = "status")]
         action: String,
     },
+    /// Print resolved alcove paths (home, docs root, vaults, config)
+    Path {
+        /// Specific path to show: home, docs, vaults, config. Omit for all.
+        target: Option<String>,
+        /// Output as JSON (for scripts and AI agents)
+        #[arg(long)]
+        json: bool,
+    },
     /// Print the bearer token from config (for team sharing)
     Token,
     /// Reap orphaned alcove stdio proxy processes
@@ -542,6 +550,7 @@ fn main() -> Result<()> {
 
             Ok(())
         }
+        Some(Commands::Path { target, json }) => cli::cmd_path(target.as_deref(), json),
         Some(Commands::Token) => cli::cmd_token(),
         #[cfg(unix)]
         Some(Commands::Reap) => cli::cmd_reap(),
