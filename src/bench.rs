@@ -887,9 +887,8 @@ fn run_precision_benchmark(
                             && !sections.is_empty()
                         {
                             let chunks = extract_retrieved_chunks(&hybrid_result, "hybrid");
-                            let cpa = compute_chunk_precision(
-                                &chunks, sections, docs_root, &k_values,
-                            );
+                            let cpa =
+                                compute_chunk_precision(&chunks, sections, docs_root, &k_values);
                             chunk_hybrid.push(ChunkLevelPrecision {
                                 query: entry.text.clone(),
                                 chunk_precision_at_k: cpa,
