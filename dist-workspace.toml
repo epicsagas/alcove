@@ -7,7 +7,6 @@ cargo-dist-version = "0.31.0"
 ci = "github"
 targets = [
   "aarch64-apple-darwin",
-  "x86_64-apple-darwin",
   "x86_64-unknown-linux-gnu",
   "aarch64-unknown-linux-gnu",
   "x86_64-pc-windows-msvc",
@@ -15,12 +14,11 @@ targets = [
 installers = ["homebrew", "shell", "powershell"]
 tap = "epicsagas/homebrew-tap"
 create-release = true
-features = ["full-macos"]
+features = ["full-cross"]
 features-aarch64-apple-darwin = ["full-macos"]
 features-aarch64-unknown-linux-gnu = ["full-cross"]
 features-x86_64-unknown-linux-gnu = ["full-cross"]
 features-x86_64-pc-windows-msvc = ["full-cross"]
-features-x86_64-apple-darwin = ["full-cross"]
 install-path = "CARGO_HOME"
 install-updater = false
 publish-jobs = ["homebrew", "./publish-crates"]

@@ -183,7 +183,7 @@ pub struct ServerState {
     pub docs_root: std::path::PathBuf,
     pub token: Option<String>,
     /// Shared embedding service — initialised once at startup, reused per request.
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     pub embedding_service: Option<Arc<crate::embedding::EmbeddingService>>,
     /// Per-endpoint rate limiter for search routes (sliding window).
     pub search_rate_limiter: RateLimiter,
@@ -508,11 +508,11 @@ async fn handle_search(
     let project_filter_owned = req.project.clone();
     let q = req.q.clone();
     let limit = req.limit.clamp(1, 200);
-    #[cfg_attr(not(feature = "embed-candle"), allow(unused_variables))]
-    let use_hybrid = req.mode == "hybrid" || (req.mode == "auto" && cfg!(feature = "embed-candle"));
+    #[cfg_attr(not(feature = "embed"), allow(unused_variables))]
+    let use_hybrid = req.mode == "hybrid" || (req.mode == "auto" && cfg!(feature = "embed"));
 
     // Try hybrid search first if available
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     if use_hybrid
         && let Some(service_arc) = state.embedding_service.clone()
         && crate::index::index_exists(&docs_root)
@@ -730,16 +730,15 @@ pub async fn run_server(
         }
     }
 
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     let embedding_service = {
         use crate::config::load_config;
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::embedding::EmbeddingService;
 
         let cfg = load_config();
         let emb_cfg = cfg.embedding_config_with_defaults();
 
         if emb_cfg.enabled {
-            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
             let cache_dir = std::path::PathBuf::from(
                 emb_cfg
                     .cache_dir
@@ -751,7 +750,7 @@ pub async fn run_server(
             );
             Some(Arc::new(EmbeddingService::new(
                 crate::config::EmbeddingConfig {
-                    model: model.as_str().to_string(),
+                    model: emb_cfg.model.clone(),
                     auto_download: emb_cfg.auto_download,
                     cache_dir: cache_dir.to_string_lossy().into_owned(),
                     enabled: true,
@@ -766,7 +765,7 @@ pub async fn run_server(
     let state = Arc::new(ServerState {
         docs_root,
         token,
-        #[cfg(feature = "embed-candle")]
+        #[cfg(feature = "embed")]
         embedding_service,
         search_rate_limiter: RateLimiter::new(60, std::time::Duration::from_secs(60)),
     });
@@ -972,7 +971,7 @@ mod tests {
         Arc::new(ServerState {
             docs_root,
             token: None,
-            #[cfg(feature = "embed-candle")]
+            #[cfg(feature = "embed")]
             embedding_service: None,
             search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         })
@@ -1131,7 +1130,7 @@ mod tests {
         let state = Arc::new(ServerState {
             docs_root: std::path::PathBuf::from("/tmp"),
             token: None,
-            #[cfg(feature = "embed-candle")]
+            #[cfg(feature = "embed")]
             embedding_service: None,
             search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         });
@@ -1144,7 +1143,7 @@ mod tests {
         let state = Arc::new(ServerState {
             docs_root: std::path::PathBuf::from("/tmp"),
             token: Some("my-secret".to_string()),
-            #[cfg(feature = "embed-candle")]
+            #[cfg(feature = "embed")]
             embedding_service: None,
             search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         });
@@ -1157,7 +1156,7 @@ mod tests {
         let state = Arc::new(ServerState {
             docs_root: std::path::PathBuf::from("/tmp"),
             token: Some("my-secret".to_string()),
-            #[cfg(feature = "embed-candle")]
+            #[cfg(feature = "embed")]
             embedding_service: None,
             search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         });
@@ -1252,7 +1251,7 @@ mod tests {
         let state = Arc::new(ServerState {
             docs_root: std::path::PathBuf::from("/tmp"),
             token: Some("my-secret".to_string()),
-            #[cfg(feature = "embed-candle")]
+            #[cfg(feature = "embed")]
             embedding_service: None,
             search_rate_limiter: super::RateLimiter::new(1000, std::time::Duration::from_secs(60)),
         });

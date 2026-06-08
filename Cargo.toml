@@ -1,6 +1,6 @@
 [package]
 name = "alcove"
-version = "0.11.6"
+version = "0.11.7"
 edition = "2024"
 description = "A quiet place for your project docs. MCP server that gives AI agents scoped access to private documentation."
 license = "Apache-2.0"
@@ -48,28 +48,28 @@ sys-locale = "0.3.2"
 tantivy = "0.26"
 chrono = { version = "0.4", features = ["clock"] }
 
-# Embedding backends (mutually exclusive in practice)
-candle-transformers = { version = "0.10", optional = true }
-candle-nn = { version = "0.10", optional = true }
-candle-core = { version = "0.10", optional = true }
-hf-hub = { version = "0.4", default-features = false, features = ["ureq"], optional = true }
-tokenizers = { version = "0.22", optional = true }
+# Embedding backend — delegates to llm-kernel for model catalog, metadata,
+# and LRU cache. fastembed remains a direct dep for FastEmbedSession
+# (prefix control). llm-kernel uses the same rustls-based defaults.
+llm-kernel = { version = "0.2.6", default-features = false }
+fastembed = { version = "5", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"], optional = true }
 
 # Storage & indexing
-rusqlite = { version = "0.39", features = ["bundled"], optional = true }
+rusqlite = { version = "0.40", features = ["bundled"], optional = true }
 hnsw_rs = { version = "0.3", optional = true }
 
 # Document parsers
 pdf-extract = { version = "0.10", optional = true }  # Unix-only
 zip = { version = "8.5", optional = true }
-quick-xml = { version = "0.39", optional = true }
-calamine = { version = "0.34", optional = true }
+quick-xml = { version = "0.40", optional = true }
+calamine = { version = "0.35", optional = true }
 
 # Lightweight sync HTTP client for MCP proxy mode
-ureq = "3"
+# rustls avoids the native-tls/openssl dependency for cross-compilation compatibility
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Token-optimized document transpiler (optional, transpile feature)
-llm-transpile = { version = "0.2.4", optional = true }
+llm-transpile = { version = "0.3", optional = true }
 
 # Code structure indexing (core always present; grammars are feature-gated)
 tree-sitter = "0.26"
@@ -91,13 +91,14 @@ tree-sitter-c-sharp = { version = "0.23", optional = true }
 # HTTP server dependencies
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
-socket2 = { version = "0.5", optional = true }
+socket2 = { version = "0.6", optional = true }
 tower-http = { version = "0.6", features = ["cors"], optional = true }
 
 [features]
 default = ["core"]
 core = ["rusqlite", "alcove-server", "lang-rust"]
-embed-candle = ["candle-transformers", "candle-nn", "candle-core", "hf-hub", "tokenizers"]
+embed = ["llm-kernel/embedding-fastembed", "dep:fastembed"]
+embed-directml = ["embed", "llm-kernel/embedding-fastembed-directml"]
 vector = ["hnsw_rs"]
 pdf = ["pdf-extract"]
 office = ["zip", "quick-xml", "calamine"]
@@ -124,8 +125,8 @@ lang-all = [
 ]
 
 # Preset feature groups
-full-macos = ["core", "embed-candle", "vector", "pdf", "office", "alcove-server", "lang-all"]
-full-cross = ["core", "embed-candle", "vector", "office", "alcove-server", "lang-all"]
+full-macos = ["core", "embed", "vector", "pdf", "office", "alcove-server", "lang-all"]
+full-cross = ["core", "embed", "vector", "office", "alcove-server", "lang-all"]
 # Backward compat: full = full-macos on existing macOS ARM builds
 full = ["full-cross"]
 

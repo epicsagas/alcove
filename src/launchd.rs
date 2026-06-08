@@ -158,6 +158,28 @@ pub fn running_pid(kind: ServiceKind) -> Option<u32> {
     None
 }
 
+/// Read the `--port` value from the generated plist, if it exists.
+///
+/// Returns `None` if the plist doesn't exist or doesn't contain a port argument.
+pub fn read_plist_port(kind: ServiceKind) -> Option<u16> {
+    let plist = plist_path(kind);
+    let content = std::fs::read_to_string(&plist).ok()?;
+    // Plist contains: <string>--port</string>\n        <string>NNNNN</string>
+    let mut lines = content.lines();
+    while let Some(line) = lines.next() {
+        if line.trim() == "<string>--port</string>"
+            && let Some(port_line) = lines.next()
+        {
+            let port_str = port_line
+                .trim()
+                .trim_start_matches("<string>")
+                .trim_end_matches("</string>");
+            return port_str.parse().ok();
+        }
+    }
+    None
+}
+
 fn launchctl(args: &[&str]) -> Result<()> {
     let status = Command::new("launchctl")
         .args(args)

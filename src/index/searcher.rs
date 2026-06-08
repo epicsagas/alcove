@@ -471,7 +471,7 @@ pub fn search_grouped_by_file(
 ///
 /// The Tantivy index is opened **once** and reused across the BM25 phase and
 /// any vector-only cache-miss lookups, eliminating the previous double-open.
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 pub fn search_hybrid(
     docs_root: &Path,
     query: &str,
@@ -765,18 +765,17 @@ pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<Json
 
     // --- Hybrid search (BM25 + vector) for vaults ---
     // Falls back to BM25-only when vectors are not available.
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     {
         use crate::config::vault_embedding_config;
-        use crate::embedding::{EmbeddingModelChoice, EmbeddingService};
+        use crate::embedding::EmbeddingService;
         use crate::vector::{VectorStore, reciprocal_rank_fusion};
 
         let emb_cfg = vault_embedding_config(vault_path);
 
         if emb_cfg.enabled {
-            let model = EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
             let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-                model: model.as_str().to_string(),
+                model: emb_cfg.model.clone(),
                 auto_download: emb_cfg.auto_download,
                 cache_dir: emb_cfg.cache_dir.clone(),
                 enabled: true,

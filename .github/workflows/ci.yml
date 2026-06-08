@@ -30,26 +30,28 @@ jobs:
         run: cargo fmt --all -- --check
 
   cross-check-linux:
-    name: Cross-Platform Check (${{ matrix.target }})
+    name: Cross-Platform Check (x86_64-unknown-linux-gnu)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check (x86_64-unknown-linux-gnu)
+        run: cargo check --target x86_64-unknown-linux-gnu --features full-cross
+
+  cross-check-aarch64:
+    name: Cross-Platform Check (aarch64-unknown-linux-gnu)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-      - name: Check (${{ matrix.target }})
-        run: cargo check --target ${{ matrix.target }} --features full-cross
+      - name: Install aarch64 cross-compilation tools
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Check (aarch64-unknown-linux-gnu)
+        run: cargo check --target aarch64-unknown-linux-gnu --features full-cross
 
   cross-check-windows:
     name: Cross-Platform Check (x86_64-pc-windows-msvc)
@@ -63,17 +65,17 @@ jobs:
       - name: Check (x86_64-pc-windows-msvc)
         run: cargo check --target x86_64-pc-windows-msvc --features full-cross
 
-  macos-intel-check:
-    name: macOS x86_64 Check
-    runs-on: macos-latest
+  cross-check-directml:
+    name: Cross-Platform Check (DirectML, x86_64-pc-windows-msvc)
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-apple-darwin
+          targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
-      - name: Check (x86_64-apple-darwin)
-        run: cargo check --target x86_64-apple-darwin --features full-cross
+      - name: Check (x86_64-pc-windows-msvc + embed-directml)
+        run: cargo check --target x86_64-pc-windows-msvc --features embed-directml,vector
 
   test:
     name: Test
@@ -84,6 +86,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Test
         run: cargo test --features full-macos -- --test-threads=1
+
+  test-linux:
+    name: Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --features full-cross -- --test-threads=1
 
   audit:
     name: Security Audit
@@ -105,7 +117,7 @@ jobs:
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
       - name: Generate SBOM
-        run: cargo cyclonedx -f json
+        run: cargo cyclonedx -f json --features full-cross
       - uses: actions/upload-artifact@v7
         with:
           name: sbom

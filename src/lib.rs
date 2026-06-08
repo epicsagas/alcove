@@ -1,5 +1,5 @@
 pub mod config;
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 pub mod embedding;
 pub mod index;
 pub mod lint;
@@ -24,12 +24,14 @@ pub use vault::{
     VaultInfo, add_to_vault, create_vault, link_vault, list_vaults, remove_vault, vaults_root,
 };
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 pub use config::EmbeddingConfig;
-#[cfg(feature = "embed-candle")]
-pub use embedding::{EmbeddingModelChoice, EmbeddingService, ModelState};
+#[cfg(feature = "embed")]
+pub use embedding::{
+    EmbeddingModel, EmbeddingService, ModelState, parse_legacy_model, resolve_model,
+};
 
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 pub use index::search_hybrid;
 
 #[cfg(feature = "vector")]

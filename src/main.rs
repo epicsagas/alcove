@@ -3,7 +3,7 @@ mod bench;
 mod cli;
 mod commands;
 mod config;
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 mod embedding;
 mod index;
 #[cfg(feature = "alcove-server")]
@@ -115,7 +115,7 @@ enum Commands {
         limit: usize,
     },
     /// Manage embedding models for hybrid search
-    #[cfg(feature = "embed-candle")]
+    #[cfg(feature = "embed")]
     Model {
         #[command(subcommand)]
         subcmd: ModelCommands,
@@ -230,7 +230,7 @@ enum VaultCommands {
 }
 
 #[derive(Subcommand)]
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 enum ModelCommands {
     /// List available embedding models
     List,
@@ -484,7 +484,7 @@ fn main() -> Result<()> {
                 Ok(())
             }
         },
-        #[cfg(feature = "embed-candle")]
+        #[cfg(feature = "embed")]
         Some(Commands::Model { subcmd }) => cli::cmd_model(subcmd),
         #[cfg(feature = "alcove-server")]
         Some(Commands::Mcp { subcmd }) => handle_server_command(subcmd, ServiceKind::Mcp),
@@ -580,7 +580,11 @@ fn handle_server_command(subcmd: ServerCommands, kind: ServiceKind) -> Result<()
         ServerCommands::Env => {
             let cfg = config::load_config();
             let srv = cfg.server_config();
-            let bind_port = resolve_server_port(cfg, kind);
+            // Prefer the port from the plist (if it exists) over config defaults,
+            // since the plist may have been generated when config had a different
+            // port value and never regenerated.
+            let bind_port =
+                launchd::read_plist_port(kind).unwrap_or_else(|| resolve_server_port(cfg, kind));
             println!("ALCOVE_URL=http://{}:{}", srv.host, bind_port);
             if let Some(token) = &srv.token {
                 println!("ALCOVE_TOKEN={}", token);

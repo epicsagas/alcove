@@ -160,8 +160,6 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-> **Note** : Les binaires précompilés sont disponibles uniquement pour macOS Apple Silicon. Les utilisateurs de Linux et Windows peuvent utiliser les installateurs en une ligne ci-dessus.
-
 ### Linux (x86_64 / ARM64)
 
 ```bash
@@ -190,11 +188,12 @@ alcove setup   # run once after plugin install
 ### Via la chaîne d'outils Rust
 
 ```bash
-cargo binstall alcove   # binaire précompilé (rapide)
-cargo install alcove    # compiler depuis le code source
+cargo binstall alcove   # binaire précompilé, recherche hybride incluse
+cargo install alcove --features full-macos   # compiler depuis les sources (macOS)
+cargo install alcove --features full-cross   # compiler depuis les sources (Linux/Windows)
 ```
 
-> **Note** : Les binaires précompilés sont disponibles pour Linux (x86\_64), macOS (Apple Silicon et Intel) et Windows.
+> **Note** : `cargo binstall` télécharge un binaire précompilé avec recherche hybride (vectorielle + BM25). Pour compiler depuis les sources, `--features full-macos` ou `--features full-cross` est requis pour la recherche hybride. Sans features, seule la recherche BM25 (par mots-clés) est disponible.
 
 ### Première configuration (obligatoire)
 
@@ -498,20 +497,28 @@ L'index se construit automatiquement en arrière-plan au démarrage du serveur A
 
 ### Choisir un modèle d'embedding
 
-| Modèle | Disque | Dim | Langues | Recommandé pour | RAM de pointe |
-|--------|--------|-----|---------|-----------------|---------------|
-| `AllMiniLML6V2` | 90 MB | 384 | Anglais | Emploi minimal, indexation rapide anglais uniquement | ~400 MB |
-| **`MultilingualE5Small`** | **235 MB** | **384** | **100+ langues** | **Par défaut — projets multilingues / mixtes** | **~700 MB** |
-| `MultilingualE5Base` | 555 MB | 768 | 100+ langues | Meilleure qualité multilingue | ~2 GB |
-| `MultilingualE5Large` | 2.2 GB | 1024 | 100+ langues | Qualité multilingue maximale | ~7 GB |
-| `BGEM3` | 2.3 GB | 1024 | 100+ langues | Multilingue de pointe | ~8 GB |
-| `ArcticEmbedXS` | 90 MB | 384 | Anglais | Snowflake — meilleure qualité en 384 dim | ~400 MB |
-| `ArcticEmbedS` | 130 MB | 384 | Anglais | Snowflake — recherche améliorée en petite taille | ~500 MB |
-| `ArcticEmbedM` | 430 MB | 768 | Anglais | Snowflake — qualité de recherche robuste | ~1.5 GB |
-| `ArcticEmbedL` | 1.3 GB | 1024 | Anglais | Snowflake — concurrentiel avec les APIs propriétaires | ~5 GB |
+| Modèle | Disque | Dim | Contexte | Langues | Recommandé pour | RAM de pointe |
+|--------|--------|-----|----------|---------|-----------------|---------------|
+| **`ArcticEmbedXS`** (défaut) | **90 MB** | **384** | **512** | **Multilingue** | **Défaut — meilleur rapport qualité/taille** | **~400 MB** |
+| `ArcticEmbedXSQ` | 90 MB | 384 | 512 | Multilingue | Quantisé, téléchargement plus petit | ~400 MB |
+| `MultilingualE5Small` | 470 MB | 384 | 512 | 100+ langues | Meilleur support coréen/CJK | ~1.2 GB |
+| `BGEM3` | 600 MB | 1024 | 8192 | 100+ langues | Premium — Dense+Sparse+ColBERT | ~2 GB |
+| `ArcticEmbedMLong` | 430 MB | 768 | 8192 | Multilingue | Documents longs | ~1.5 GB |
+| `JinaEmbeddingsV2BaseCode` | 550 MB | 768 | 8192 | Code+anglais | Optimisé pour le code | ~1.5 GB |
+
+Le modèle par défaut est **ArcticEmbedXS** (90 MB, multilingue). Il offre le meilleur équilibre taille/qualité pour la plupart des projets.
+
+Les modèles d'embedding sont basés sur [fastembed-rs](https://github.com/Anush008/fastembed-rs) (ONNX Runtime) et fonctionnent entièrement en local. Pour utiliser un autre modèle, configurez-le dans `config.toml` :
+
+```toml
+[embedding]
+model = "BGEM3"    # nom Variable dans la documentation des modèles
+```
+
+La liste complète des 40+ modèles supportés (dimensions, longueur de contexte, langues) est disponible dans **[EMBEDDING_MODELS.md](../docs/EMBEDDING_MODELS.md)**.
 
 **Mémoire pendant le rebuild :**
-La RAM de pointe varie selon le modèle — consultez la colonne "RAM de pointe" dans le tableau ci-dessus. Les modèles volumineux (BGEM3, MultilingualE5Large, ArcticEmbedL) peuvent utiliser 5-10 Go pendant le rebuild. Une fois le rebuild terminé, l'état stationnaire chute à ~50-200 Mo selon votre configuration `[memory]`. Vous pouvez réduire davantage avec un `max_hnsw_cache` plus bas et un `model_unload_secs` plus court.
+La RAM de pointe varie selon le modèle — consultez la colonne "RAM de pointe" dans le tableau ci-dessus. Les modèles volumineux (BGEM3, ArcticEmbedMLong) peuvent utiliser 1.5–2 Go pendant le rebuild. Une fois le rebuild terminé, l'état stationnaire chute à ~50-200 Mo selon votre configuration `[memory]`. Vous pouvez réduire davantage avec un `max_hnsw_cache` plus bas et un `model_unload_secs` plus court.
 
 ## Détection de projet
 
@@ -614,7 +621,7 @@ ALCOVE_LANG=fr alcove setup
 | Homebrew | `brew upgrade alcove` |
 | curl installer | Réexécuter le script d'installation ci-dessus |
 | cargo binstall | `cargo binstall alcove@latest` |
-| cargo install | `cargo install alcove@latest` |
+| cargo install | `cargo install alcove@latest --features full-macos` |
 | Claude Code Plugin | `claude plugin update epicsagas/alcove` |
 
 ```bash
@@ -723,7 +730,7 @@ Non — ils servent des objectifs différents. Les fichiers de configuration d'a
 
 ### Pourquoi Rust ?
 
-Un seul binaire, aucune dépendance d'exécution. Tantivy offre le meilleur BM25 de sa catégorie. candle-transformers nous fournit des embeddings vectoriels locaux sans ONNX ni Python. Un simple `cargo install` ou curl — pas de Docker, pas de Node.js, pas de virtualenv.
+Un seul binaire, aucune dépendance d'exécution. Tantivy offre le meilleur BM25 de sa catégorie. fastembed (ONNX Runtime) nous fournit des embeddings vectoriels locaux sans Python. Un simple `cargo install` ou curl — pas de Docker, pas de Node.js, pas de virtualenv.
 
 ### Qu'en est-il de l'agrandissement des fenêtres de contexte ?
 

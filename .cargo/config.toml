@@ -14,5 +14,8 @@ RUST_TEST_THREADS = { value = "2", force = false }
 # zld is faster than ld on macOS for large crates; falls back to ld if absent
 # rustflags = ["-C", "link-arg=-fuse-ld=zld"]  # uncomment if zld is installed
 
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
 [net]
 retry = 2

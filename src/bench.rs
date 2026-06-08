@@ -260,11 +260,11 @@ fn get_docs_root() -> Result<PathBuf> {
 }
 
 /// Expand tilde in cache_dir and create an EmbeddingService from config.
-#[cfg(feature = "embed-candle")]
+#[cfg(feature = "embed")]
 fn create_embedding_service(
     emb_cfg: &crate::config::EmbeddingConfig,
 ) -> crate::embedding::EmbeddingService {
-    let model = crate::embedding::EmbeddingModelChoice::parse(&emb_cfg.model).unwrap_or_default();
+    let model = crate::embedding::resolve_model(&emb_cfg.model);
     let cache_dir = if emb_cfg.cache_dir.starts_with('~') {
         std::env::var("HOME")
             .ok()
@@ -334,8 +334,8 @@ fn run_precision_benchmark(
         });
     }
 
-    // Hybrid search (only if embed-candle feature is enabled)
-    #[cfg(feature = "embed-candle")]
+    // Hybrid search (only if embed feature is enabled)
+    #[cfg(feature = "embed")]
     let hybrid_results = {
         let mut results: Vec<PerQueryPrecision> = Vec::new();
         let cfg = crate::config::load_config();
@@ -372,7 +372,7 @@ fn run_precision_benchmark(
         }
     };
 
-    #[cfg(not(feature = "embed-candle"))]
+    #[cfg(not(feature = "embed"))]
     let hybrid_results: Option<Vec<PerQueryPrecision>> = None;
 
     Ok(PrecisionResults {
@@ -455,8 +455,8 @@ fn run_latency_benchmark(
         });
     }
 
-    // Hybrid latency (only if embed-candle feature is enabled)
-    #[cfg(feature = "embed-candle")]
+    // Hybrid latency (only if embed feature is enabled)
+    #[cfg(feature = "embed")]
     let hybrid_entries = {
         let mut entries: Vec<LatencyEntry> = Vec::new();
         let cfg = crate::config::load_config();
@@ -492,7 +492,7 @@ fn run_latency_benchmark(
         }
     };
 
-    #[cfg(not(feature = "embed-candle"))]
+    #[cfg(not(feature = "embed"))]
     let hybrid_entries: Option<Vec<LatencyEntry>> = None;
 
     Ok(LatencyResults {
