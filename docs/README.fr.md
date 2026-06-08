@@ -379,6 +379,7 @@ alcove promote      Importer des notes d'un vault externe dans le doc-repo
 alcove index        Mettre à jour l'index de recherche (incrémentiel — fichiers modifiés seulement)
 alcove rebuild      Reconstruire l'index de recherche de zéro (après des changements de schéma)
 alcove search       Rechercher des documents depuis le terminal
+alcove bench        Benchmark de qualité de recherche (précision, latence, détection de régression)
 alcove index-code   Génère un index de structure de code depuis les sources [--language LANG] [--source PATH]
 alcove token        Afficher le jeton bearer (pour l'authentification du serveur en arrière-plan)
 alcove uninstall    Supprimer compétences, configuration et fichiers hérités
@@ -463,6 +464,35 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 Les fichiers sans projet correspondant sont sauvegardés dans `inbox/` pour examen manuel.
+
+### Benchmark
+
+Mesurez et suivez la qualité de recherche avec des métriques IR intégrées et la détection de régression.
+
+```bash
+# Exécuter le benchmark de précision (10 catégories, 50 requêtes)
+alcove bench --metrics precision
+
+# Sauvegarder comme baseline pour comparaison future
+alcove bench --output json --save-baseline benches/baseline.json
+
+# Comparer avec la baseline — détecter les régressions en CI
+alcove bench --baseline benches/baseline.json
+
+# Rapport Markdown
+alcove bench --output markdown --output-file bench-report.md
+```
+
+| Métrique | Ce qu'elle mesure |
+|----------|-------------------|
+| Precision@K | Fraction des résultats top-K qui sont pertinents |
+| Recall@K | Fraction des documents pertinents trouvés dans le top-K |
+| NDCG@K | Qualité du classement avec décote de position |
+| MAP@K | Précision moyenne sur l'ensemble des requêtes |
+| MRR | Rang réciproque du premier résultat pertinent |
+| Précision des chunks | Si les chunks récupérés sont dans les bonnes sections |
+
+**Seuils de régression** : précision >5 %, latence >20 %, débit >15 %. Avertissement à la moitié du seuil.
 
 ## Serveur en arrière-plan
 
