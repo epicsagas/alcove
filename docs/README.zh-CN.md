@@ -381,6 +381,7 @@ alcove promote      将外部仓库笔记引入 doc-repo
 alcove index        增量更新搜索索引（仅处理变更文件）
 alcove rebuild      从头重建搜索索引（适用于模式变更后）
 alcove search       从终端搜索文档
+alcove bench        搜索质量基准测试（精度、延迟、回归检测）
 alcove index-code   从源代码生成代码结构索引 [--language LANG] [--source PATH]
 alcove token        打印持有者令牌（用于后台服务器认证）
 alcove uninstall    移除技能、配置和遗留文件
@@ -469,6 +470,35 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 没有匹配项目的文件将保存在 `inbox/` 中等待人工审查。
+
+### 基准测试
+
+使用内置 IR 指标和回归检测来衡量和跟踪搜索质量。
+
+```bash
+# 运行精度基准测试（10 个类别，50 个查询）
+alcove bench --metrics precision
+
+# 保存为基线以便将来比较
+alcove bench --output json --save-baseline benches/baseline.json
+
+# 与基线比较 — 在 CI 中检测回归
+alcove bench --baseline benches/baseline.json
+
+# Markdown 报告
+alcove bench --output markdown --output-file bench-report.md
+```
+
+| 指标 | 测量内容 |
+|------|----------|
+| Precision@K | 前 K 个结果中相关文档的比例 |
+| Recall@K | 相关文档中在前 K 个结果中找到的比例 |
+| NDCG@K | 带位置折扣的排序质量 |
+| MAP@K | 所有查询的平均精度 |
+| MRR | 第一个相关文档的倒数排名 |
+| 块级准确度 | 检索到的块是否在正确的章节内 |
+
+**回归阈值**：精度 >5%、延迟 >20%、吞吐量 >15%。在阈值的一半时发出警告。
 
 ### 后台服务器
 

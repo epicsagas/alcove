@@ -109,6 +109,31 @@ alcove serves these docs to AI agents over stdio JSON-RPC 2.0. The BM25 search i
 - **Auto-rebuild**: `search_project_docs` triggers rebuild if index is stale
 - **Manual rebuild**: `alcove index` CLI or `rebuild_index` MCP tool
 
+## Search Benchmark
+
+alcove includes a built-in search quality benchmark framework for measuring and tracking retrieval performance.
+
+- **Ground truth**: `benches/ground_truth.toml` — 50 queries across 10 categories (architecture, product, cross-project, CJK, code, config, error-messages, navigation, edge-case, negative-control)
+- **Metrics**: Precision@K, Recall@K, NDCG@K, MAP@K, MRR, chunk-level accuracy
+- **Regression detection**: `--baseline` compares current results against a saved baseline JSON
+- **Baseline**: `benches/baseline.json` — reference benchmark at v0.11.7
+
+```bash
+# Run precision benchmark
+alcove bench --metrics precision
+
+# Save current results as baseline
+alcove bench --output json --save-baseline benches/baseline.json
+
+# Compare against baseline (CI-friendly)
+alcove bench --baseline benches/baseline.json
+
+# Full output with markdown report
+alcove bench --metrics precision --output markdown --output-file report.md
+```
+
+**Regression thresholds**: precision drop >5%, latency increase >20%, throughput drop >15%. Changes within half the threshold trigger a Warn status.
+
 ## Working With Docs
 
 - Add new project docs: copy `_template/` into a new subfolder under `99-Archives/projects/`

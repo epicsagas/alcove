@@ -377,6 +377,7 @@ alcove promote      外部ボルトのノートをdoc-repoに取り込む
 alcove index        検索インデックスの増分更新（変更されたファイルのみ）
 alcove rebuild      検索インデックスをゼロから再構築（スキーマ変更後に使用）
 alcove search       ターミナルからドキュメントを検索
+alcove bench        検索品質ベンチマーク（精度、レイテンシ、回帰検出）
 alcove index-code   ソースコードからコード構造インデックスを生成 [--language LANG] [--source PATH]
 alcove token        バックグラウンドサーバー認証用のベアラートークンを表示
 alcove uninstall    スキル、設定、レガシーファイルを削除
@@ -465,6 +466,35 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 一致するプロジェクトがないファイルは手動確認のため`inbox/`に保存されます。
+
+### ベンチマーク
+
+組み込みの IR 指標と回帰検出で検索品質を測定・追跡します。
+
+```bash
+# 精度ベンチマークを実行（10カテゴリ、50クエリ）
+alcove bench --metrics precision
+
+# 今後の比較用にベースラインとして保存
+alcove bench --output json --save-baseline benches/baseline.json
+
+# ベースラインと比較 — CI で回帰を検出
+alcove bench --baseline benches/baseline.json
+
+# Markdown レポート
+alcove bench --output markdown --output-file bench-report.md
+```
+
+| 指標 | 測定内容 |
+|------|----------|
+| Precision@K | 上位 K 件のうち関連文書の割合 |
+| Recall@K | 関連文書のうち上位 K で見つかった割合 |
+| NDCG@K | 位置割引付きランキング品質 |
+| MAP@K | クエリ全体の平均精度 |
+| MRR | 最初の関連文書の逆順位 |
+| チャンク精度 | 取得したチャンクが正しいセクションに含まれるか |
+
+**回帰閾値**: 精度 >5%、レイテンシ >20%、スループット >15%。閾値の半分で警告。
 
 ### バックグラウンドサーバー
 

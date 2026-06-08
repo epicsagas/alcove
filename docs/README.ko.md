@@ -377,6 +377,7 @@ alcove promote      외부 볼트의 노트를 doc-repo에 가져오기
 alcove index        검색 인덱스 업데이트 (증분 — 변경된 파일만)
 alcove rebuild      검색 인덱스 전체 재구축 (스키마 변경 후 사용)
 alcove search       터미널에서 문서 검색
+alcove bench        검색 품질 벤치마크 (정밀도, 지연 시간, 회귀 탐지)
 alcove index-code   소스코드에서 코드 구조 인덱스 생성 [--language LANG] [--source PATH]
 alcove token        백그라운드 서버 인증용 베어러 토큰 출력
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
@@ -457,6 +458,35 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 일치하는 프로젝트가 없는 파일은 수동 검토를 위해 `inbox/`에 저장됩니다.
+
+### 벤치마크
+
+내장된 IR 지표와 회귀 탐지로 검색 품질을 측정하고 추적합니다.
+
+```bash
+# 정밀도 벤치마크 실행 (10개 카테고리, 50개 쿼리)
+alcove bench --metrics precision
+
+# 향후 비교를 위해 베이스라인으로 저장
+alcove bench --output json --save-baseline benches/baseline.json
+
+# 베이스라인과 비교 — CI에서 회귀 탐지
+alcove bench --baseline benches/baseline.json
+
+# 마크다운 보고서
+alcove bench --output markdown --output-file bench-report.md
+```
+
+| 지표 | 측정 항목 |
+|------|-----------|
+| Precision@K | 상위 K개 결과 중 관련 문서 비율 |
+| Recall@K | 관련 문서 중 상위 K에서 발견된 비율 |
+| NDCG@K | 위치 가중치를 적용한 랭킹 품질 |
+| MAP@K | 쿼리 전체의 평균 정밀도 |
+| MRR | 첫 번째 관련 문서의 역순위 |
+| 청크 정확도 | 검색된 청크가 올바른 섹션에 포함되는지 여부 |
+
+**회귀 임계값**: 정밀도 >5%, 지연 시간 >20%, 처리량 >15%. 임계값의 절반에서 경고.
 
 ### 백그라운드 서버
 

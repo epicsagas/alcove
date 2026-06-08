@@ -381,6 +381,7 @@ alcove promote      Importar notas de un vault externo al doc-repo
 alcove index        Actualizar el índice de búsqueda (incremental — solo archivos modificados)
 alcove rebuild      Reconstruir el índice de búsqueda desde cero (usar tras cambios de esquema)
 alcove search       Buscar documentos desde la terminal
+alcove bench        Benchmark de calidad de búsqueda (precisión, latencia, detección de regresión)
 alcove index-code   Genera índice de estructura de código desde el fuente [--language LANG] [--source PATH]
 alcove token        Imprimir el token de portador (para autenticación del servidor en segundo plano)
 alcove uninstall    Eliminar habilidades, configuración y archivos heredados
@@ -469,6 +470,35 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 Los archivos sin proyecto coincidente se guardan en `inbox/` para revisión manual.
+
+### Benchmark
+
+Mide y rastrea la calidad de búsqueda con métricas IR integradas y detección de regresión.
+
+```bash
+# Ejecutar benchmark de precisión (10 categorías, 50 consultas)
+alcove bench --metrics precision
+
+# Guardar como baseline para comparación futura
+alcove bench --output json --save-baseline benches/baseline.json
+
+# Comparar contra baseline — detectar regresiones en CI
+alcove bench --baseline benches/baseline.json
+
+# Informe Markdown
+alcove bench --output markdown --output-file bench-report.md
+```
+
+| Métrica | Qué mide |
+|---------|----------|
+| Precision@K | Fracción de los resultados top-K que son relevantes |
+| Recall@K | Fracción de documentos relevantes encontrados en top-K |
+| NDCG@K | Calidad del ranking con descuento por posición |
+| MAP@K | Precisión media promedio entre consultas |
+| MRR | Rango recíproco del primer resultado relevante |
+| Precisión de chunks | Si los chunks recuperados caen dentro de las secciones correctas |
+
+**Umbrales de regresión**: precisión >5%, latencia >20%, rendimiento >15%. Advertencia en la mitad del umbral.
 
 ### Servidor en segundo plano
 

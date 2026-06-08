@@ -379,6 +379,7 @@ alcove promote      Notizen aus einem externen Vault ins doc-repo importieren
 alcove index        Suchindex inkrementell aktualisieren (nur geänderte Dateien)
 alcove rebuild      Suchindex von Grund auf neu aufbauen (nach Schema-Änderungen)
 alcove search       Dokumente vom Terminal aus suchen
+alcove bench        Suchqualitäts-Benchmark (Präzision, Latenz, Regressionserkennung)
 alcove index-code   Code-Struktur-Index aus Quellcode generieren [--language LANG] [--source PATH]
 alcove token        Bearer-Token ausgeben (für Hintergrund-Server-Authentifizierung)
 alcove uninstall    Skills, Konfiguration und Legacy-Dateien entfernen
@@ -463,6 +464,35 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 ```
 
 Dateien ohne passendes Projekt werden in `inbox/` zur manuellen Überprüfung gespeichert.
+
+### Benchmark
+
+Messen und verfolgen Sie die Suchqualität mit integrierten IR-Metriken und Regressionserkennung.
+
+```bash
+# Präzisions-Benchmark ausführen (10 Kategorien, 50 Abfragen)
+alcove bench --metrics precision
+
+# Als Baseline für zukünftigen Vergleich speichern
+alcove bench --output json --save-baseline benches/baseline.json
+
+# Mit Baseline vergleichen — Regressionen in CI erkennen
+alcove bench --baseline benches/baseline.json
+
+# Markdown-Bericht
+alcove bench --output markdown --output-file bench-report.md
+```
+
+| Metrik | Was sie misst |
+|--------|---------------|
+| Precision@K | Anteil relevanter Dokumente in den Top-K Ergebnissen |
+| Recall@K | Anteil gefundener relevanter Dokumente in Top-K |
+| NDCG@K | Ranking-Qualität mit Positionsabschlag |
+| MAP@K | Durchschnittliche Präzision über alle Abfragen |
+| MRR | Reziproker Rang des ersten relevanten Ergebnisses |
+| Chunk-Genauigkeit | Ob abgerufene Chunks in den richtigen Abschnitten liegen |
+
+**Regressionsschwellen**: Präzision >5%, Latenz >20%, Durchsatz >15%. Warnung bei der Hälfte des Schwellenwerts.
 
 ## Hintergrund-Server
 

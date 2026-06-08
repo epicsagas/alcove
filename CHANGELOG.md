@@ -5,6 +5,16 @@ All notable changes to alcove will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Search quality benchmark framework with 50 queries across 10 categories (`benches/ground_truth.toml`)
+- IR metrics: NDCG@K, MAP@K, MRR alongside existing Precision@K and Recall@K
+- Chunk-level precision evaluation for heading-based section accuracy
+- Regression detection with configurable thresholds (`--baseline`, `--save-baseline`)
+- Baseline reference benchmark (`benches/baseline.json`) at v0.11.7
+
 ## [0.10.4] — 2026-05-25
 
 ### Fixed
