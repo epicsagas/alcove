@@ -350,6 +350,7 @@ impl EmbeddingService {
                             set_state_and_notify!(ModelState::Failed(e.to_string()));
                         }
                     }
+                }
             });
 
         if let Err(e) = result {

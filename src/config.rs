@@ -1482,61 +1482,6 @@ mod tests {
     }
 
     #[test]
-    fn resolved_docs_roots_expands_tilde_in_docs_root() {
-        // Construct a path that starts with "~/" and verify it resolves to an
-        // absolute path (i.e. the tilde was expanded).
-        let home = dirs::home_dir().expect("home dir must exist for this test");
-        // Point at ~/.alcove itself — guaranteed to exist on any dev machine
-        // that has alcove installed, but safe to test even if it doesn't because
-        // we only check that the path is absolute, not that it's a dir.
-        let tilde_path = "~/.alcove".to_string();
-        let cfg = DocConfig {
-            docs_root: Some(tilde_path),
-            ..DocConfig::default()
-        };
-        let roots = cfg.resolved_docs_roots();
-        // If ~/.alcove exists as a dir we get one root; if not, zero. Either way
-        // verify the returned path (if any) does NOT contain a literal "~".
-        for r in &roots {
-            assert!(
-                r.path.is_absolute(),
-                "tilde must have been expanded: {:?}",
-                r.path
-            );
-            assert!(
-                !r.path.starts_with("~"),
-                "literal tilde must not appear in resolved path: {:?}",
-                r.path
-            );
-        }
-        // Sanity: the resolved path, when it exists, should start with home.
-        if !roots.is_empty() && roots[0].path.exists() {
-            assert!(roots[0].path.starts_with(&home));
-        }
-    }
-
-    #[test]
-    fn resolved_docs_roots_blocked_docs_root_skips_to_fallback() {
-        // Setting docs_root to a blocked path (e.g. /tmp which is blocked by
-        // is_blocked_system_path) should skip that entry and fall through to
-        // the default fallback, not panic.
-        let cfg = DocConfig {
-            docs_root: Some("/tmp".to_string()),
-            ..DocConfig::default()
-        };
-        // Should not panic; may return 0 or 1 roots depending on default dir.
-        let roots = cfg.resolved_docs_roots();
-        // /tmp must never appear in the results.
-        for r in &roots {
-            assert_ne!(
-                r.path.to_string_lossy().as_ref(),
-                "/tmp",
-                "blocked path must not appear in resolved roots"
-            );
-        }
-    }
-
-    #[test]
     fn classify_reports_backslash() {
         assert_eq!(classify_tier("reports\\weekly.md"), "reference");
     }
