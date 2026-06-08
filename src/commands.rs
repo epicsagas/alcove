@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::PathBuf;
 
 use anyhow::Result;
 use console::style;
@@ -7,8 +8,9 @@ use rust_i18n::t;
 use crate::config::is_reserved_dir_name;
 
 use crate::agents::{agents, check_agent_registration, expand_path};
-use crate::config::{config_path, load_config};
+use crate::config::{alcove_home, config_path, default_docs_root, load_config};
 use crate::setup::saved_docs_root;
+use crate::vault::vaults_root;
 
 // ---------------------------------------------------------------------------
 // validate
@@ -560,18 +562,43 @@ pub fn cmd_doctor(format: &str) -> Result<()> {
     }
 
     // Output
+    let paths = serde_json::json!({
+        "home": alcove_home(),
+        "docs_root": default_docs_root(),
+        "vaults_root": vaults_root(),
+        "config": config_path(),
+    });
+
     if format == "json" {
-        println!("{}", serde_json::to_string_pretty(&checks)?);
+        let output = serde_json::json!({
+            "paths": paths,
+            "checks": checks,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
-        print_doctor_human(&checks);
+        print_doctor_human(&checks, &paths);
     }
 
     Ok(())
 }
 
-fn print_doctor_human(checks: &[serde_json::Value]) {
+fn print_doctor_human(checks: &[serde_json::Value], paths: &serde_json::Value) {
     println!();
     println!("{}", style(t!("doctor.title").to_string()).bold());
+    println!();
+
+    // Paths summary block
+    println!("{}", style("  Paths:").bold());
+    for key in &["home", "docs_root", "vaults_root", "config"] {
+        let path_str = paths[*key].as_str().unwrap_or("?");
+        let path_buf = PathBuf::from(path_str);
+        let exists = if path_buf.exists() {
+            style("✓").green()
+        } else {
+            style("✗").yellow()
+        };
+        println!("  {exists} {:12} {}", style(key).dim(), path_str);
+    }
     println!();
 
     for check in checks {
@@ -622,6 +649,74 @@ fn print_doctor_human(checks: &[serde_json::Value]) {
     }
 
     println!();
+}
+
+// ---------------------------------------------------------------------------
+// alcove path
+// ---------------------------------------------------------------------------
+
+/// Print resolved alcove paths.
+///
+/// With no arguments, shows all paths. With a target, shows only that path.
+/// `--json` outputs machine-readable JSON for scripts and AI agents.
+pub fn cmd_path(target: Option<&str>, json: bool) -> Result<()> {
+    use crate::config::{alcove_home, default_docs_root};
+    use crate::vault::vaults_root;
+
+    let home = alcove_home();
+    let docs = default_docs_root();
+    let vaults = vaults_root();
+    let config = config_path();
+
+    if json {
+        let out = serde_json::json!({
+            "home": home,
+            "docs_root": docs,
+            "vaults_root": vaults,
+            "config": config,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+
+    let entries: [(&str, PathBuf); 4] = [
+        ("home", home),
+        ("docs_root", docs),
+        ("vaults_root", vaults),
+        ("config", config),
+    ];
+
+    match target {
+        Some(t) => {
+            let key = t.to_lowercase();
+            let found = entries.iter().find(|(k, _)| *k == key);
+            match found {
+                Some((_, path)) => println!("{}", path.display()),
+                None => {
+                    anyhow::bail!(
+                        "Unknown path target '{}'. Valid: home, docs_root, vaults_root, config",
+                        t
+                    );
+                }
+            }
+        }
+        None => {
+            println!();
+            println!("{}", style("Alcove Paths").bold());
+            println!();
+            for (label, path) in &entries {
+                let exists = if path.exists() {
+                    style("✓").green()
+                } else {
+                    style("✗").yellow()
+                };
+                println!("  {exists} {:12} {}", style(label).bold(), path.display());
+            }
+            println!();
+        }
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

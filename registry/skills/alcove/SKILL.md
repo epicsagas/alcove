@@ -7,6 +7,26 @@ description: "HTTP API-based documentation server (always running). Questions ab
 
 HTTP API-based documentation server (always running). Auto-detects project by matching CWD against `DOCS_ROOT` folders.
 
+## Paths
+
+All paths are resolved at runtime. `ALCOVE_HOME` env var overrides the default `~/.alcove`.
+
+| Name | Resolved Path | Description |
+|------|---------------|-------------|
+| ALCOVE_HOME | `~/.alcove` | Root of all alcove data |
+| Docs Root | `~/.alcove/docs` | Project documentation directories |
+| Vaults Root | `~/.alcove/vaults` | Knowledge base vaults |
+| Config | `~/.alcove/config.toml` | Global configuration file |
+| Project Docs | `~/.alcove/docs/{project}/` | Per-project documentation |
+
+Quick resolution from CLI:
+```bash
+alcove path              # show all resolved paths
+alcove path --json       # JSON output (for scripts/AI)
+alcove path docs         # docs root only
+alcove path vaults       # vaults root only
+```
+
 ## Prerequisites
 
 The alcove API server must be running. Check and start with:
