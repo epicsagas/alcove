@@ -1,0 +1,2974 @@
+{
+  "timestamp": "2026-06-08T14:38:29Z",
+  "environment": {
+    "os": "macos",
+    "rust_version": "unknown",
+    "alcove_version": "0.11.7"
+  },
+  "data_stats": {
+    "file_count": 949,
+    "total_size_bytes": 13214532
+  },
+  "precision": {
+    "grep": [
+      {
+        "query": "architecture",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "easy"
+      },
+      {
+        "query": "MCP server protocol transport",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "medium"
+      },
+      {
+        "query": "search index tantivy BM25",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 1.0,
+            "recall": 2.5,
+            "ndcg": 1.8078394317246163,
+            "map": 2.5
+          },
+          {
+            "k": 10,
+            "precision": 0.6,
+            "recall": 3.0,
+            "ndcg": 2.0262468685427804,
+            "map": 3.0
+          },
+          {
+            "k": 20,
+            "precision": 0.3,
+            "recall": 3.0,
+            "ndcg": 2.0262468685427804,
+            "map": 3.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "architecture",
+        "difficulty": "medium"
+      },
+      {
+        "query": "embedding model vector similarity",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "medium"
+      },
+      {
+        "query": "heading-based chunking markdown sections",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "hard"
+      },
+      {
+        "query": "hybrid search RRF reciprocal rank fusion",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "hard"
+      },
+      {
+        "query": "setup interactive command",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "easy"
+      },
+      {
+        "query": "benchmark quality performance",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 1.0,
+            "recall": 5.0,
+            "ndcg": 2.9484591188793923,
+            "map": 5.0
+          },
+          {
+            "k": 10,
+            "precision": 0.6,
+            "recall": 6.0,
+            "ndcg": 3.3046663059874146,
+            "map": 6.0
+          },
+          {
+            "k": 20,
+            "precision": 0.3,
+            "recall": 6.0,
+            "ndcg": 3.3046663059874146,
+            "map": 6.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "easy"
+      },
+      {
+        "query": "vault knowledge base",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "launch plan monetization pricing",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "global search cross-project documentation",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "hard"
+      },
+      {
+        "query": "valuation roadmap milestones",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "hard"
+      },
+      {
+        "query": "doc policy spec format markdown",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "analytics design real-time dashboard",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "OSN product requirements features",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "secrets map environment variables",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "technical debt backlog",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "design decisions ADR",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cross-project",
+        "difficulty": "medium"
+      },
+      {
+        "query": "conventions coding standards style",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cross-project",
+        "difficulty": "medium"
+      },
+      {
+        "query": "code structure index AST tree-sitter",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cross-project",
+        "difficulty": "hard"
+      },
+      {
+        "query": "progress status tracking milestones",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cross-project",
+        "difficulty": "hard"
+      },
+      {
+        "query": "검색 인덱스",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.15,
+            "recall": 1.5,
+            "ndcg": 0.4258045901134659,
+            "map": 0.1554093567251462
+          }
+        ],
+        "mrr": 0.05555555555555555,
+        "category": "cjk",
+        "difficulty": "easy"
+      },
+      {
+        "query": "테스트 품질",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "에이전트 오케스트레이션",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "문서 변환 트랜스파일",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "hard"
+      },
+      {
+        "query": "claudy analytics dashboard Tauri",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "code",
+        "difficulty": "easy"
+      },
+      {
+        "query": "obsidian-forge LaunchAgent macOS",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "code",
+        "difficulty": "easy"
+      },
+      {
+        "query": "agent config reference hooks skills",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "code",
+        "difficulty": "medium"
+      },
+      {
+        "query": "epic-harness skills consolidation subagents",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "code",
+        "difficulty": "medium"
+      },
+      {
+        "query": "openclaw memory system context window",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "code",
+        "difficulty": "hard"
+      },
+      {
+        "query": "doc policy transpile format",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "config",
+        "difficulty": "easy"
+      },
+      {
+        "query": "code structure indexing spec",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "config",
+        "difficulty": "easy"
+      },
+      {
+        "query": "llm-kernel migration fastembed",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "config",
+        "difficulty": "medium"
+      },
+      {
+        "query": "multilingual docs guideline i18n",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "config",
+        "difficulty": "hard"
+      },
+      {
+        "query": "telemetry PostHog Sentry",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "error-messages",
+        "difficulty": "easy"
+      },
+      {
+        "query": "branch review deployment readiness",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "error-messages",
+        "difficulty": "medium"
+      },
+      {
+        "query": "completeness review checklist",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "error-messages",
+        "difficulty": "medium"
+      },
+      {
+        "query": "marketability assessment PR review",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "error-messages",
+        "difficulty": "hard"
+      },
+      {
+        "query": "AI coding agents comparison",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "navigation",
+        "difficulty": "easy"
+      },
+      {
+        "query": "Show HN launch tips",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "navigation",
+        "difficulty": "easy"
+      },
+      {
+        "query": "oss distribution platforms checklist",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "navigation",
+        "difficulty": "medium"
+      },
+      {
+        "query": "personal knowledge ontology dataview",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "navigation",
+        "difficulty": "hard"
+      },
+      {
+        "query": "synapsepulse architecture data pipeline",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "edge-case",
+        "difficulty": "medium"
+      },
+      {
+        "query": "k-billiards physics simulation game",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "edge-case",
+        "difficulty": "hard"
+      },
+      {
+        "query": "second brain book outline compilation",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "edge-case",
+        "difficulty": "hard"
+      },
+      {
+        "query": "small web curation indie web",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "edge-case",
+        "difficulty": "hard"
+      },
+      {
+        "query": "xyzzy-nonexistent-query-12345",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control"
+      },
+      {
+        "query": "quantum computing blockchain cryptocurrency",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control"
+      },
+      {
+        "query": "recipe cooking pasta kitchen",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control"
+      },
+      {
+        "query": "weather forecast temperature humidity",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control"
+      }
+    ],
+    "ranked": [
+      {
+        "query": "architecture",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.25,
+            "ndcg": 0.123151194370365,
+            "map": 0.03125
+          },
+          {
+            "k": 20,
+            "precision": 0.15,
+            "recall": 0.75,
+            "ndcg": 0.314971044260155,
+            "map": 0.10863095238095238
+          }
+        ],
+        "mrr": 0.125,
+        "category": "architecture",
+        "difficulty": "easy"
+      },
+      {
+        "query": "MCP server protocol transport",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "medium"
+      },
+      {
+        "query": "search index tantivy BM25",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "medium"
+      },
+      {
+        "query": "embedding model vector similarity",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "medium"
+      },
+      {
+        "query": "heading-based chunking markdown sections",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "hard"
+      },
+      {
+        "query": "hybrid search RRF reciprocal rank fusion",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "hard"
+      },
+      {
+        "query": "setup interactive command",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "easy"
+      },
+      {
+        "query": "benchmark quality performance",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.3562071871080222,
+            "map": 0.16666666666666666
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 0.3562071871080222,
+            "map": 0.16666666666666666
+          }
+        ],
+        "mrr": 0.16666666666666666,
+        "category": "product",
+        "difficulty": "easy"
+      },
+      {
+        "query": "vault knowledge base",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "launch plan monetization pricing",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 0.8503449055347546,
+            "map": 0.7
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.8503449055347546,
+            "map": 0.7
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.8503449055347546,
+            "map": 0.7
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "global search cross-project documentation",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "hard"
+      },
+      {
+        "query": "valuation roadmap milestones",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "hard"
+      },
+      {
+        "query": "doc policy spec format markdown",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "analytics design real-time dashboard",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "OSN product requirements features",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.3010299956639812,
+            "map": 0.1111111111111111
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 0.3010299956639812,
+            "map": 0.1111111111111111
+          }
+        ],
+        "mrr": 0.1111111111111111,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "secrets map environment variables",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.3333333333333333,
+            "ndcg": 0.23463936301137822,
+            "map": 0.1111111111111111
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.3333333333333333,
+            "ndcg": 0.23463936301137822,
+            "map": 0.1111111111111111
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 0.6666666666666666,
+            "ndcg": 0.34944865773739603,
+            "map": 0.15277777777777776
+          }
+        ],
+        "mrr": 0.3333333333333333,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "technical debt backlog",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 0.6666666666666666,
+            "ndcg": 0.49818925746641285,
+            "map": 0.3333333333333333
+          },
+          {
+            "k": 10,
+            "precision": 0.3,
+            "recall": 1.0,
+            "ndcg": 0.6546154994739983,
+            "map": 0.4761904761904762
+          },
+          {
+            "k": 20,
+            "precision": 0.15,
+            "recall": 1.0,
+            "ndcg": 0.6546154994739983,
+            "map": 0.4761904761904762
+          }
+        ],
+        "mrr": 0.5,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "design decisions ADR",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.3333333333333333,
+            "ndcg": 0.1480409554829326,
+            "map": 0.041666666666666664
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 0.6666666666666666,
+            "ndcg": 0.2789429456511298,
+            "map": 0.10227272727272728
+          }
+        ],
+        "mrr": 0.125,
+        "category": "cross-project",
+        "difficulty": "medium"
+      },
+      {
+        "query": "conventions coding standards style",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.3333333333333333,
+            "ndcg": 0.18154179253735267,
+            "map": 0.06666666666666667
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 0.6666666666666666,
+            "ndcg": 0.34870224750355494,
+            "map": 0.17777777777777778
+          },
+          {
+            "k": 20,
+            "precision": 0.15,
+            "recall": 1.0,
+            "ndcg": 0.4612411362990225,
+            "map": 0.2366013071895425
+          }
+        ],
+        "mrr": 0.2,
+        "category": "cross-project",
+        "difficulty": "medium"
+      },
+      {
+        "query": "code structure index AST tree-sitter",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 0.5012658353418871,
+            "map": 0.325
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.5012658353418871,
+            "map": 0.325
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.5012658353418871,
+            "map": 0.325
+          }
+        ],
+        "mrr": 0.25,
+        "category": "cross-project",
+        "difficulty": "hard"
+      },
+      {
+        "query": "progress status tracking milestones",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.3333333333333333,
+            "ndcg": 0.23463936301137822,
+            "map": 0.1111111111111111
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 0.6666666666666666,
+            "ndcg": 0.38268031849431083,
+            "map": 0.19444444444444442
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 0.6666666666666666,
+            "ndcg": 0.38268031849431083,
+            "map": 0.19444444444444442
+          }
+        ],
+        "mrr": 0.3333333333333333,
+        "category": "cross-project",
+        "difficulty": "hard"
+      },
+      {
+        "query": "검색 인덱스",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.2640681225725909,
+            "map": 0.125
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.2640681225725909,
+            "map": 0.125
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.2640681225725909,
+            "map": 0.125
+          }
+        ],
+        "mrr": 0.25,
+        "category": "cjk",
+        "difficulty": "easy"
+      },
+      {
+        "query": "테스트 품질",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "에이전트 오케스트레이션",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "문서 변환 트랜스파일",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "hard"
+      },
+      {
+        "query": "claudy analytics dashboard Tauri",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "code",
+        "difficulty": "easy"
+      },
+      {
+        "query": "obsidian-forge LaunchAgent macOS",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "code",
+        "difficulty": "easy"
+      },
+      {
+        "query": "agent config reference hooks skills",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          }
+        ],
+        "mrr": 1.0,
+        "category": "code",
+        "difficulty": "medium"
+      },
+      {
+        "query": "epic-harness skills consolidation subagents",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "code",
+        "difficulty": "medium"
+      },
+      {
+        "query": "openclaw memory system context window",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "code",
+        "difficulty": "hard"
+      },
+      {
+        "query": "doc policy transpile format",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "config",
+        "difficulty": "easy"
+      },
+      {
+        "query": "code structure indexing spec",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          }
+        ],
+        "mrr": 0.3333333333333333,
+        "category": "config",
+        "difficulty": "easy"
+      },
+      {
+        "query": "llm-kernel migration fastembed",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "config",
+        "difficulty": "medium"
+      },
+      {
+        "query": "multilingual docs guideline i18n",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          }
+        ],
+        "mrr": 1.0,
+        "category": "config",
+        "difficulty": "hard"
+      },
+      {
+        "query": "telemetry PostHog Sentry",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 0.27894294565112987,
+            "map": 0.09090909090909091
+          }
+        ],
+        "mrr": 0.09090909090909091,
+        "category": "error-messages",
+        "difficulty": "easy"
+      },
+      {
+        "query": "branch review deployment readiness",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          }
+        ],
+        "mrr": 1.0,
+        "category": "error-messages",
+        "difficulty": "medium"
+      },
+      {
+        "query": "completeness review checklist",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          }
+        ],
+        "mrr": 0.3333333333333333,
+        "category": "error-messages",
+        "difficulty": "medium"
+      },
+      {
+        "query": "marketability assessment PR review",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "error-messages",
+        "difficulty": "hard"
+      },
+      {
+        "query": "AI coding agents comparison",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          }
+        ],
+        "mrr": 1.0,
+        "category": "navigation",
+        "difficulty": "easy"
+      },
+      {
+        "query": "Show HN launch tips",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.6131471927654584,
+            "map": 0.5
+          }
+        ],
+        "mrr": 1.0,
+        "category": "navigation",
+        "difficulty": "easy"
+      },
+      {
+        "query": "oss distribution platforms checklist",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          }
+        ],
+        "mrr": 0.3333333333333333,
+        "category": "navigation",
+        "difficulty": "medium"
+      },
+      {
+        "query": "personal knowledge ontology dataview",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.38685280723454163,
+            "map": 0.25
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.38685280723454163,
+            "map": 0.25
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.38685280723454163,
+            "map": 0.25
+          }
+        ],
+        "mrr": 0.5,
+        "category": "navigation",
+        "difficulty": "hard"
+      },
+      {
+        "query": "synapsepulse architecture data pipeline",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 0.6934264036172708,
+            "map": 0.5833333333333333
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.6934264036172708,
+            "map": 0.5833333333333333
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.6934264036172708,
+            "map": 0.5833333333333333
+          }
+        ],
+        "mrr": 0.5,
+        "category": "edge-case",
+        "difficulty": "medium"
+      },
+      {
+        "query": "k-billiards physics simulation game",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "edge-case",
+        "difficulty": "hard"
+      },
+      {
+        "query": "second brain book outline compilation",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 0.5,
+            "map": 0.3333333333333333
+          }
+        ],
+        "mrr": 0.3333333333333333,
+        "category": "edge-case",
+        "difficulty": "hard"
+      },
+      {
+        "query": "small web curation indie web",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "edge-case",
+        "difficulty": "hard"
+      },
+      {
+        "query": "xyzzy-nonexistent-query-12345",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control"
+      },
+      {
+        "query": "quantum computing blockchain cryptocurrency",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control"
+      },
+      {
+        "query": "recipe cooking pasta kitchen",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control"
+      },
+      {
+        "query": "weather forecast temperature humidity",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control"
+      }
+    ]
+  },
+  "chunk_precision": {
+    "ranked": [
+      {
+        "query": "heading-based chunking markdown sections",
+        "chunk_precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0
+          }
+        ]
+      },
+      {
+        "query": "hybrid search RRF reciprocal rank fusion",
+        "chunk_precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0
+          }
+        ]
+      },
+      {
+        "query": "doc policy spec format markdown",
+        "chunk_precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0
+          }
+        ]
+      }
+    ]
+  }
+}

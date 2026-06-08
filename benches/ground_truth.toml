@@ -1,11 +1,20 @@
 # Alcove search benchmark ground truth
 #
 # Queries and expected relevant files based on actual ~/.alcove/docs content.
-# 472 files across 40+ projects. Paths: "project/filename"
+# 40+ projects, 470+ files. Paths: "project/filename"
+#
+# Categories: architecture, product, cross-project, cjk, code, config,
+#             error-messages, navigation, edge-case, negative-control
+# Difficulty: easy, medium, hard
 
-# --- Architecture & system design ---
+# =============================================================================
+# Architecture (6 queries)
+# =============================================================================
+
 [[query]]
 text = "architecture"
+category = "architecture"
+difficulty = "easy"
 relevant_files = [
     "alcove/ARCHITECTURE.md",
     "epic-harness/ARCHITECTURE.md",
@@ -14,79 +23,388 @@ relevant_files = [
 ]
 
 [[query]]
-text = "MCP server protocol"
+text = "MCP server protocol transport"
+category = "architecture"
+difficulty = "medium"
 relevant_files = ["alcove/ARCHITECTURE.md", "alcove/PRD.md"]
 
 [[query]]
 text = "search index tantivy BM25"
-relevant_files = ["alcove/ARCHITECTURE.md", "alcove/strategy/SEARCH_BENCHMARK.md"]
+category = "architecture"
+difficulty = "medium"
+relevant_files = ["alcove/ARCHITECTURE.md", "alcove/strategy/BENCHMARK.md"]
 
 [[query]]
-text = "embedding model vector"
+text = "embedding model vector similarity"
+category = "architecture"
+difficulty = "medium"
 relevant_files = ["alcove/ARCHITECTURE.md"]
 
-# --- Product & features ---
+[[query]]
+text = "heading-based chunking markdown sections"
+category = "architecture"
+difficulty = "hard"
+relevant_files = ["alcove/ARCHITECTURE.md"]
+relevant_sections = [{ file = "alcove/ARCHITECTURE.md", heading = "## 검색 엔진 세부" }]
+
+[[query]]
+text = "hybrid search RRF reciprocal rank fusion"
+category = "architecture"
+difficulty = "hard"
+relevant_files = ["alcove/ARCHITECTURE.md"]
+relevant_sections = [{ file = "alcove/ARCHITECTURE.md", heading = "## 검색 엔진 세부" }]
+
+# =============================================================================
+# Product & features (6 queries)
+# =============================================================================
+
 [[query]]
 text = "setup interactive command"
+category = "product"
+difficulty = "easy"
 relevant_files = ["alcove/PRD.md"]
 
 [[query]]
 text = "benchmark quality performance"
+category = "product"
+difficulty = "easy"
 relevant_files = [
-    "alcove/strategy/SEARCH_BENCHMARK.md",
-    "alcove/strategy/QUALITY_BENCHMARK.md",
+    "alcove/strategy/BENCHMARK.md",
 ]
 
 [[query]]
 text = "vault knowledge base"
+category = "product"
+difficulty = "medium"
 relevant_files = ["alcove/ARCHITECTURE.md", "alcove/PRD.md"]
 
 [[query]]
-text = "telemetry PostHog Sentry"
-relevant_files = ["alcove/PROGRESS.md"]
-
-# --- Cross-project queries ---
-[[query]]
-text = "secrets map environment variables"
-relevant_files = [
-    "alcove/SECRETS_MAP.md",
-    "epic-harness/SECRETS_MAP.md",
-    "collet/SECRETS_MAP.md",
-]
-
-[[query]]
-text = "technical debt"
-relevant_files = [
-    "alcove/DEBT.md",
-    "epic-harness/DEBT.md",
-    "collet/DEBT.md",
-]
-
-[[query]]
-text = "design decisions"
-relevant_files = [
-    "alcove/DECISIONS.md",
-    "epic-harness/DECISIONS.md",
-    "collet/DECISIONS.md",
-]
-
-# --- CJK queries ---
-[[query]]
-text = "검색 인덱스"
-relevant_files = ["alcove/strategy/SEARCH_BENCHMARK.md", "alcove/ARCHITECTURE.md"]
-
-[[query]]
-text = "테스트"
-relevant_files = ["alcove/strategy/QUALITY_BENCHMARK.md"]
-
-# --- Low/zero relevance queries ---
-[[query]]
-text = "xyzzy-nonexistent-query-12345"
-relevant_files = []
-
-[[query]]
-text = "launch plan monetization"
+text = "launch plan monetization pricing"
+category = "product"
+difficulty = "medium"
 relevant_files = [
     "alcove/strategy/LAUNCH_PLAN.md",
     "alcove/strategy/MONETIZATION.md",
 ]
+
+[[query]]
+text = "global search cross-project documentation"
+category = "product"
+difficulty = "hard"
+relevant_files = ["alcove/strategy/GLOBAL_SEARCH.md"]
+
+[[query]]
+text = "valuation roadmap milestones"
+category = "product"
+difficulty = "hard"
+relevant_files = [
+    "alcove/strategy/VALUATION.md",
+    "alcove/PROGRESS.md",
+]
+
+[[query]]
+text = "doc policy spec format markdown"
+category = "product"
+difficulty = "medium"
+relevant_files = ["alcove/specs/SPEC_DOC_POLICY.md"]
+relevant_sections = [{ file = "alcove/specs/SPEC_DOC_POLICY.md", heading = "## 정책 파일 구조" }]
+
+[[query]]
+text = "analytics design real-time dashboard"
+category = "product"
+difficulty = "medium"
+relevant_files = ["claudy/ANALYTICS_DESIGN.md"]
+
+[[query]]
+text = "OSN product requirements features"
+category = "product"
+difficulty = "medium"
+relevant_files = ["OSN/PRD.md"]
+
+# =============================================================================
+# Cross-project (6 queries)
+# =============================================================================
+
+[[query]]
+text = "secrets map environment variables"
+category = "cross-project"
+difficulty = "easy"
+relevant_files = [
+    "alcove/SECRETS_MAP.md",
+    "epic-harness/SECRETS_MAP.md",
+    "claudy/SECRETS_MAP.md",
+]
+
+[[query]]
+text = "technical debt backlog"
+category = "cross-project"
+difficulty = "easy"
+relevant_files = [
+    "alcove/DEBT.md",
+    "epic-harness/DEBT.md",
+    "claudy/DEBT.md",
+]
+
+[[query]]
+text = "design decisions ADR"
+category = "cross-project"
+difficulty = "medium"
+relevant_files = [
+    "alcove/DECISIONS.md",
+    "epic-harness/DECISIONS.md",
+    "claudy/DECISIONS.md",
+]
+
+[[query]]
+text = "conventions coding standards style"
+category = "cross-project"
+difficulty = "medium"
+relevant_files = [
+    "alcove/CONVENTIONS.md",
+    "epic-harness/CONVENTIONS.md",
+    "claudy/CONVENTIONS.md",
+]
+
+[[query]]
+text = "code structure index AST tree-sitter"
+category = "cross-project"
+difficulty = "hard"
+relevant_files = [
+    "alcove/CODE_INDEX.md",
+    "Episteme/CODE_INDEX.md",
+]
+
+[[query]]
+text = "progress status tracking milestones"
+category = "cross-project"
+difficulty = "hard"
+relevant_files = [
+    "alcove/PROGRESS.md",
+    "epic-harness/PROGRESS.md",
+    "claudy/PROGRESS.md",
+]
+
+# =============================================================================
+# CJK queries (4 queries)
+# =============================================================================
+
+[[query]]
+text = "검색 인덱스"
+category = "cjk"
+difficulty = "easy"
+relevant_files = ["alcove/strategy/BENCHMARK.md", "alcove/ARCHITECTURE.md"]
+
+[[query]]
+text = "테스트 품질"
+category = "cjk"
+difficulty = "medium"
+relevant_files = ["alcove/strategy/BENCHMARK.md"]
+
+[[query]]
+text = "에이전트 오케스트레이션"
+category = "cjk"
+difficulty = "medium"
+relevant_files = ["epic-harness/ARCHITECTURE.md"]
+
+[[query]]
+text = "문서 변환 트랜스파일"
+category = "cjk"
+difficulty = "hard"
+relevant_files = ["llm-transpile/ARCHITECTURE.md"]
+
+# =============================================================================
+# Code-related (5 queries)
+# =============================================================================
+
+[[query]]
+text = "claudy analytics dashboard Tauri"
+category = "code"
+difficulty = "easy"
+relevant_files = ["claudy/ANALYTICS_DESIGN.md"]
+
+[[query]]
+text = "obsidian-forge LaunchAgent macOS"
+category = "code"
+difficulty = "easy"
+relevant_files = ["obsidian-forge/MAINTENANCE.md"]
+
+[[query]]
+text = "agent config reference hooks skills"
+category = "code"
+difficulty = "medium"
+relevant_files = [
+    "claude-code/agent-config-reference.md",
+    "agents/hooks/claude-code-hooks.md",
+]
+
+[[query]]
+text = "epic-harness skills consolidation subagents"
+category = "code"
+difficulty = "medium"
+relevant_files = [
+    "epic-harness/SPEC-skills-consolidation.md",
+    "agents/skills/claude-code-skills.md",
+]
+
+[[query]]
+text = "openclaw memory system context window"
+category = "code"
+difficulty = "hard"
+relevant_files = ["openclaw/MEMORY_SYSTEM.md"]
+
+# =============================================================================
+# Config & settings (4 queries)
+# =============================================================================
+
+[[query]]
+text = "doc policy transpile format"
+category = "config"
+difficulty = "easy"
+relevant_files = ["alcove/specs/SPEC_DOC_POLICY.md"]
+
+[[query]]
+text = "code structure indexing spec"
+category = "config"
+difficulty = "easy"
+relevant_files = ["alcove/specs/SPEC-code-structure-index.md"]
+
+[[query]]
+text = "llm-kernel migration fastembed"
+category = "config"
+difficulty = "medium"
+relevant_files = ["llm-kernel/MIGRATION.md"]
+
+[[query]]
+text = "multilingual docs guideline i18n"
+category = "config"
+difficulty = "hard"
+relevant_files = [
+    "project-guidelines/multilingual-docs-guideline.md",
+    "project-guidelines/cli-unified-guideline.md",
+]
+
+# =============================================================================
+# Error messages & diagnostics (4 queries)
+# =============================================================================
+
+[[query]]
+text = "telemetry PostHog Sentry"
+category = "error-messages"
+difficulty = "easy"
+relevant_files = ["alcove/PROGRESS.md"]
+
+[[query]]
+text = "branch review deployment readiness"
+category = "error-messages"
+difficulty = "medium"
+relevant_files = [
+    "epic-harness/pr3-deployment-readiness.md",
+    "epic-harness/pr3-team-analysis.md",
+]
+
+[[query]]
+text = "completeness review checklist"
+category = "error-messages"
+difficulty = "medium"
+relevant_files = ["open-design/branch-completeness-2026-05-18.md"]
+
+[[query]]
+text = "marketability assessment PR review"
+category = "error-messages"
+difficulty = "hard"
+relevant_files = ["epic-harness/marketability-assessment.md"]
+
+# =============================================================================
+# Navigation & discovery (4 queries)
+# =============================================================================
+
+[[query]]
+text = "AI coding agents comparison"
+category = "navigation"
+difficulty = "easy"
+relevant_files = [
+    "agents/comparison-ai-coding-agents.md",
+    "agents/research-ai-coding-agents.md",
+]
+
+[[query]]
+text = "Show HN launch tips"
+category = "navigation"
+difficulty = "easy"
+relevant_files = [
+    "ShowHN/ShowHN-Guide.md",
+    "ShowHN/Show HN Tips.md",
+]
+
+[[query]]
+text = "oss distribution platforms checklist"
+category = "navigation"
+difficulty = "medium"
+relevant_files = ["oss-dist/SKILL.md"]
+
+[[query]]
+text = "personal knowledge ontology dataview"
+category = "navigation"
+difficulty = "hard"
+relevant_files = [
+    "Personal/DATAVIEW_ONTOLOGY_QUERIES.md",
+    "Personal/CONCEPT_MOC.md",
+]
+
+# =============================================================================
+# Edge cases (4 queries)
+# =============================================================================
+
+[[query]]
+text = "synapsepulse architecture data pipeline"
+category = "edge-case"
+difficulty = "medium"
+relevant_files = [
+    "synapsepulse-rs/ARCHITECTURE.md",
+    "synapsepulse/ARCHITECTURE.md",
+]
+
+[[query]]
+text = "k-billiards physics simulation game"
+category = "edge-case"
+difficulty = "hard"
+relevant_files = ["k-billiards/k-billiards.md"]
+
+[[query]]
+text = "second brain book outline compilation"
+category = "edge-case"
+difficulty = "hard"
+relevant_files = ["second-brain-book/outline.md"]
+
+[[query]]
+text = "small web curation indie web"
+category = "edge-case"
+difficulty = "hard"
+relevant_files = [
+    "small-web-curation/ARCHITECTURE.md",
+    "small-web-curation/PRD.md",
+]
+
+# =============================================================================
+# Negative controls (4 queries — zero or near-zero relevance)
+# =============================================================================
+
+[[query]]
+text = "xyzzy-nonexistent-query-12345"
+category = "negative-control"
+relevant_files = []
+
+[[query]]
+text = "quantum computing blockchain cryptocurrency"
+category = "negative-control"
+relevant_files = []
+
+[[query]]
+text = "recipe cooking pasta kitchen"
+category = "negative-control"
+relevant_files = []
+
+[[query]]
+text = "weather forecast temperature humidity"
+category = "negative-control"
+relevant_files = []

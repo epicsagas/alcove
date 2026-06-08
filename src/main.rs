@@ -202,6 +202,12 @@ enum Commands {
         /// Save results to file (auto-detects format from extension: .md, .json)
         #[arg(long)]
         output_file: Option<std::path::PathBuf>,
+        /// Compare results against a baseline JSON file
+        #[arg(long)]
+        baseline: Option<std::path::PathBuf>,
+        /// Save current results as a baseline JSON file for future comparison
+        #[arg(long)]
+        save_baseline: Option<std::path::PathBuf>,
     },
 }
 
@@ -560,12 +566,16 @@ fn main() -> Result<()> {
             output,
             queries,
             output_file,
+            baseline,
+            save_baseline,
         }) => bench::cmd_bench(
             &metrics,
             &scope,
             &output,
             queries.as_deref(),
             output_file.as_deref(),
+            baseline.as_deref(),
+            save_baseline.as_deref(),
         ),
     }
 }

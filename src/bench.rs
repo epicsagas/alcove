@@ -15,11 +15,24 @@ use walkdir::WalkDir;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
+pub struct RelevantSection {
+    pub file: String,
+    pub heading: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct GroundTruthEntry {
     pub text: String,
     pub relevant_files: Vec<String>,
     #[serde(default)]
     pub project: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub difficulty: Option<String>,
+    #[serde(default)]
+    pub relevant_sections: Option<Vec<RelevantSection>>,
 }
 
 #[derive(Debug)]
@@ -32,33 +45,43 @@ pub struct BenchConfig {
     pub iterations: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EnvInfo {
     os: String,
     rust_version: String,
     alcove_version: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DataStats {
     file_count: u64,
     total_size_bytes: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrecisionAtK {
     k: usize,
     precision: f64,
     recall: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ndcg: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    map: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PerQueryPrecision {
     query: String,
     precision_at_k: Vec<PrecisionAtK>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mrr: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    difficulty: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PrecisionResults {
     grep: Vec<PerQueryPrecision>,
     ranked: Vec<PerQueryPrecision>,
@@ -66,7 +89,7 @@ pub struct PrecisionResults {
     hybrid: Option<Vec<PerQueryPrecision>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LatencyEntry {
     query: String,
     avg_us: u128,
@@ -75,7 +98,7 @@ pub struct LatencyEntry {
     p99_us: u128,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LatencyResults {
     grep: Vec<LatencyEntry>,
     ranked: Vec<LatencyEntry>,
@@ -83,21 +106,69 @@ pub struct LatencyResults {
     hybrid: Option<Vec<LatencyEntry>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ThroughputResults {
     full_rebuild_ms: u128,
     incremental_no_change_ms: u128,
     stale_detection_us: u128,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DiskUsageResults {
     index_bytes: u64,
     docs_bytes: u64,
     ratio_percent: f64,
 }
 
-#[derive(Debug, Serialize)]
+// ---------------------------------------------------------------------------
+// Chunk-level evaluation
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChunkLevelPrecision {
+    query: String,
+    chunk_precision_at_k: Vec<PrecisionAtK>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChunkLevelResults {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    grep: Vec<ChunkLevelPrecision>,
+    ranked: Vec<ChunkLevelPrecision>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hybrid: Option<Vec<ChunkLevelPrecision>>,
+}
+
+// ---------------------------------------------------------------------------
+// Regression detection
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum RegressionStatus {
+    Pass,
+    Warn,
+    Regression,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MetricComparison {
+    pub metric_name: String,
+    pub baseline: f64,
+    pub current: f64,
+    pub change_percent: f64,
+    pub status: RegressionStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub struct RegressionReport {
+    pub baseline_timestamp: String,
+    pub comparisons: Vec<MetricComparison>,
+    pub passed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BenchResults {
     timestamp: String,
     environment: EnvInfo,
@@ -110,6 +181,10 @@ pub struct BenchResults {
     throughput: Option<ThroughputResults>,
     #[serde(skip_serializing_if = "Option::is_none")]
     disk_usage: Option<DiskUsageResults>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chunk_precision: Option<ChunkLevelResults>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    regression: Option<RegressionReport>,
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +304,217 @@ pub(crate) fn compute_precision_at_k(
                 k,
                 precision,
                 recall,
+                ndcg: Some(compute_ndcg_at_k(retrieved, relevant, k)),
+                map: Some(compute_map_at_k(retrieved, relevant, k)),
+            }
+        })
+        .collect()
+}
+
+/// Normalized Discounted Cumulative Gain at K (binary relevance).
+pub(crate) fn compute_ndcg_at_k(retrieved: &[String], relevant: &[String], k: usize) -> f64 {
+    let relevant_normalized: Vec<String> = relevant
+        .iter()
+        .map(|r| r.replace('\\', "/").to_lowercase())
+        .collect();
+
+    // DCG@K: sum of rel_i / log2(i+1) for i=1..K
+    let dcg: f64 = retrieved
+        .iter()
+        .take(k)
+        .enumerate()
+        .map(|(i, doc)| {
+            let is_relevant = relevant_normalized
+                .iter()
+                .any(|r| *r == doc.replace('\\', "/").to_lowercase());
+            let rel: f64 = if is_relevant { 1.0 } else { 0.0 };
+            rel / (i as f64 + 2.0).log2() // log2(rank+1), rank is 1-indexed
+        })
+        .sum();
+
+    // IDCG@K: ideal ordering — all relevant docs at the top
+    let n_relevant = relevant.len().min(k);
+    if n_relevant == 0 {
+        return 1.0; // vacuously perfect
+    }
+    let idcg: f64 = (0..n_relevant).map(|i| 1.0 / (i as f64 + 2.0).log2()).sum();
+
+    if idcg == 0.0 { 0.0 } else { dcg / idcg }
+}
+
+/// Mean Average Precision at K.
+pub(crate) fn compute_map_at_k(retrieved: &[String], relevant: &[String], k: usize) -> f64 {
+    let relevant_normalized: Vec<String> = relevant
+        .iter()
+        .map(|r| r.replace('\\', "/").to_lowercase())
+        .collect();
+
+    if relevant.is_empty() {
+        return 1.0;
+    }
+
+    let mut hits = 0usize;
+    let mut sum_precision = 0.0;
+
+    for (i, doc) in retrieved.iter().take(k).enumerate() {
+        let is_relevant = relevant_normalized
+            .iter()
+            .any(|r| *r == doc.replace('\\', "/").to_lowercase());
+        if is_relevant {
+            hits += 1;
+            sum_precision += hits as f64 / (i + 1) as f64;
+        }
+    }
+
+    sum_precision / relevant.len().min(k) as f64
+}
+
+/// Mean Reciprocal Rank — 1/rank of the first relevant result.
+pub(crate) fn compute_mrr(retrieved: &[String], relevant: &[String]) -> f64 {
+    let relevant_normalized: Vec<String> = relevant
+        .iter()
+        .map(|r| r.replace('\\', "/").to_lowercase())
+        .collect();
+
+    if relevant.is_empty() {
+        return 1.0;
+    }
+
+    for (i, doc) in retrieved.iter().enumerate() {
+        if relevant_normalized
+            .iter()
+            .any(|r| *r == doc.replace('\\', "/").to_lowercase())
+        {
+            return 1.0 / (i + 1) as f64;
+        }
+    }
+    0.0
+}
+
+// ---------------------------------------------------------------------------
+// Chunk-level evaluation
+// ---------------------------------------------------------------------------
+
+struct RetrievedChunk {
+    file: String,
+    line_start: u64,
+}
+
+/// Extract chunk-level info (file + line_start) from ranked/hybrid search results.
+fn extract_retrieved_chunks(result: &serde_json::Value, mode: &str) -> Vec<RetrievedChunk> {
+    let matches = result["matches"].as_array();
+    match matches {
+        Some(arr) => arr
+            .iter()
+            .filter_map(|m| {
+                let project = m.get("project").and_then(|v| v.as_str()).unwrap_or("");
+                let file = m.get("file").and_then(|v| v.as_str()).unwrap_or("");
+                let line_start = if mode == "grep" {
+                    m.get("line").and_then(|v| v.as_u64())?
+                } else {
+                    m.get("line_start").and_then(|v| v.as_u64())?
+                };
+                let path = if !project.is_empty() {
+                    format!("{}/{}", project, file)
+                } else {
+                    file.to_string()
+                };
+                Some(RetrievedChunk {
+                    file: path.replace('\\', "/").to_lowercase(),
+                    line_start,
+                })
+            })
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Resolve a heading string to a (line_start, line_end) range within a file.
+/// Returns None if the file cannot be read or the heading is not found.
+fn resolve_section_lines(docs_root: &Path, file: &str, heading: &str) -> Option<(usize, usize)> {
+    let path = docs_root.join(file);
+    let content = std::fs::read_to_string(&path).ok()?;
+    let lines: Vec<&str> = content.lines().collect();
+
+    // Find the heading line (case-insensitive match)
+    let heading_lower = heading.to_lowercase();
+    let heading_line = lines
+        .iter()
+        .position(|l| l.to_lowercase().starts_with(&heading_lower))?;
+
+    // Find the next heading at the same or higher level (## or #)
+    let heading_prefix: &str = lines[heading_line].split_whitespace().next().unwrap_or("");
+    let prefix_len = heading_prefix.len();
+
+    let mut end_line = lines.len();
+    for (i, line) in lines.iter().enumerate().skip(heading_line + 1) {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#')
+            && trimmed.len() > prefix_len.min(2)
+            && trimmed.chars().take(prefix_len.max(2)).all(|c| c == '#')
+        {
+            end_line = i;
+            break;
+        }
+    }
+
+    // 1-based line numbers
+    Some((heading_line + 1, end_line))
+}
+
+/// Compute chunk-level precision: does the retrieved chunk's line_start fall
+/// within any of the relevant sections' line ranges?
+fn compute_chunk_precision(
+    chunks: &[RetrievedChunk],
+    sections: &[RelevantSection],
+    docs_root: &Path,
+    k_values: &[usize],
+) -> Vec<PrecisionAtK> {
+    // Resolve each section to a line range
+    let resolved: Vec<(String, usize, usize)> = sections
+        .iter()
+        .filter_map(|s| {
+            let file_lower = s.file.replace('\\', "/").to_lowercase();
+            resolve_section_lines(docs_root, &s.file, &s.heading)
+                .map(|(start, end)| (file_lower, start, end))
+        })
+        .collect();
+
+    if resolved.is_empty() {
+        return k_values
+            .iter()
+            .map(|&k| PrecisionAtK {
+                k,
+                precision: 0.0,
+                recall: 1.0, // vacuously perfect
+                ndcg: None,
+                map: None,
+            })
+            .collect();
+    }
+
+    k_values
+        .iter()
+        .map(|&k| {
+            let top_k: Vec<&RetrievedChunk> = chunks.iter().take(k).collect();
+            let hits = top_k
+                .iter()
+                .filter(|c| {
+                    resolved.iter().any(|(file, start, end)| {
+                        c.file == *file
+                            && c.line_start as usize >= *start
+                            && c.line_start as usize <= *end
+                    })
+                })
+                .count() as f64;
+            let precision = if k > 0 { hits / k as f64 } else { 0.0 };
+            let recall = hits / resolved.len() as f64;
+            PrecisionAtK {
+                k,
+                precision,
+                recall,
+                ndcg: None,
+                map: None,
             }
         })
         .collect()
@@ -252,6 +538,219 @@ pub(crate) fn default_ground_truth_path() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("benches")
         .join("ground_truth.toml")
+}
+
+// ---------------------------------------------------------------------------
+// Regression detection functions
+// ---------------------------------------------------------------------------
+
+/// Thresholds for regression classification.
+const PRECISION_REGRESSION_THRESHOLD: f64 = 5.0; // >5% precision drop → Regression
+const LATENCY_REGRESSION_THRESHOLD: f64 = 20.0; // >20% latency increase → Regression
+const THROUGHPUT_REGRESSION_THRESHOLD: f64 = 15.0; // >15% throughput drop → Regression
+const WARN_HALF_FACTOR: f64 = 0.5; // within half the threshold → Warn
+
+fn load_baseline(path: &Path) -> Result<BenchResults> {
+    let data = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read baseline file: {}", path.display()))?;
+    serde_json::from_str(&data).with_context(|| "Failed to parse baseline JSON".to_string())
+}
+
+fn save_baseline(path: &Path, results: &BenchResults) -> Result<()> {
+    let json = serde_json::to_string_pretty(results)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, json)?;
+    Ok(())
+}
+
+fn compare_with_baseline(current: &BenchResults, baseline: &BenchResults) -> RegressionReport {
+    let mut comparisons = Vec::new();
+
+    // Compare precision metrics
+    if let (Some(cur_prec), Some(base_prec)) = (&current.precision, &baseline.precision) {
+        // Aggregate per-K precision across all queries for ranked mode
+        compare_precision_mode(
+            &mut comparisons,
+            "ranked",
+            &base_prec.ranked,
+            &cur_prec.ranked,
+        );
+    }
+
+    // Compare latency (p50, p95)
+    if let (Some(cur_lat), Some(base_lat)) = (&current.latency, &baseline.latency) {
+        compare_latency_mode(&mut comparisons, "grep", &base_lat.grep, &cur_lat.grep);
+        compare_latency_mode(
+            &mut comparisons,
+            "ranked",
+            &base_lat.ranked,
+            &cur_lat.ranked,
+        );
+    }
+
+    // Compare throughput
+    if let (Some(cur_tp), Some(base_tp)) = (&current.throughput, &baseline.throughput) {
+        compare_metric(
+            &mut comparisons,
+            "throughput_full_rebuild",
+            base_tp.full_rebuild_ms as f64,
+            cur_tp.full_rebuild_ms as f64,
+            THROUGHPUT_REGRESSION_THRESHOLD,
+            false, // higher ms is worse
+        );
+        compare_metric(
+            &mut comparisons,
+            "throughput_incremental",
+            base_tp.incremental_no_change_ms as f64,
+            cur_tp.incremental_no_change_ms as f64,
+            THROUGHPUT_REGRESSION_THRESHOLD,
+            false,
+        );
+    }
+
+    let passed = comparisons
+        .iter()
+        .all(|c| c.status != RegressionStatus::Regression);
+
+    RegressionReport {
+        baseline_timestamp: baseline.timestamp.clone(),
+        comparisons,
+        passed,
+    }
+}
+
+/// Average precision across all queries for each K, then compare.
+fn compare_precision_mode(
+    comparisons: &mut Vec<MetricComparison>,
+    mode: &str,
+    base_queries: &[PerQueryPrecision],
+    cur_queries: &[PerQueryPrecision],
+) {
+    if base_queries.is_empty() || cur_queries.is_empty() {
+        return;
+    }
+
+    // Average precision@K across queries (use first K from each query)
+    let base_avg = avg_first_k_precision(base_queries);
+    let cur_avg = avg_first_k_precision(cur_queries);
+    compare_metric(
+        comparisons,
+        &format!("avg_precision@K ({mode})"),
+        base_avg,
+        cur_avg,
+        PRECISION_REGRESSION_THRESHOLD,
+        true,
+    );
+
+    // Average NDCG
+    let base_ndcg = avg_option_field(base_queries, |q| q.mrr);
+    let cur_ndcg = avg_option_field(cur_queries, |q| q.mrr);
+    if let (Some(b), Some(c)) = (base_ndcg, cur_ndcg) {
+        compare_metric(
+            comparisons,
+            &format!("avg_mrr ({mode})"),
+            b,
+            c,
+            PRECISION_REGRESSION_THRESHOLD,
+            true,
+        );
+    }
+}
+
+fn avg_first_k_precision(queries: &[PerQueryPrecision]) -> f64 {
+    let precisions: Vec<f64> = queries
+        .iter()
+        .filter_map(|q| q.precision_at_k.first().map(|p| p.precision))
+        .collect();
+    if precisions.is_empty() {
+        0.0
+    } else {
+        precisions.iter().sum::<f64>() / precisions.len() as f64
+    }
+}
+
+fn avg_option_field<F>(queries: &[PerQueryPrecision], extractor: F) -> Option<f64>
+where
+    F: Fn(&PerQueryPrecision) -> Option<f64>,
+{
+    let values: Vec<f64> = queries.iter().filter_map(extractor).collect();
+    if values.is_empty() {
+        None
+    } else {
+        Some(values.iter().sum::<f64>() / values.len() as f64)
+    }
+}
+
+fn compare_latency_mode(
+    comparisons: &mut Vec<MetricComparison>,
+    mode: &str,
+    base: &[LatencyEntry],
+    cur: &[LatencyEntry],
+) {
+    for (b, c) in base.iter().zip(cur.iter()) {
+        compare_metric(
+            comparisons,
+            &format!("latency_{mode}_{}_p50", b.query),
+            b.p50_us as f64,
+            c.p50_us as f64,
+            LATENCY_REGRESSION_THRESHOLD,
+            false,
+        );
+        compare_metric(
+            comparisons,
+            &format!("latency_{mode}_{}_p95", b.query),
+            b.p95_us as f64,
+            c.p95_us as f64,
+            LATENCY_REGRESSION_THRESHOLD,
+            false,
+        );
+    }
+}
+
+/// Compare a single metric value against baseline.
+/// `lower_is_worse`: true for precision/throughput (dropping is bad), false for latency (increasing is bad).
+fn compare_metric(
+    comparisons: &mut Vec<MetricComparison>,
+    name: &str,
+    baseline: f64,
+    current: f64,
+    threshold: f64,
+    lower_is_worse: bool,
+) {
+    if baseline == 0.0 {
+        return; // avoid division by zero
+    }
+    let change_pct = (current - baseline) / baseline * 100.0;
+
+    let status = if lower_is_worse {
+        // Negative change_pct = drop = bad
+        if change_pct <= -threshold {
+            RegressionStatus::Regression
+        } else if change_pct <= -threshold * WARN_HALF_FACTOR {
+            RegressionStatus::Warn
+        } else {
+            RegressionStatus::Pass
+        }
+    } else {
+        // Positive change_pct = increase = bad (latency)
+        if change_pct >= threshold {
+            RegressionStatus::Regression
+        } else if change_pct >= threshold * WARN_HALF_FACTOR {
+            RegressionStatus::Warn
+        } else {
+            RegressionStatus::Pass
+        }
+    };
+
+    comparisons.push(MetricComparison {
+        metric_name: name.to_string(),
+        baseline,
+        current,
+        change_percent: change_pct,
+        status,
+    });
 }
 
 fn get_docs_root() -> Result<PathBuf> {
@@ -290,12 +789,17 @@ fn run_precision_benchmark(
     docs_root: &Path,
     queries: &[GroundTruthEntry],
     _scope: &str,
-) -> Result<PrecisionResults> {
+) -> Result<(PrecisionResults, Option<ChunkLevelResults>)> {
     let k_values = [5, 10, 20];
     let limit = 20;
 
     let mut grep_results: Vec<PerQueryPrecision> = Vec::new();
     let mut ranked_results: Vec<PerQueryPrecision> = Vec::new();
+
+    // Chunk-level evaluation accumulators
+    let mut chunk_ranked: Vec<ChunkLevelPrecision> = Vec::new();
+    #[cfg(feature = "embed")]
+    let mut chunk_hybrid: Vec<ChunkLevelPrecision> = Vec::new();
 
     // Ensure index exists for ranked search
     if !crate::index::index_exists(docs_root) {
@@ -319,19 +823,39 @@ fn run_precision_benchmark(
         )?;
         let grep_files = extract_retrieved_files(&grep_result, "grep");
         let grep_pak = compute_precision_at_k(&grep_files, &entry.relevant_files, &k_values);
+        let grep_mrr = compute_mrr(&grep_files, &entry.relevant_files);
         grep_results.push(PerQueryPrecision {
             query: entry.text.clone(),
             precision_at_k: grep_pak,
+            mrr: Some(grep_mrr),
+            category: entry.category.clone(),
+            difficulty: entry.difficulty.clone(),
         });
 
         // Ranked search
         let ranked_result = crate::index::search_indexed(docs_root, &entry.text, limit, None)?;
         let ranked_files = extract_retrieved_files(&ranked_result, "ranked");
         let ranked_pak = compute_precision_at_k(&ranked_files, &entry.relevant_files, &k_values);
+        let ranked_mrr = compute_mrr(&ranked_files, &entry.relevant_files);
         ranked_results.push(PerQueryPrecision {
             query: entry.text.clone(),
             precision_at_k: ranked_pak,
+            mrr: Some(ranked_mrr),
+            category: entry.category.clone(),
+            difficulty: entry.difficulty.clone(),
         });
+
+        // Chunk-level evaluation (only for entries with relevant_sections)
+        if let Some(ref sections) = entry.relevant_sections
+            && !sections.is_empty()
+        {
+            let chunks = extract_retrieved_chunks(&ranked_result, "ranked");
+            let cpa = compute_chunk_precision(&chunks, sections, docs_root, &k_values);
+            chunk_ranked.push(ChunkLevelPrecision {
+                query: entry.text.clone(),
+                chunk_precision_at_k: cpa,
+            });
+        }
     }
 
     // Hybrid search (only if embed feature is enabled)
@@ -349,10 +873,28 @@ fn run_precision_benchmark(
                         let hybrid_files = extract_retrieved_files(&hybrid_result, "hybrid");
                         let hybrid_pak =
                             compute_precision_at_k(&hybrid_files, &entry.relevant_files, &k_values);
+                        let hybrid_mrr = compute_mrr(&hybrid_files, &entry.relevant_files);
                         results.push(PerQueryPrecision {
                             query: entry.text.clone(),
                             precision_at_k: hybrid_pak,
+                            mrr: Some(hybrid_mrr),
+                            category: entry.category.clone(),
+                            difficulty: entry.difficulty.clone(),
                         });
+
+                        // Chunk-level evaluation for hybrid
+                        if let Some(ref sections) = entry.relevant_sections {
+                            if !sections.is_empty() {
+                                let chunks = extract_retrieved_chunks(&hybrid_result, "hybrid");
+                                let cpa = compute_chunk_precision(
+                                    &chunks, sections, docs_root, &k_values,
+                                );
+                                chunk_hybrid.push(ChunkLevelPrecision {
+                                    query: entry.text.clone(),
+                                    chunk_precision_at_k: cpa,
+                                });
+                            }
+                        }
                     }
                     Err(e) => {
                         eprintln!(
@@ -375,11 +917,31 @@ fn run_precision_benchmark(
     #[cfg(not(feature = "embed"))]
     let hybrid_results: Option<Vec<PerQueryPrecision>> = None;
 
-    Ok(PrecisionResults {
-        grep: grep_results,
-        ranked: ranked_results,
-        hybrid: hybrid_results,
-    })
+    let chunk_results = if chunk_ranked.is_empty() {
+        None
+    } else {
+        Some(ChunkLevelResults {
+            grep: Vec::new(),
+            ranked: chunk_ranked,
+            #[cfg(feature = "embed")]
+            hybrid: if chunk_hybrid.is_empty() {
+                None
+            } else {
+                Some(chunk_hybrid)
+            },
+            #[cfg(not(feature = "embed"))]
+            hybrid: None,
+        })
+    };
+
+    Ok((
+        PrecisionResults {
+            grep: grep_results,
+            ranked: ranked_results,
+            hybrid: hybrid_results,
+        },
+        chunk_results,
+    ))
 }
 
 fn run_latency_benchmark(
@@ -587,9 +1149,19 @@ pub(crate) fn format_human(results: &BenchResults) -> String {
                 out.push_str(&format!("    \"{}\"\n", q.query));
                 for pak in &q.precision_at_k {
                     out.push_str(&format!(
-                        "      P@{}: {:.3}  R@{}: {:.3}\n",
+                        "      P@{}: {:.3}  R@{}: {:.3}",
                         pak.k, pak.precision, pak.k, pak.recall
                     ));
+                    if let Some(ndcg) = pak.ndcg {
+                        out.push_str(&format!("  NDCG: {:.3}", ndcg));
+                    }
+                    if let Some(map) = pak.map {
+                        out.push_str(&format!("  MAP: {:.3}", map));
+                    }
+                    out.push('\n');
+                }
+                if let Some(mrr) = q.mrr {
+                    out.push_str(&format!("      MRR: {:.3}\n", mrr));
                 }
             }
         }
@@ -599,9 +1171,19 @@ pub(crate) fn format_human(results: &BenchResults) -> String {
                 out.push_str(&format!("    \"{}\"\n", q.query));
                 for pak in &q.precision_at_k {
                     out.push_str(&format!(
-                        "      P@{}: {:.3}  R@{}: {:.3}\n",
+                        "      P@{}: {:.3}  R@{}: {:.3}",
                         pak.k, pak.precision, pak.k, pak.recall
                     ));
+                    if let Some(ndcg) = pak.ndcg {
+                        out.push_str(&format!("  NDCG: {:.3}", ndcg));
+                    }
+                    if let Some(map) = pak.map {
+                        out.push_str(&format!("  MAP: {:.3}", map));
+                    }
+                    out.push('\n');
+                }
+                if let Some(mrr) = q.mrr {
+                    out.push_str(&format!("      MRR: {:.3}\n", mrr));
                 }
             }
         }
@@ -654,6 +1236,69 @@ pub(crate) fn format_human(results: &BenchResults) -> String {
         out.push_str(&format!("  Index:  {} bytes\n", disk.index_bytes));
         out.push_str(&format!("  Docs:   {} bytes\n", disk.docs_bytes));
         out.push_str(&format!("  Ratio:  {:.1}%\n", disk.ratio_percent));
+    }
+
+    if let Some(ref chunk) = results.chunk_precision {
+        out.push_str(&format!("\n{}\n", style("Chunk-Level Accuracy").bold()));
+        out.push_str(&format!("{}\n", "-".repeat(70)));
+
+        for (mode, queries) in [("Ranked", &chunk.ranked)] {
+            out.push_str(&format!("\n  {}:\n", style(mode).cyan()));
+            for q in queries {
+                out.push_str(&format!("    \"{}\"\n", q.query));
+                for pak in &q.chunk_precision_at_k {
+                    out.push_str(&format!(
+                        "      Chunk-P@{}: {:.3}  Chunk-R@{}: {:.3}\n",
+                        pak.k, pak.precision, pak.k, pak.recall
+                    ));
+                }
+            }
+        }
+        if let Some(ref hybrid) = chunk.hybrid {
+            out.push_str(&format!("\n  {}:\n", style("Hybrid").cyan()));
+            for q in hybrid {
+                out.push_str(&format!("    \"{}\"\n", q.query));
+                for pak in &q.chunk_precision_at_k {
+                    out.push_str(&format!(
+                        "      Chunk-P@{}: {:.3}  Chunk-R@{}: {:.3}\n",
+                        pak.k, pak.precision, pak.k, pak.recall
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(ref regression) = results.regression {
+        out.push_str(&format!(
+            "\n{} (vs {})\n",
+            style("Regression Analysis").bold(),
+            regression.baseline_timestamp
+        ));
+        out.push_str(&format!("{}\n", "-".repeat(70)));
+
+        let overall = if regression.passed {
+            style("PASS — No regressions detected").green().to_string()
+        } else {
+            style("FAIL — Regressions detected").red().to_string()
+        };
+        out.push_str(&format!("  Overall: {}\n\n", overall));
+
+        for c in &regression.comparisons {
+            let icon = match c.status {
+                RegressionStatus::Pass => style("✓").green().to_string(),
+                RegressionStatus::Warn => style("⚠").yellow().to_string(),
+                RegressionStatus::Regression => style("✗").red().to_string(),
+            };
+            let change = if c.change_percent >= 0.0 {
+                format!("+{:.1}%", c.change_percent)
+            } else {
+                format!("{:.1}%", c.change_percent)
+            };
+            out.push_str(&format!(
+                "  {} {:40} baseline={:.3} current={:.3} ({})\n",
+                icon, c.metric_name, c.baseline, c.current, change
+            ));
+        }
     }
 
     out
@@ -754,39 +1399,45 @@ pub(crate) fn format_markdown(results: &BenchResults) -> String {
         md.push_str("## 4. Search Quality\n\n");
         for (label, queries) in [("Grep", &precision.grep), ("Ranked", &precision.ranked)] {
             md.push_str(&format!("### {}\n\n", label));
-            md.push_str("| Query | P@5 | R@5 | P@10 | R@10 | P@20 | R@20 |\n");
-            md.push_str("|-------|-----|-----|------|------|------|------|\n");
+            md.push_str("| Query | P@5 | R@5 | NDCG@5 | MAP@5 | MRR |\n");
+            md.push_str("|-------|-----|-----|--------|-------|-----|\n");
             for q in queries {
-                let vals: Vec<String> = q
-                    .precision_at_k
-                    .iter()
-                    .flat_map(|pak| {
-                        vec![
-                            format!("{:.3}", pak.precision),
-                            format!("{:.3}", pak.recall),
-                        ]
-                    })
-                    .collect();
-                md.push_str(&format!("| {} | {} |\n", q.query, vals.join(" | ")));
+                let p5 = q.precision_at_k.first();
+                let p_str = p5.map_or("-".into(), |p| format!("{:.3}", p.precision));
+                let r_str = p5.map_or("-".into(), |p| format!("{:.3}", p.recall));
+                let ndcg_str = p5
+                    .and_then(|p| p.ndcg)
+                    .map_or("-".into(), |v| format!("{:.3}", v));
+                let map_str = p5
+                    .and_then(|p| p.map)
+                    .map_or("-".into(), |v| format!("{:.3}", v));
+                let mrr_str = q.mrr.map_or("-".into(), |v| format!("{:.3}", v));
+                md.push_str(&format!(
+                    "| {} | {} | {} | {} | {} | {} |\n",
+                    q.query, p_str, r_str, ndcg_str, map_str, mrr_str
+                ));
             }
             md.push('\n');
         }
         if let Some(ref hybrid) = precision.hybrid {
             md.push_str("### Hybrid\n\n");
-            md.push_str("| Query | P@5 | R@5 | P@10 | R@10 | P@20 | R@20 |\n");
-            md.push_str("|-------|-----|-----|------|------|------|------|\n");
+            md.push_str("| Query | P@5 | R@5 | NDCG@5 | MAP@5 | MRR |\n");
+            md.push_str("|-------|-----|-----|--------|-------|-----|\n");
             for q in hybrid {
-                let vals: Vec<String> = q
-                    .precision_at_k
-                    .iter()
-                    .flat_map(|pak| {
-                        vec![
-                            format!("{:.3}", pak.precision),
-                            format!("{:.3}", pak.recall),
-                        ]
-                    })
-                    .collect();
-                md.push_str(&format!("| {} | {} |\n", q.query, vals.join(" | ")));
+                let p5 = q.precision_at_k.first();
+                let p_str = p5.map_or("-".into(), |p| format!("{:.3}", p.precision));
+                let r_str = p5.map_or("-".into(), |p| format!("{:.3}", p.recall));
+                let ndcg_str = p5
+                    .and_then(|p| p.ndcg)
+                    .map_or("-".into(), |v| format!("{:.3}", v));
+                let map_str = p5
+                    .and_then(|p| p.map)
+                    .map_or("-".into(), |v| format!("{:.3}", v));
+                let mrr_str = q.mrr.map_or("-".into(), |v| format!("{:.3}", v));
+                md.push_str(&format!(
+                    "| {} | {} | {} | {} | {} | {} |\n",
+                    q.query, p_str, r_str, ndcg_str, map_str, mrr_str
+                ));
             }
             md.push('\n');
         }
@@ -801,8 +1452,85 @@ pub(crate) fn format_markdown(results: &BenchResults) -> String {
         md.push('\n');
     }
 
+    // Chunk-level accuracy
+    if let Some(ref chunk) = results.chunk_precision {
+        md.push_str("## 6. Chunk-Level Accuracy\n\n");
+        md.push_str("| Query | Mode | Chunk-P@5 | Chunk-R@5 | Chunk-P@10 | Chunk-R@10 |\n");
+        md.push_str("|-------|------|-----------|-----------|------------|------------|\n");
+        for q in &chunk.ranked {
+            let vals: Vec<String> = q
+                .chunk_precision_at_k
+                .iter()
+                .flat_map(|pak| {
+                    vec![
+                        format!("{:.3}", pak.precision),
+                        format!("{:.3}", pak.recall),
+                    ]
+                })
+                .collect();
+            md.push_str(&format!(
+                "| {} | ranked | {} |\n",
+                q.query,
+                vals.join(" | ")
+            ));
+        }
+        if let Some(ref hybrid) = chunk.hybrid {
+            for q in hybrid {
+                let vals: Vec<String> = q
+                    .chunk_precision_at_k
+                    .iter()
+                    .flat_map(|pak| {
+                        vec![
+                            format!("{:.3}", pak.precision),
+                            format!("{:.3}", pak.recall),
+                        ]
+                    })
+                    .collect();
+                md.push_str(&format!(
+                    "| {} | hybrid | {} |\n",
+                    q.query,
+                    vals.join(" | ")
+                ));
+            }
+        }
+        md.push('\n');
+    }
+
+    // Regression analysis
+    if let Some(ref regression) = results.regression {
+        md.push_str(&format!(
+            "## 7. Regression Analysis (vs {})\n\n",
+            regression.baseline_timestamp
+        ));
+        let overall = if regression.passed {
+            "**PASS** — No regressions detected"
+        } else {
+            "**FAIL** — Regressions detected"
+        };
+        md.push_str(&format!("Overall: {}\n\n", overall));
+        md.push_str("| Metric | Baseline | Current | Change | Status |\n");
+        md.push_str("|--------|----------|---------|--------|--------|\n");
+        for c in &regression.comparisons {
+            let change = if c.change_percent >= 0.0 {
+                format!("+{:.1}%", c.change_percent)
+            } else {
+                format!("{:.1}%", c.change_percent)
+            };
+            let status = match c.status {
+                RegressionStatus::Pass => "✓ pass",
+                RegressionStatus::Warn => "⚠ warn",
+                RegressionStatus::Regression => "✗ regression",
+            };
+            md.push_str(&format!(
+                "| {} | {:.3} | {:.3} | {} | {} |\n",
+                c.metric_name, c.baseline, c.current, change, status
+            ));
+        }
+        md.push('\n');
+    }
+
     // Conclusion
-    md.push_str("## 6. Conclusion\n\n");
+    md.push_str("## 8. Conclusion\n\n");
     if let (Some(latency), Some(precision)) = (&results.latency, &results.precision) {
         let avg_grep = latency
             .grep
@@ -878,6 +1606,8 @@ pub fn cmd_bench(
     output: &str,
     queries: Option<&Path>,
     output_file: Option<&Path>,
+    baseline: Option<&Path>,
+    save_baseline_path: Option<&Path>,
 ) -> Result<()> {
     let docs_root = get_docs_root()?;
 
@@ -921,15 +1651,12 @@ pub fn cmd_bench(
 
     let data_stats = collect_data_stats(&docs_root);
 
-    let precision = if run_precision {
+    let (precision, chunk_precision) = if run_precision {
         eprintln!("  {} Running precision benchmarks...", style("...").dim());
-        Some(run_precision_benchmark(
-            &docs_root,
-            &ground_truth,
-            &config.scope,
-        )?)
+        let (prec, chunk) = run_precision_benchmark(&docs_root, &ground_truth, &config.scope)?;
+        (Some(prec), chunk)
     } else {
-        None
+        (None, None)
     };
 
     let latency = if run_latency {
@@ -960,7 +1687,7 @@ pub fn cmd_bench(
         None
     };
 
-    let results = BenchResults {
+    let mut results = BenchResults {
         timestamp: now_rfc3339(),
         environment: EnvInfo {
             os: std::env::consts::OS.to_string(),
@@ -972,7 +1699,43 @@ pub fn cmd_bench(
         latency,
         throughput,
         disk_usage,
+        chunk_precision,
+        regression: None,
     };
+
+    // Regression detection: compare against baseline if provided
+    if let Some(baseline_path) = baseline {
+        match load_baseline(baseline_path) {
+            Ok(baseline_results) => {
+                let report = compare_with_baseline(&results, &baseline_results);
+                eprintln!(
+                    "  {} Compared against baseline ({})",
+                    style("...").dim(),
+                    baseline_path.display()
+                );
+                results.regression = Some(report);
+            }
+            Err(e) => {
+                eprintln!("  {} Failed to load baseline: {e}", style("✗").red());
+            }
+        }
+    }
+
+    // Save baseline if requested
+    if let Some(save_path) = save_baseline_path {
+        match save_baseline(save_path, &results) {
+            Ok(()) => {
+                eprintln!(
+                    "  {} Baseline saved to {}",
+                    style("✓").green(),
+                    save_path.display()
+                );
+            }
+            Err(e) => {
+                eprintln!("  {} Failed to save baseline: {e}", style("✗").red());
+            }
+        }
+    }
 
     let output_content = match config.output.as_str() {
         "json" => serde_json::to_string_pretty(&results)?,
@@ -1204,6 +1967,106 @@ relevant_files = []
         assert!(files.is_empty());
     }
 
+    // --- Chunk-level tests ---
+
+    #[test]
+    fn test_extract_retrieved_chunks_ranked() {
+        let json = serde_json::json!({
+            "matches": [
+                {"project": "alcove", "file": "ARCHITECTURE.md", "chunk_id": 0, "line_start": 1, "snippet": "text", "score": 3.0},
+                {"project": "alcove", "file": "PRD.md", "chunk_id": 2, "line_start": 45, "snippet": "text", "score": 2.0},
+            ]
+        });
+        let chunks = extract_retrieved_chunks(&json, "ranked");
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].file, "alcove/architecture.md");
+        assert_eq!(chunks[0].line_start, 1);
+        assert_eq!(chunks[1].file, "alcove/prd.md");
+        assert_eq!(chunks[1].line_start, 45);
+    }
+
+    #[test]
+    fn test_extract_retrieved_chunks_grep() {
+        let json = serde_json::json!({
+            "matches": [
+                {"project": "alcove", "file": "test.md", "line": 10, "snippet": "hit"},
+            ]
+        });
+        let chunks = extract_retrieved_chunks(&json, "grep");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].line_start, 10);
+    }
+
+    #[test]
+    fn test_resolve_section_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.md");
+        std::fs::write(
+            &file_path,
+            "# Title\n\nIntro text\n\n## Section One\n\nBody one\n\n## Section Two\n\nBody two\n",
+        )
+        .unwrap();
+
+        let result = resolve_section_lines(dir.path(), "test.md", "## Section One");
+        assert!(result.is_some());
+        let (start, end) = result.unwrap();
+        assert_eq!(start, 5); // "## Section One" is line 5 (1-based)
+        assert_eq!(end, 8); // ends before "## Section Two" at line 9
+
+        let result2 = resolve_section_lines(dir.path(), "test.md", "## Section Two");
+        assert!(result2.is_some());
+        let (start2, end2) = result2.unwrap();
+        assert_eq!(start2, 9);
+        assert_eq!(end2, 11); // last section extends to EOF (11 lines)
+    }
+
+    #[test]
+    fn test_resolve_section_lines_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.md");
+        std::fs::write(&file_path, "# Title\nNo headings here\n").unwrap();
+        let result = resolve_section_lines(dir.path(), "test.md", "## Missing");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_compute_chunk_precision() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("doc.md");
+        std::fs::write(
+            &file_path,
+            "# Doc\n\n## Alpha\n\nAlpha content\n\n## Beta\n\nBeta content\n",
+        )
+        .unwrap();
+
+        let chunks = vec![
+            RetrievedChunk {
+                file: "doc.md".into(),
+                line_start: 4,
+            }, // inside Alpha
+            RetrievedChunk {
+                file: "doc.md".into(),
+                line_start: 8,
+            }, // inside Beta
+            RetrievedChunk {
+                file: "other.md".into(),
+                line_start: 1,
+            }, // wrong file
+        ];
+        let sections = vec![RelevantSection {
+            file: "doc.md".into(),
+            heading: "## Alpha".into(),
+        }];
+
+        let pak = compute_chunk_precision(&chunks, &sections, dir.path(), &[2, 3]);
+        assert_eq!(pak.len(), 2);
+        // Top-2: 1 hit (Alpha) / 2 = 0.5
+        assert!((pak[0].precision - 0.5).abs() < 1e-9);
+        assert!((pak[0].recall - 1.0).abs() < 1e-9);
+        // Top-3: 1 hit / 3 ≈ 0.333
+        assert!(pak[1].precision > 0.0 && pak[1].precision < 0.5);
+    }
+
     #[test]
     fn test_load_ground_truth() {
         let dir = tempfile::tempdir().unwrap();
@@ -1248,13 +2111,20 @@ relevant_files = ["c.md"]
                         k: 5,
                         precision: 0.6,
                         recall: 0.5,
+                        ndcg: None,
+                        map: None,
                     },
                     PrecisionAtK {
                         k: 10,
                         precision: 0.5,
                         recall: 0.8,
+                        ndcg: None,
+                        map: None,
                     },
                 ],
+                mrr: None,
+                category: None,
+                difficulty: None,
             },
             PerQueryPrecision {
                 query: "b".to_string(),
@@ -1263,18 +2133,107 @@ relevant_files = ["c.md"]
                         k: 5,
                         precision: 0.4,
                         recall: 0.3,
+                        ndcg: None,
+                        map: None,
                     },
                     PrecisionAtK {
                         k: 10,
                         precision: 0.3,
                         recall: 0.6,
+                        ndcg: None,
+                        map: None,
                     },
                 ],
+                mrr: None,
+                category: None,
+                difficulty: None,
             },
         ];
         assert!((average_precision_at_k(&queries, 5) - 0.5).abs() < f64::EPSILON);
         assert!((average_precision_at_k(&queries, 10) - 0.4).abs() < f64::EPSILON);
         assert!((average_precision_at_k(&[], 5) - 0.0).abs() < f64::EPSILON);
+    }
+
+    // --- IR metrics tests ---
+
+    #[test]
+    fn test_ndcg_perfect_ranking() {
+        let retrieved = vec!["a.md".into(), "b.md".into(), "c.md".into()];
+        let relevant = vec!["a.md".into(), "b.md".into()];
+        // All relevant at top → NDCG@5 should be 1.0
+        let ndcg = compute_ndcg_at_k(&retrieved, &relevant, 5);
+        assert!((ndcg - 1.0).abs() < 1e-9, "expected 1.0, got {ndcg}");
+    }
+
+    #[test]
+    fn test_ndcg_partial_ranking() {
+        let retrieved = vec!["x.md".into(), "a.md".into(), "y.md".into()];
+        let relevant = vec!["a.md".into(), "b.md".into()];
+        // Only 1 of 2 relevant in top-3, at position 2
+        let ndcg = compute_ndcg_at_k(&retrieved, &relevant, 3);
+        assert!(ndcg > 0.0 && ndcg < 1.0, "expected (0, 1), got {ndcg}");
+    }
+
+    #[test]
+    fn test_ndcg_no_relevant() {
+        let retrieved = vec!["x.md".into()];
+        let ndcg = compute_ndcg_at_k(&retrieved, &[], 5);
+        assert!((ndcg - 1.0).abs() < 1e-9, "vacuously perfect: {ndcg}");
+    }
+
+    #[test]
+    fn test_ndcg_nothing_retrieved() {
+        let ndcg = compute_ndcg_at_k(&[], &["a.md".into()], 5);
+        assert!((ndcg - 0.0).abs() < 1e-9, "no results: {ndcg}");
+    }
+
+    #[test]
+    fn test_map_perfect() {
+        let retrieved = vec!["a.md".into(), "b.md".into(), "c.md".into()];
+        let relevant = vec!["a.md".into(), "b.md".into()];
+        let map = compute_map_at_k(&retrieved, &relevant, 5);
+        assert!((map - 1.0).abs() < 1e-9, "expected 1.0, got {map}");
+    }
+
+    #[test]
+    fn test_map_partial() {
+        let retrieved = vec!["x.md".into(), "a.md".into()];
+        let relevant = vec!["a.md".into(), "b.md".into()];
+        let map = compute_map_at_k(&retrieved, &relevant, 5);
+        // At pos 2, found 1st relevant → P@2 = 1/2 = 0.5; avg / 2 = 0.25
+        assert!(map > 0.0 && map < 1.0, "expected partial, got {map}");
+    }
+
+    #[test]
+    fn test_map_no_relevant() {
+        let map = compute_map_at_k(&["a.md".into()], &[], 5);
+        assert!((map - 1.0).abs() < 1e-9, "vacuously perfect: {map}");
+    }
+
+    #[test]
+    fn test_mrr_first_position() {
+        let retrieved = vec!["a.md".into(), "b.md".into()];
+        let mrr = compute_mrr(&retrieved, &["a.md".into()]);
+        assert!((mrr - 1.0).abs() < 1e-9, "expected 1.0, got {mrr}");
+    }
+
+    #[test]
+    fn test_mrr_third_position() {
+        let retrieved = vec!["x.md".into(), "y.md".into(), "a.md".into()];
+        let mrr = compute_mrr(&retrieved, &["a.md".into()]);
+        assert!((mrr - 1.0 / 3.0).abs() < 1e-9, "expected 0.333, got {mrr}");
+    }
+
+    #[test]
+    fn test_mrr_not_found() {
+        let mrr = compute_mrr(&["x.md".into()], &["a.md".into()]);
+        assert!((mrr - 0.0).abs() < 1e-9, "expected 0.0, got {mrr}");
+    }
+
+    #[test]
+    fn test_mrr_no_relevant() {
+        let mrr = compute_mrr(&["a.md".into()], &[]);
+        assert!((mrr - 1.0).abs() < 1e-9, "vacuously perfect: {mrr}");
     }
 
     // --- Output formatter tests ---
@@ -1299,18 +2258,27 @@ relevant_files = ["c.md"]
                             k: 5,
                             precision: 0.6,
                             recall: 0.5,
+                            ndcg: None,
+                            map: None,
                         },
                         PrecisionAtK {
                             k: 10,
                             precision: 0.5,
                             recall: 0.8,
+                            ndcg: None,
+                            map: None,
                         },
                         PrecisionAtK {
                             k: 20,
                             precision: 0.3,
                             recall: 0.9,
+                            ndcg: None,
+                            map: None,
                         },
                     ],
+                    mrr: None,
+                    category: None,
+                    difficulty: None,
                 }],
                 ranked: vec![PerQueryPrecision {
                     query: "architecture".to_string(),
@@ -1319,18 +2287,27 @@ relevant_files = ["c.md"]
                             k: 5,
                             precision: 0.8,
                             recall: 0.7,
+                            ndcg: None,
+                            map: None,
                         },
                         PrecisionAtK {
                             k: 10,
                             precision: 0.7,
                             recall: 0.9,
+                            ndcg: None,
+                            map: None,
                         },
                         PrecisionAtK {
                             k: 20,
                             precision: 0.5,
                             recall: 1.0,
+                            ndcg: None,
+                            map: None,
                         },
                     ],
+                    mrr: None,
+                    category: None,
+                    difficulty: None,
                 }],
                 hybrid: None,
             }),
@@ -1361,6 +2338,8 @@ relevant_files = ["c.md"]
                 docs_bytes: 1024,
                 ratio_percent: 200.0,
             }),
+            chunk_precision: None,
+            regression: None,
         }
     }
 
@@ -1387,7 +2366,7 @@ relevant_files = ["c.md"]
         assert!(md.contains("## 3. Index Build Performance"));
         assert!(md.contains("## 4. Search Quality"));
         assert!(md.contains("## 5. Disk Usage"));
-        assert!(md.contains("## 6. Conclusion"));
+        assert!(md.contains("## 8. Conclusion"));
         assert!(md.contains("| grep |"));
         assert!(md.contains("| ranked |"));
         assert!(md.contains("285 ms"));
