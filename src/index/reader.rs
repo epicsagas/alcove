@@ -9,21 +9,17 @@ pub(crate) fn inject_page_markers(text: String) -> String {
     if !text.contains('\x0C') {
         return text;
     }
-    text.split('\x0C')
-        .enumerate()
-        .map(|(i, page)| {
-            if i == 0 {
-                page.to_string()
-            } else {
-                format!(
-                    "\n--- Page {} ---\n{}",
-                    i + 1,
-                    page.trim_start_matches('\n')
-                )
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("")
+    let mut pages = text.split('\x0C');
+    let first = pages.next().unwrap_or("").to_string();
+    std::iter::once(first)
+        .chain(pages.enumerate().map(|(i, page)| {
+            format!(
+                "\n--- Page {} ---\n{}",
+                i + 2,
+                page.trim_start_matches('\n')
+            )
+        }))
+        .collect()
 }
 
 /// Helper to extract text from XML tags (e.g., w:t for Word, a:t for PPT)

@@ -770,6 +770,35 @@ mod tests {
         assert_eq!(inject_page_markers(input.clone()), input);
     }
 
+    #[cfg(all(unix, feature = "pdf"))]
+    #[test]
+    fn inject_page_markers_empty_string() {
+        use crate::index::reader::inject_page_markers;
+        assert_eq!(inject_page_markers(String::new()), "");
+    }
+
+    #[cfg(all(unix, feature = "pdf"))]
+    #[test]
+    fn inject_page_markers_leading_formfeed() {
+        use crate::index::reader::inject_page_markers;
+        // form-feed가 앞에 오면 첫 "페이지"가 빈 문자열 → Page 2 마커만 나타남
+        let result = inject_page_markers("\x0Cpage two".to_string());
+        assert!(result.contains("--- Page 2 ---"), "second page marker present");
+        assert!(result.contains("page two"), "second page content preserved");
+        assert!(!result.contains('\x0C'), "form-feed removed");
+    }
+
+    #[cfg(all(unix, feature = "pdf"))]
+    #[test]
+    fn inject_page_markers_trailing_formfeed() {
+        use crate::index::reader::inject_page_markers;
+        // 끝에 form-feed가 붙어 있어도 기존 내용 보존 + 빈 마지막 페이지 마커
+        let result = inject_page_markers("page one\x0C".to_string());
+        assert!(result.contains("page one"), "first page content preserved");
+        assert!(result.contains("--- Page 2 ---"), "trailing page marker present");
+        assert!(!result.contains('\x0C'), "form-feed removed");
+    }
+
     // -- Vault indexing tests --
 
     fn setup_vault_dir(tmp: &TempDir) -> std::path::PathBuf {
