@@ -723,6 +723,53 @@ mod tests {
         );
     }
 
+    // -- inject_page_markers unit tests --
+
+    #[cfg(all(unix, feature = "pdf"))]
+    #[test]
+    fn inject_page_markers_single_page() {
+        use crate::index::reader::inject_page_markers;
+        let input = "page one content".to_string();
+        assert_eq!(inject_page_markers(input.clone()), input);
+    }
+
+    #[cfg(all(unix, feature = "pdf"))]
+    #[test]
+    fn inject_page_markers_two_pages() {
+        use crate::index::reader::inject_page_markers;
+        let input = "page one\x0Cpage two".to_string();
+        let result = inject_page_markers(input);
+        assert!(result.contains("page one"), "first page content preserved");
+        assert!(
+            result.contains("--- Page 2 ---"),
+            "second page marker present"
+        );
+        assert!(result.contains("page two"), "second page content preserved");
+        assert!(!result.contains('\x0C'), "form-feed removed");
+    }
+
+    #[cfg(all(unix, feature = "pdf"))]
+    #[test]
+    fn inject_page_markers_three_pages() {
+        use crate::index::reader::inject_page_markers;
+        let input = "first\x0Csecond\x0Cthird".to_string();
+        let result = inject_page_markers(input);
+        assert!(result.contains("--- Page 2 ---"));
+        assert!(result.contains("--- Page 3 ---"));
+        assert!(
+            !result.contains("--- Page 1 ---"),
+            "first page has no marker"
+        );
+    }
+
+    #[cfg(all(unix, feature = "pdf"))]
+    #[test]
+    fn inject_page_markers_no_formfeed_is_noop() {
+        use crate::index::reader::inject_page_markers;
+        let input = "no form feed here\nline two\n".to_string();
+        assert_eq!(inject_page_markers(input.clone()), input);
+    }
+
     // -- Vault indexing tests --
 
     fn setup_vault_dir(tmp: &TempDir) -> std::path::PathBuf {
