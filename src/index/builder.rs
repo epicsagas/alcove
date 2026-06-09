@@ -763,6 +763,7 @@ fn flush_embed_batch(
 
 /// Reads, chunks, and embeds `to_embed` files in batches of `embed_batch`.
 #[cfg(feature = "embed")]
+#[allow(clippy::too_many_arguments)]
 fn embed_files_in_batches(
     to_embed: &[ProjectFile],
     service: &crate::embedding::EmbeddingService,
