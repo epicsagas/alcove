@@ -309,7 +309,7 @@ fn search_dir_for_query(
         }
     }
     // Sort by score descending so best matches come first
-    file_results.sort_by(|a, b| b.0.cmp(&a.0));
+    file_results.sort_by_key(|b| std::cmp::Reverse(b.0));
     for (_, line_num, snippet, rel) in file_results {
         matches.push(json!({
             "file": rel,

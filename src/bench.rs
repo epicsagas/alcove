@@ -1625,6 +1625,7 @@ pub(crate) fn average_precision_at_k(queries: &[PerQueryPrecision], k: usize) ->
 // Main entry point
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 pub fn cmd_bench(
     metrics: &str,
     scope: &str,
