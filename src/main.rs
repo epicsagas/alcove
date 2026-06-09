@@ -22,6 +22,9 @@ mod vault;
 mod code_index;
 
 #[cfg(any(feature = "vector", feature = "turboquant"))]
+mod embedding_cache;
+
+#[cfg(any(feature = "vector", feature = "turboquant"))]
 mod vector;
 
 #[cfg(feature = "alcove-server")]

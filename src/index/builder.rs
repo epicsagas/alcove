@@ -676,18 +676,60 @@ fn write_tantivy_index(
 /// Updates `vectors_indexed` and `vector_errors` in place.
 #[cfg(feature = "embed")]
 fn flush_embed_batch(
-    pending: &mut Vec<(String, String, u64, String)>,
+    pending: &mut Vec<([u8; 32], String, String, u64, String)>,
     service: &crate::embedding::EmbeddingService,
     store: &mut crate::vector::VectorStore,
     model: &crate::embedding::EmbeddingModel,
     counters: &mut VectorCounters,
+    cache: &crate::embedding_cache::EmbeddingCache,
+    cached: &mut Vec<(String, String, u64, Vec<f32>)>,
 ) {
     if pending.is_empty() {
         return;
     }
-    let count = pending.len() as u64;
+
+    let model_name = model.as_str();
     let doc_pfx = model.doc_prefix();
-    let texts: Vec<String> = pending
+
+    // Separate cache hits from misses.
+    let mut miss_hashes: Vec<[u8; 32]> = Vec::new();
+    let mut miss_items: Vec<(String, String, u64, String)> = Vec::new();
+
+    for (hash, proj, rel, chunk_id, text) in pending.drain(..) {
+        match cache.get(&hash, model_name) {
+            Ok(Some(emb)) => cached.push((proj, rel, chunk_id, emb)),
+            _ => {
+                miss_hashes.push(hash);
+                miss_items.push((proj, rel, chunk_id, text));
+            }
+        }
+    }
+
+    // Upsert cached results immediately.
+    if !cached.is_empty() {
+        let count = cached.len() as u64;
+        if let Err(e) = store.batch_upsert(cached.drain(..)) {
+            eprintln!("[alcove] batch upsert (cached) failed: {}", e);
+            counters.vector_errors += count;
+        } else {
+            counters.vectors_indexed += count;
+        }
+    }
+
+    if miss_items.is_empty() {
+        return;
+    }
+
+    // Load ONNX model on first cache miss.
+    let _ = service.ensure_model();
+    if service.state() != crate::embedding::ModelState::Ready {
+        eprintln!("[alcove] embed failed: model not ready");
+        counters.vector_errors += miss_items.len() as u64;
+        return;
+    }
+
+    let count = miss_items.len() as u64;
+    let texts: Vec<String> = miss_items
         .iter()
         .map(|(_, _, _, t)| match doc_pfx {
             Some(pfx) => format!("{}{}", pfx, t),
@@ -697,8 +739,12 @@ fn flush_embed_batch(
     let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
     match service.embed(&text_refs) {
         Ok(embeddings) => {
-            let it = pending
-                .drain(..)
+            // Store new embeddings in persistent cache.
+            if let Err(e) = cache.put_batch(&miss_hashes, model_name, &embeddings) {
+                eprintln!("[alcove] embedding cache write failed: {}", e);
+            }
+            let it = miss_items
+                .into_iter()
                 .zip(embeddings)
                 .map(|((p, r, id, _), emb)| (p, r, id, emb));
             if let Err(e) = store.batch_upsert(it) {
@@ -710,8 +756,7 @@ fn flush_embed_batch(
         }
         Err(e) => {
             eprintln!("[alcove] embed failed: {}", e);
-            counters.vector_errors += pending.len() as u64;
-            pending.clear();
+            counters.vector_errors += count;
         }
     }
 }
@@ -726,13 +771,19 @@ fn embed_files_in_batches(
     embed_batch: usize,
     vpb: &ProgressBar,
     counters: &mut VectorCounters,
+    cache: &crate::embedding_cache::EmbeddingCache,
 ) {
     // Sequential read + chunk per file, embed in batches.
     // Parallel file reads caused RSS spikes (large PDFs × N threads).
     // Bottleneck is ONNX inference, not I/O — sequential reads keep
     // memory bounded to one file's chunks at a time.
     let chunk_cfg = ChunkConfig::for_max_tokens(model.max_seq_length());
-    let mut pending: Vec<(String, String, u64, String)> = Vec::new();
+    let doc_pfx = model.doc_prefix();
+    // pending: (content_hash, project, rel_path, chunk_id, text)
+    let mut pending: Vec<([u8; 32], String, String, u64, String)> = Vec::new();
+    // Accumulate cached results for batched upsert.
+    let mut cached: Vec<(String, String, u64, Vec<f32>)> = Vec::new();
+
     for (proj, rel, full) in to_embed {
         vpb.set_message(proj.clone());
         if let Ok(content) = read_file_content(full) {
@@ -741,15 +792,48 @@ fn embed_files_in_batches(
                 .into_iter()
                 .enumerate()
             {
-                pending.push((proj.clone(), rel.clone(), i as u64, chunk.text));
+                // Hash the prefixed text (same text sent to ONNX/embed).
+                let prefixed = match doc_pfx {
+                    Some(pfx) => format!("{}{}", pfx, chunk.text),
+                    None => chunk.text.clone(),
+                };
+                let hash = blake3::hash(prefixed.as_bytes());
+                pending.push((hash.into(), proj.clone(), rel.clone(), i as u64, chunk.text));
                 if pending.len() >= embed_batch {
-                    flush_embed_batch(&mut pending, service, store, model, counters);
+                    flush_embed_batch(
+                        &mut pending,
+                        service,
+                        store,
+                        model,
+                        counters,
+                        cache,
+                        &mut cached,
+                    );
                 }
             }
         }
         vpb.inc(1);
     }
-    flush_embed_batch(&mut pending, service, store, model, counters);
+    flush_embed_batch(
+        &mut pending,
+        service,
+        store,
+        model,
+        counters,
+        cache,
+        &mut cached,
+    );
+
+    // Flush any remaining cached results.
+    if !cached.is_empty() {
+        let count = cached.len() as u64;
+        if let Err(e) = store.batch_upsert(cached.drain(..)) {
+            eprintln!("[alcove] final cached upsert failed: {}", e);
+            counters.vector_errors += count;
+        } else {
+            counters.vectors_indexed += count;
+        }
+    }
 }
 
 /// Runs the full embedding pipeline when the `embed` feature is enabled.
@@ -761,6 +845,7 @@ fn run_full_vector_indexing(
 ) -> Result<(String, u64, u64, String)> {
     use crate::config::{effective_config, load_config};
     use crate::embedding::{EmbeddingService, resolve_model};
+    use crate::embedding_cache::EmbeddingCache;
     use crate::vector::VectorStore;
 
     let cfg = load_config();
@@ -806,11 +891,15 @@ fn run_full_vector_indexing(
         return Ok(("ok".to_string(), count, 0, model_name));
     }
 
-    // Only load the ONNX model when we have files to embed.
-    let _ = service.ensure_model();
-    if service.state() != crate::embedding::ModelState::Ready {
-        return Ok(("model_not_ready".to_string(), 0, 0, model_name));
-    }
+    // Open persistent embedding cache (survives full rebuilds).
+    let cache_path = docs_root.join(".alcove").join("embedding_cache.db");
+    let cache = EmbeddingCache::open(&cache_path).map_err(|e| {
+        eprintln!("[alcove] Failed to open embedding cache: {}", e);
+        e
+    })?;
+
+    // ONNX model loading is deferred to flush_embed_batch — only triggered
+    // when there are cache misses.
 
     let mut counters = VectorCounters {
         vectors_indexed: 0,
@@ -838,6 +927,7 @@ fn run_full_vector_indexing(
         embed_batch,
         &vpb,
         &mut counters,
+        &cache,
     );
     vpb.finish_and_clear();
 

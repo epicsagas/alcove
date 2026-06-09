@@ -12,6 +12,9 @@ pub mod vault;
 pub mod code_index;
 
 #[cfg(any(feature = "vector", feature = "turboquant"))]
+pub mod embedding_cache;
+
+#[cfg(any(feature = "vector", feature = "turboquant"))]
 pub mod vector;
 
 pub use config::{DocConfig, default_docs_root, load_config};
