@@ -533,7 +533,19 @@ pub(crate) fn load_ground_truth(path: &Path) -> Result<Vec<GroundTruthEntry>> {
     Ok(gt.queries)
 }
 
-pub(crate) fn default_ground_truth_path() -> PathBuf {
+pub(crate) fn resolve_ground_truth_path(corpus: bool, explicit: Option<&Path>) -> PathBuf {
+    if let Some(path) = explicit {
+        return path.to_path_buf();
+    }
+    if corpus {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+        return manifest_dir
+            .join("benches")
+            .join("corpus")
+            .join("ground_truth.toml");
+    }
     std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("benches")
@@ -753,9 +765,23 @@ fn compare_metric(
     });
 }
 
-fn get_docs_root() -> Result<PathBuf> {
-    crate::setup::saved_docs_root()
-        .ok_or_else(|| anyhow::anyhow!("No docs repository found. Run `alcove setup` first."))
+fn resolve_docs_root(corpus: bool) -> Result<PathBuf> {
+    if corpus {
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+        let corpus_dir = manifest_dir.join("benches").join("corpus");
+        if !corpus_dir.is_dir() {
+            anyhow::bail!(
+                "Corpus directory not found: {}. Expected at benches/corpus/ in the alcove source.",
+                corpus_dir.display()
+            );
+        }
+        Ok(corpus_dir)
+    } else {
+        crate::setup::saved_docs_root()
+            .ok_or_else(|| anyhow::anyhow!("No docs repository found. Run `alcove setup` first."))
+    }
 }
 
 /// Expand tilde in cache_dir and create an EmbeddingService from config.
@@ -1607,12 +1633,11 @@ pub fn cmd_bench(
     output_file: Option<&Path>,
     baseline: Option<&Path>,
     save_baseline_path: Option<&Path>,
+    corpus: bool,
 ) -> Result<()> {
-    let docs_root = get_docs_root()?;
+    let docs_root = resolve_docs_root(corpus)?;
 
-    let queries_path = queries
-        .map(PathBuf::from)
-        .unwrap_or_else(default_ground_truth_path);
+    let queries_path = resolve_ground_truth_path(corpus, queries);
 
     if !queries_path.exists() {
         anyhow::bail!(

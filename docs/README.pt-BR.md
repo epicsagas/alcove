@@ -379,7 +379,7 @@ alcove promote      Importar notas de um vault externo para o doc-repo
 alcove index        Atualizar o índice de busca (incremental — apenas arquivos alterados)
 alcove rebuild      Reconstruir o índice de busca do zero (usar após mudanças de esquema)
 alcove search       Busca documentos pelo terminal
-alcove bench        Benchmark de qualidade de busca (precisão, latência, detecção de regressão)
+alcove bench        Benchmark de qualidade de busca [--corpus] (precisão, latência, detecção de regressão)
 alcove index-code   Gera índice de estrutura de código do fonte [--language LANG] [--source PATH]
 alcove token        Exibir o bearer token (para autenticação do servidor em segundo plano)
 alcove uninstall    Remove habilidades, configuração e arquivos legados
@@ -467,10 +467,16 @@ Arquivos sem projeto correspondente são salvos em `inbox/` para revisão manual
 
 ### Benchmark
 
-Meça e acompanhe a qualidade de busca com métricas IR integradas e detecção de regressão.
+**Modo de corpus isolado** (`--corpus`) usa um conjunto de dados de teste autônomo (19 documentos sintéticos, 25 consultas) para benchmarks de CI rápidos e reprodutíveis — sem necessidade de documentos reais, conclui em menos de 60 segundos.
 
 ```bash
-# Executar benchmark de precisão (10 categorias, 50 consultas)
+# Executar com o corpus de avaliação integrado (recomendado para CI)
+alcove bench --corpus --baseline benches/corpus/baseline.json
+
+# Atualizar o baseline do corpus após mudanças intencionais
+alcove bench --corpus --save-baseline benches/corpus/baseline.json
+
+# Executar com seus documentos reais (50 consultas em 10 categorias)
 alcove bench --metrics precision
 
 # Salvar como baseline para comparação futura

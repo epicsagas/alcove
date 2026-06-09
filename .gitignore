@@ -146,9 +146,8 @@ Temporary Items
 debug/
 target/
 
-# Cargo.lock is intentionally NOT committed.
-# Uses [patch.crates-io] with git deps — a committed lock file would cause
-# CI failures when the patched repo advances. CI resolves deps fresh each run.
+# Binary crate — Cargo.lock should be committed
+# https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
 Cargo.lock
 
 # Claude Code
@@ -218,3 +217,6 @@ $RECYCLE.BIN/
 # collet
 .collet/*.secrets.tmp
 .fastembed_cache/
+
+# Bench corpus index artifacts (rebuilt on demand)
+benches/corpus/.alcove/

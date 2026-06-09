@@ -377,7 +377,7 @@ alcove promote      外部ボルトのノートをdoc-repoに取り込む
 alcove index        検索インデックスの増分更新（変更されたファイルのみ）
 alcove rebuild      検索インデックスをゼロから再構築（スキーマ変更後に使用）
 alcove search       ターミナルからドキュメントを検索
-alcove bench        検索品質ベンチマーク（精度、レイテンシ、回帰検出）
+alcove bench        検索品質ベンチマーク（精度、レイテンシ、回帰検出） [--corpus]
 alcove index-code   ソースコードからコード構造インデックスを生成 [--language LANG] [--source PATH]
 alcove token        バックグラウンドサーバー認証用のベアラートークンを表示
 alcove uninstall    スキル、設定、レガシーファイルを削除
@@ -471,17 +471,25 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 
 組み込みの IR 指標と回帰検出で検索品質を測定・追跡します。
 
+**独立コーパスモード**（`--corpus`）は、自己完結型のテストデータセット（19の合成ドキュメント、25のクエリ）を使用し、高速で再現可能なCIベンチマークを実現します — 実際のドキュメントは不要、60秒以内に完了します。
+
 ```bash
-# 精度ベンチマークを実行（10カテゴリ、50クエリ）
+# Run against the built-in eval corpus (recommended for CI)
+alcove bench --corpus --baseline benches/corpus/baseline.json
+
+# Update the corpus baseline after intentional changes
+alcove bench --corpus --save-baseline benches/corpus/baseline.json
+
+# Run against your real docs (50 queries across 10 categories)
 alcove bench --metrics precision
 
-# 今後の比較用にベースラインとして保存
+# Save as baseline for future comparison
 alcove bench --output json --save-baseline benches/baseline.json
 
-# ベースラインと比較 — CI で回帰を検出
+# Compare against baseline — detect regressions in CI
 alcove bench --baseline benches/baseline.json
 
-# Markdown レポート
+# Markdown report
 alcove bench --output markdown --output-file bench-report.md
 ```
 

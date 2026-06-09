@@ -1,0 +1,2864 @@
+{
+  "timestamp": "2026-06-09T04:40:51Z",
+  "environment": {
+    "os": "macos",
+    "rust_version": "unknown",
+    "alcove_version": "0.11.7"
+  },
+  "data_stats": {
+    "file_count": 19,
+    "total_size_bytes": 68210
+  },
+  "precision": {
+    "grep": [
+      {
+        "query": "MCP server protocol transport",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "easy"
+      },
+      {
+        "query": "search index tantivy BM25",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "medium"
+      },
+      {
+        "query": "hybrid search RRF reciprocal rank fusion",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "architecture",
+        "difficulty": "hard"
+      },
+      {
+        "query": "benchmark quality performance metrics",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "easy"
+      },
+      {
+        "query": "launch plan monetization pricing",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "interactive setup command",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "progress status tracking milestones",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "architecture system design",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cross-project",
+        "difficulty": "medium"
+      },
+      {
+        "query": "secrets map environment variables",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "검색 인덱스",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "easy"
+      },
+      {
+        "query": "벤치마크 품질",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "데이터 파이프라인 아키텍처",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "Docker deployment container setup",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "chunk-precision",
+        "difficulty": "medium"
+      },
+      {
+        "query": "health check monitoring endpoints",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "chunk-precision",
+        "difficulty": "easy"
+      },
+      {
+        "query": "rollback procedure version downgrade",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "chunk-precision",
+        "difficulty": "hard"
+      },
+      {
+        "query": "xyzzy-nonexistent-query-12345",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control",
+        "difficulty": "easy"
+      },
+      {
+        "query": "quantum computing blockchain cryptocurrency",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control",
+        "difficulty": "medium"
+      },
+      {
+        "query": "recipe cooking pasta kitchen",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control",
+        "difficulty": "easy"
+      },
+      {
+        "query": "code structure index AST tree-sitter",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "navigation",
+        "difficulty": "medium"
+      },
+      {
+        "query": "conventions coding standards style",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "navigation",
+        "difficulty": "easy"
+      },
+      {
+        "query": "design decisions ADR",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "edge-case",
+        "difficulty": "medium"
+      },
+      {
+        "query": "stream processing Kafka data pipeline",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "edge-case",
+        "difficulty": "hard"
+      },
+      {
+        "query": "environment variable configuration reference",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "config",
+        "difficulty": "easy"
+      },
+      {
+        "query": "telemetry PostHog Sentry",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "config",
+        "difficulty": "medium"
+      },
+      {
+        "query": "embedding model configuration provider",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": -0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "config",
+        "difficulty": "medium"
+      }
+    ],
+    "ranked": [
+      {
+        "query": "MCP server protocol transport",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.6309297535714575,
+            "map": 0.5
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.6309297535714575,
+            "map": 0.5
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 0.6309297535714575,
+            "map": 0.5
+          }
+        ],
+        "mrr": 0.5,
+        "category": "architecture",
+        "difficulty": "easy"
+      },
+      {
+        "query": "search index tantivy BM25",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.2640681225725909,
+            "map": 0.125
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.2640681225725909,
+            "map": 0.125
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.2640681225725909,
+            "map": 0.125
+          }
+        ],
+        "mrr": 0.25,
+        "category": "architecture",
+        "difficulty": "medium"
+      },
+      {
+        "query": "hybrid search RRF reciprocal rank fusion",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "architecture",
+        "difficulty": "hard"
+      },
+      {
+        "query": "benchmark quality performance metrics",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "easy"
+      },
+      {
+        "query": "launch plan monetization pricing",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "interactive setup command",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "progress status tracking milestones",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "architecture system design",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.6,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.3,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.15,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cross-project",
+        "difficulty": "medium"
+      },
+      {
+        "query": "secrets map environment variables",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "검색 인덱스",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 0.9197207891481876,
+            "map": 0.8333333333333333
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.9197207891481876,
+            "map": 0.8333333333333333
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.9197207891481876,
+            "map": 0.8333333333333333
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cjk",
+        "difficulty": "easy"
+      },
+      {
+        "query": "벤치마크 품질",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "데이터 파이프라인 아키텍처",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "Docker deployment container setup",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "chunk-precision",
+        "difficulty": "medium"
+      },
+      {
+        "query": "health check monitoring endpoints",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "chunk-precision",
+        "difficulty": "easy"
+      },
+      {
+        "query": "rollback procedure version downgrade",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "chunk-precision",
+        "difficulty": "hard"
+      },
+      {
+        "query": "xyzzy-nonexistent-query-12345",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control",
+        "difficulty": "easy"
+      },
+      {
+        "query": "quantum computing blockchain cryptocurrency",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control",
+        "difficulty": "medium"
+      },
+      {
+        "query": "recipe cooking pasta kitchen",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control",
+        "difficulty": "easy"
+      },
+      {
+        "query": "code structure index AST tree-sitter",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "navigation",
+        "difficulty": "medium"
+      },
+      {
+        "query": "conventions coding standards style",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "navigation",
+        "difficulty": "easy"
+      },
+      {
+        "query": "design decisions ADR",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "edge-case",
+        "difficulty": "medium"
+      },
+      {
+        "query": "stream processing Kafka data pipeline",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "edge-case",
+        "difficulty": "hard"
+      },
+      {
+        "query": "environment variable configuration reference",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "config",
+        "difficulty": "easy"
+      },
+      {
+        "query": "telemetry PostHog Sentry",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "config",
+        "difficulty": "medium"
+      },
+      {
+        "query": "embedding model configuration provider",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "config",
+        "difficulty": "medium"
+      }
+    ],
+    "hybrid": [
+      {
+        "query": "MCP server protocol transport",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.6309297535714575,
+            "map": 0.5
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.6309297535714575,
+            "map": 0.5
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 0.6309297535714575,
+            "map": 0.5
+          }
+        ],
+        "mrr": 0.5,
+        "category": "architecture",
+        "difficulty": "easy"
+      },
+      {
+        "query": "search index tantivy BM25",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 0.5,
+            "ndcg": 0.2640681225725909,
+            "map": 0.125
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 0.5,
+            "ndcg": 0.2640681225725909,
+            "map": 0.125
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 0.5,
+            "ndcg": 0.2640681225725909,
+            "map": 0.125
+          }
+        ],
+        "mrr": 0.25,
+        "category": "architecture",
+        "difficulty": "medium"
+      },
+      {
+        "query": "hybrid search RRF reciprocal rank fusion",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "architecture",
+        "difficulty": "hard"
+      },
+      {
+        "query": "benchmark quality performance metrics",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "easy"
+      },
+      {
+        "query": "launch plan monetization pricing",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "interactive setup command",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "product",
+        "difficulty": "medium"
+      },
+      {
+        "query": "progress status tracking milestones",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "architecture system design",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.6,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.3,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.15,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cross-project",
+        "difficulty": "medium"
+      },
+      {
+        "query": "secrets map environment variables",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cross-project",
+        "difficulty": "easy"
+      },
+      {
+        "query": "검색 인덱스",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 0.9197207891481876,
+            "map": 0.8333333333333333
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 0.9197207891481876,
+            "map": 0.8333333333333333
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 0.9197207891481876,
+            "map": 0.8333333333333333
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cjk",
+        "difficulty": "easy"
+      },
+      {
+        "query": "벤치마크 품질",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "데이터 파이프라인 아키텍처",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 0.0,
+            "ndcg": 0.0,
+            "map": 0.0
+          }
+        ],
+        "mrr": 0.0,
+        "category": "cjk",
+        "difficulty": "medium"
+      },
+      {
+        "query": "Docker deployment container setup",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "chunk-precision",
+        "difficulty": "medium"
+      },
+      {
+        "query": "health check monitoring endpoints",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "chunk-precision",
+        "difficulty": "easy"
+      },
+      {
+        "query": "rollback procedure version downgrade",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "chunk-precision",
+        "difficulty": "hard"
+      },
+      {
+        "query": "xyzzy-nonexistent-query-12345",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control",
+        "difficulty": "easy"
+      },
+      {
+        "query": "quantum computing blockchain cryptocurrency",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control",
+        "difficulty": "medium"
+      },
+      {
+        "query": "recipe cooking pasta kitchen",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.0,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "negative-control",
+        "difficulty": "easy"
+      },
+      {
+        "query": "code structure index AST tree-sitter",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "navigation",
+        "difficulty": "medium"
+      },
+      {
+        "query": "conventions coding standards style",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "navigation",
+        "difficulty": "easy"
+      },
+      {
+        "query": "design decisions ADR",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "edge-case",
+        "difficulty": "medium"
+      },
+      {
+        "query": "stream processing Kafka data pipeline",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "edge-case",
+        "difficulty": "hard"
+      },
+      {
+        "query": "environment variable configuration reference",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "config",
+        "difficulty": "easy"
+      },
+      {
+        "query": "telemetry PostHog Sentry",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "config",
+        "difficulty": "medium"
+      },
+      {
+        "query": "embedding model configuration provider",
+        "precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.4,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.2,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.1,
+            "recall": 1.0,
+            "ndcg": 1.0,
+            "map": 1.0
+          }
+        ],
+        "mrr": 1.0,
+        "category": "config",
+        "difficulty": "medium"
+      }
+    ]
+  },
+  "latency": {
+    "grep": [
+      {
+        "query": "MCP server protocol transport",
+        "avg_us": 3200,
+        "p50_us": 2254,
+        "p95_us": 9899,
+        "p99_us": 11831
+      },
+      {
+        "query": "search index tantivy BM25",
+        "avg_us": 3010,
+        "p50_us": 2488,
+        "p95_us": 6160,
+        "p99_us": 10199
+      },
+      {
+        "query": "hybrid search RRF reciprocal rank fusion",
+        "avg_us": 4187,
+        "p50_us": 3300,
+        "p95_us": 14403,
+        "p99_us": 19675
+      },
+      {
+        "query": "benchmark quality performance metrics",
+        "avg_us": 2891,
+        "p50_us": 2353,
+        "p95_us": 6392,
+        "p99_us": 12395
+      },
+      {
+        "query": "launch plan monetization pricing",
+        "avg_us": 2477,
+        "p50_us": 2147,
+        "p95_us": 4667,
+        "p99_us": 7136
+      },
+      {
+        "query": "interactive setup command",
+        "avg_us": 2938,
+        "p50_us": 2504,
+        "p95_us": 7627,
+        "p99_us": 11728
+      },
+      {
+        "query": "progress status tracking milestones",
+        "avg_us": 2670,
+        "p50_us": 2233,
+        "p95_us": 5761,
+        "p99_us": 8078
+      },
+      {
+        "query": "architecture system design",
+        "avg_us": 3595,
+        "p50_us": 2362,
+        "p95_us": 10334,
+        "p99_us": 11666
+      },
+      {
+        "query": "secrets map environment variables",
+        "avg_us": 2701,
+        "p50_us": 2137,
+        "p95_us": 6258,
+        "p99_us": 10626
+      },
+      {
+        "query": "검색 인덱스",
+        "avg_us": 4329,
+        "p50_us": 2898,
+        "p95_us": 11490,
+        "p99_us": 23217
+      },
+      {
+        "query": "벤치마크 품질",
+        "avg_us": 3375,
+        "p50_us": 2729,
+        "p95_us": 6453,
+        "p99_us": 9191
+      },
+      {
+        "query": "데이터 파이프라인 아키텍처",
+        "avg_us": 2432,
+        "p50_us": 2114,
+        "p95_us": 5972,
+        "p99_us": 6629
+      },
+      {
+        "query": "Docker deployment container setup",
+        "avg_us": 4847,
+        "p50_us": 3391,
+        "p95_us": 13738,
+        "p99_us": 23559
+      },
+      {
+        "query": "health check monitoring endpoints",
+        "avg_us": 5931,
+        "p50_us": 4622,
+        "p95_us": 11853,
+        "p99_us": 18053
+      },
+      {
+        "query": "rollback procedure version downgrade",
+        "avg_us": 2396,
+        "p50_us": 1928,
+        "p95_us": 5652,
+        "p99_us": 6991
+      },
+      {
+        "query": "xyzzy-nonexistent-query-12345",
+        "avg_us": 3993,
+        "p50_us": 2670,
+        "p95_us": 10761,
+        "p99_us": 25567
+      },
+      {
+        "query": "quantum computing blockchain cryptocurrency",
+        "avg_us": 4653,
+        "p50_us": 2425,
+        "p95_us": 13218,
+        "p99_us": 15483
+      },
+      {
+        "query": "recipe cooking pasta kitchen",
+        "avg_us": 3089,
+        "p50_us": 2617,
+        "p95_us": 5897,
+        "p99_us": 12920
+      },
+      {
+        "query": "code structure index AST tree-sitter",
+        "avg_us": 3083,
+        "p50_us": 2494,
+        "p95_us": 7334,
+        "p99_us": 9415
+      },
+      {
+        "query": "conventions coding standards style",
+        "avg_us": 2258,
+        "p50_us": 2204,
+        "p95_us": 2552,
+        "p99_us": 6865
+      },
+      {
+        "query": "design decisions ADR",
+        "avg_us": 3322,
+        "p50_us": 2614,
+        "p95_us": 7330,
+        "p99_us": 10175
+      },
+      {
+        "query": "stream processing Kafka data pipeline",
+        "avg_us": 3117,
+        "p50_us": 2391,
+        "p95_us": 8247,
+        "p99_us": 11990
+      },
+      {
+        "query": "environment variable configuration reference",
+        "avg_us": 2914,
+        "p50_us": 2513,
+        "p95_us": 5222,
+        "p99_us": 7839
+      },
+      {
+        "query": "telemetry PostHog Sentry",
+        "avg_us": 3149,
+        "p50_us": 2785,
+        "p95_us": 5220,
+        "p99_us": 9010
+      },
+      {
+        "query": "embedding model configuration provider",
+        "avg_us": 2840,
+        "p50_us": 2399,
+        "p95_us": 6240,
+        "p99_us": 9164
+      }
+    ],
+    "ranked": [
+      {
+        "query": "MCP server protocol transport",
+        "avg_us": 6516,
+        "p50_us": 5819,
+        "p95_us": 12309,
+        "p99_us": 13140
+      },
+      {
+        "query": "search index tantivy BM25",
+        "avg_us": 8294,
+        "p50_us": 7207,
+        "p95_us": 14035,
+        "p99_us": 15419
+      },
+      {
+        "query": "hybrid search RRF reciprocal rank fusion",
+        "avg_us": 14017,
+        "p50_us": 10668,
+        "p95_us": 23893,
+        "p99_us": 88306
+      },
+      {
+        "query": "benchmark quality performance metrics",
+        "avg_us": 8905,
+        "p50_us": 7788,
+        "p95_us": 14502,
+        "p99_us": 17880
+      },
+      {
+        "query": "launch plan monetization pricing",
+        "avg_us": 5530,
+        "p50_us": 4591,
+        "p95_us": 10468,
+        "p99_us": 12475
+      },
+      {
+        "query": "interactive setup command",
+        "avg_us": 6871,
+        "p50_us": 5725,
+        "p95_us": 13938,
+        "p99_us": 24127
+      },
+      {
+        "query": "progress status tracking milestones",
+        "avg_us": 8372,
+        "p50_us": 7317,
+        "p95_us": 15871,
+        "p99_us": 16351
+      },
+      {
+        "query": "architecture system design",
+        "avg_us": 9985,
+        "p50_us": 9056,
+        "p95_us": 17919,
+        "p99_us": 23587
+      },
+      {
+        "query": "secrets map environment variables",
+        "avg_us": 8416,
+        "p50_us": 7833,
+        "p95_us": 16223,
+        "p99_us": 18246
+      },
+      {
+        "query": "검색 인덱스",
+        "avg_us": 3959,
+        "p50_us": 3423,
+        "p95_us": 8549,
+        "p99_us": 13812
+      },
+      {
+        "query": "벤치마크 품질",
+        "avg_us": 3035,
+        "p50_us": 2380,
+        "p95_us": 10028,
+        "p99_us": 10352
+      },
+      {
+        "query": "데이터 파이프라인 아키텍처",
+        "avg_us": 5777,
+        "p50_us": 4678,
+        "p95_us": 12861,
+        "p99_us": 16117
+      },
+      {
+        "query": "Docker deployment container setup",
+        "avg_us": 14516,
+        "p50_us": 12817,
+        "p95_us": 33285,
+        "p99_us": 47040
+      },
+      {
+        "query": "health check monitoring endpoints",
+        "avg_us": 13191,
+        "p50_us": 11071,
+        "p95_us": 36558,
+        "p99_us": 62195
+      },
+      {
+        "query": "rollback procedure version downgrade",
+        "avg_us": 5668,
+        "p50_us": 5477,
+        "p95_us": 9538,
+        "p99_us": 11176
+      },
+      {
+        "query": "xyzzy-nonexistent-query-12345",
+        "avg_us": 3206,
+        "p50_us": 2214,
+        "p95_us": 11716,
+        "p99_us": 13643
+      },
+      {
+        "query": "quantum computing blockchain cryptocurrency",
+        "avg_us": 5116,
+        "p50_us": 4421,
+        "p95_us": 10943,
+        "p99_us": 11622
+      },
+      {
+        "query": "recipe cooking pasta kitchen",
+        "avg_us": 4919,
+        "p50_us": 4196,
+        "p95_us": 9096,
+        "p99_us": 12698
+      },
+      {
+        "query": "code structure index AST tree-sitter",
+        "avg_us": 9875,
+        "p50_us": 8433,
+        "p95_us": 15286,
+        "p99_us": 33139
+      },
+      {
+        "query": "conventions coding standards style",
+        "avg_us": 6449,
+        "p50_us": 5911,
+        "p95_us": 10569,
+        "p99_us": 11622
+      },
+      {
+        "query": "design decisions ADR",
+        "avg_us": 7141,
+        "p50_us": 5703,
+        "p95_us": 14698,
+        "p99_us": 21825
+      },
+      {
+        "query": "stream processing Kafka data pipeline",
+        "avg_us": 9656,
+        "p50_us": 8421,
+        "p95_us": 17128,
+        "p99_us": 23725
+      },
+      {
+        "query": "environment variable configuration reference",
+        "avg_us": 9616,
+        "p50_us": 8830,
+        "p95_us": 15899,
+        "p99_us": 21043
+      },
+      {
+        "query": "telemetry PostHog Sentry",
+        "avg_us": 4463,
+        "p50_us": 3524,
+        "p95_us": 8009,
+        "p99_us": 9295
+      },
+      {
+        "query": "embedding model configuration provider",
+        "avg_us": 8811,
+        "p50_us": 8018,
+        "p95_us": 15526,
+        "p99_us": 17219
+      }
+    ],
+    "hybrid": [
+      {
+        "query": "MCP server protocol transport",
+        "avg_us": 7244,
+        "p50_us": 5998,
+        "p95_us": 15263,
+        "p99_us": 16526
+      },
+      {
+        "query": "search index tantivy BM25",
+        "avg_us": 8187,
+        "p50_us": 7246,
+        "p95_us": 15855,
+        "p99_us": 17427
+      },
+      {
+        "query": "hybrid search RRF reciprocal rank fusion",
+        "avg_us": 9091,
+        "p50_us": 8548,
+        "p95_us": 12780,
+        "p99_us": 16965
+      },
+      {
+        "query": "benchmark quality performance metrics",
+        "avg_us": 12105,
+        "p50_us": 9504,
+        "p95_us": 21853,
+        "p99_us": 67324
+      },
+      {
+        "query": "launch plan monetization pricing",
+        "avg_us": 6171,
+        "p50_us": 5204,
+        "p95_us": 12526,
+        "p99_us": 16762
+      },
+      {
+        "query": "interactive setup command",
+        "avg_us": 4832,
+        "p50_us": 4230,
+        "p95_us": 9741,
+        "p99_us": 13711
+      },
+      {
+        "query": "progress status tracking milestones",
+        "avg_us": 4597,
+        "p50_us": 4847,
+        "p95_us": 5434,
+        "p99_us": 6140
+      },
+      {
+        "query": "architecture system design",
+        "avg_us": 5038,
+        "p50_us": 4894,
+        "p95_us": 6004,
+        "p99_us": 6159
+      },
+      {
+        "query": "secrets map environment variables",
+        "avg_us": 7241,
+        "p50_us": 6558,
+        "p95_us": 13045,
+        "p99_us": 13955
+      },
+      {
+        "query": "검색 인덱스",
+        "avg_us": 2254,
+        "p50_us": 2254,
+        "p95_us": 2849,
+        "p99_us": 3234
+      },
+      {
+        "query": "벤치마크 품질",
+        "avg_us": 1305,
+        "p50_us": 1246,
+        "p95_us": 1517,
+        "p99_us": 1982
+      },
+      {
+        "query": "데이터 파이프라인 아키텍처",
+        "avg_us": 1823,
+        "p50_us": 1815,
+        "p95_us": 1891,
+        "p99_us": 2023
+      },
+      {
+        "query": "Docker deployment container setup",
+        "avg_us": 3437,
+        "p50_us": 3385,
+        "p95_us": 3766,
+        "p99_us": 4066
+      },
+      {
+        "query": "health check monitoring endpoints",
+        "avg_us": 2938,
+        "p50_us": 2917,
+        "p95_us": 3082,
+        "p99_us": 3136
+      },
+      {
+        "query": "rollback procedure version downgrade",
+        "avg_us": 2902,
+        "p50_us": 2889,
+        "p95_us": 2988,
+        "p99_us": 3125
+      },
+      {
+        "query": "xyzzy-nonexistent-query-12345",
+        "avg_us": 1006,
+        "p50_us": 992,
+        "p95_us": 1111,
+        "p99_us": 1191
+      },
+      {
+        "query": "quantum computing blockchain cryptocurrency",
+        "avg_us": 1891,
+        "p50_us": 1867,
+        "p95_us": 2071,
+        "p99_us": 2126
+      },
+      {
+        "query": "recipe cooking pasta kitchen",
+        "avg_us": 1962,
+        "p50_us": 1961,
+        "p95_us": 1985,
+        "p99_us": 1991
+      },
+      {
+        "query": "code structure index AST tree-sitter",
+        "avg_us": 4437,
+        "p50_us": 4321,
+        "p95_us": 5159,
+        "p99_us": 5671
+      },
+      {
+        "query": "conventions coding standards style",
+        "avg_us": 3507,
+        "p50_us": 3424,
+        "p95_us": 4195,
+        "p99_us": 4258
+      },
+      {
+        "query": "design decisions ADR",
+        "avg_us": 2677,
+        "p50_us": 2571,
+        "p95_us": 3022,
+        "p99_us": 3191
+      },
+      {
+        "query": "stream processing Kafka data pipeline",
+        "avg_us": 4844,
+        "p50_us": 4713,
+        "p95_us": 6197,
+        "p99_us": 6244
+      },
+      {
+        "query": "environment variable configuration reference",
+        "avg_us": 9641,
+        "p50_us": 8619,
+        "p95_us": 14142,
+        "p99_us": 14618
+      },
+      {
+        "query": "telemetry PostHog Sentry",
+        "avg_us": 4216,
+        "p50_us": 3622,
+        "p95_us": 8077,
+        "p99_us": 12742
+      },
+      {
+        "query": "embedding model configuration provider",
+        "avg_us": 8368,
+        "p50_us": 7795,
+        "p95_us": 14620,
+        "p99_us": 15947
+      }
+    ]
+  },
+  "throughput": {
+    "full_rebuild_ms": 76634,
+    "incremental_no_change_ms": 12404,
+    "stale_detection_us": 1961
+  },
+  "disk_usage": {
+    "index_bytes": 385920,
+    "docs_bytes": 68210,
+    "ratio_percent": 565.782143380736
+  },
+  "chunk_precision": {
+    "ranked": [
+      {
+        "query": "Docker deployment container setup",
+        "chunk_precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0
+          }
+        ]
+      },
+      {
+        "query": "health check monitoring endpoints",
+        "chunk_precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0
+          }
+        ]
+      },
+      {
+        "query": "rollback procedure version downgrade",
+        "chunk_precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0
+          }
+        ]
+      }
+    ],
+    "hybrid": [
+      {
+        "query": "Docker deployment container setup",
+        "chunk_precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0
+          }
+        ]
+      },
+      {
+        "query": "health check monitoring endpoints",
+        "chunk_precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0
+          }
+        ]
+      },
+      {
+        "query": "rollback procedure version downgrade",
+        "chunk_precision_at_k": [
+          {
+            "k": 5,
+            "precision": 0.2,
+            "recall": 1.0
+          },
+          {
+            "k": 10,
+            "precision": 0.1,
+            "recall": 1.0
+          },
+          {
+            "k": 20,
+            "precision": 0.05,
+            "recall": 1.0
+          }
+        ]
+      }
+    ]
+  }
+}

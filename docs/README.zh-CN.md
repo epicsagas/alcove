@@ -381,7 +381,7 @@ alcove promote      将外部仓库笔记引入 doc-repo
 alcove index        增量更新搜索索引（仅处理变更文件）
 alcove rebuild      从头重建搜索索引（适用于模式变更后）
 alcove search       从终端搜索文档
-alcove bench        搜索质量基准测试（精度、延迟、回归检测）
+alcove bench        搜索质量基准测试（精度、延迟、回归检测） [--corpus]
 alcove index-code   从源代码生成代码结构索引 [--language LANG] [--source PATH]
 alcove token        打印持有者令牌（用于后台服务器认证）
 alcove uninstall    移除技能、配置和遗留文件
@@ -475,17 +475,25 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 
 使用内置 IR 指标和回归检测来衡量和跟踪搜索质量。
 
+**独立语料库模式**（`--corpus`）使用自包含的测试数据集（19 个合成文档，25 个查询），实现快速、可复现的 CI 基准测试 — 无需真实文档，60 秒内完成。
+
 ```bash
-# 运行精度基准测试（10 个类别，50 个查询）
+# Run against the built-in eval corpus (recommended for CI)
+alcove bench --corpus --baseline benches/corpus/baseline.json
+
+# Update the corpus baseline after intentional changes
+alcove bench --corpus --save-baseline benches/corpus/baseline.json
+
+# Run against your real docs (50 queries across 10 categories)
 alcove bench --metrics precision
 
-# 保存为基线以便将来比较
+# Save as baseline for future comparison
 alcove bench --output json --save-baseline benches/baseline.json
 
-# 与基线比较 — 在 CI 中检测回归
+# Compare against baseline — detect regressions in CI
 alcove bench --baseline benches/baseline.json
 
-# Markdown 报告
+# Markdown report
 alcove bench --output markdown --output-file bench-report.md
 ```
 

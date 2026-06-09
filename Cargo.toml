@@ -173,5 +173,6 @@ members = []
 # Patch: ensure llm-kernel-vector-index (git dep) and alcove share the same
 # llm-kernel source. Without this, the VectorIndex trait from crates.io
 # and the one from git are treated as different traits.
+# TODO: Remove after llm-kernel-vector-index is published on crates.io.
 [patch.crates-io]
 llm-kernel = { git = "https://github.com/epicsagas/llm-kernel", branch = "main" }

@@ -208,6 +208,9 @@ enum Commands {
         /// Save current results as a baseline JSON file for future comparison
         #[arg(long)]
         save_baseline: Option<std::path::PathBuf>,
+        /// Use the built-in eval corpus instead of real docs (for CI/regression)
+        #[arg(long)]
+        corpus: bool,
     },
 }
 
@@ -568,6 +571,7 @@ fn main() -> Result<()> {
             output_file,
             baseline,
             save_baseline,
+            corpus,
         }) => bench::cmd_bench(
             &metrics,
             &scope,
@@ -576,6 +580,7 @@ fn main() -> Result<()> {
             output_file.as_deref(),
             baseline.as_deref(),
             save_baseline.as_deref(),
+            corpus,
         ),
     }
 }

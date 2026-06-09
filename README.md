@@ -393,7 +393,7 @@ alcove promote      Bring a file from an external vault into your doc-repo
 alcove index        Update the search index (incremental — only changed files)
 alcove rebuild      Rebuild the search index from scratch (use after schema changes)
 alcove search       Search docs from the terminal
-alcove bench        Search quality benchmark (precision, latency, regression detection)
+alcove bench        Search quality benchmark [--corpus] (precision, latency, regression detection)
 alcove index-code   Generate code structure index from source [--language LANG] [--source PATH]
 alcove token        Print the bearer token (for background server auth)
 alcove uninstall    Remove skills, config, and legacy files
@@ -487,8 +487,16 @@ Files with no matching project land in `inbox/` for manual review.
 
 Measure and track search quality with built-in IR metrics and regression detection.
 
+**Isolated corpus mode** (`--corpus`) uses a self-contained test dataset (19 synthetic documents, 25 queries) for fast, reproducible CI benchmarks — no real docs needed, completes in under 60 seconds.
+
 ```bash
-# Run precision benchmark (50 queries across 10 categories)
+# Run against the built-in eval corpus (recommended for CI)
+alcove bench --corpus --baseline benches/corpus/baseline.json
+
+# Update the corpus baseline after intentional changes
+alcove bench --corpus --save-baseline benches/corpus/baseline.json
+
+# Run against your real docs (50 queries across 10 categories)
 alcove bench --metrics precision
 
 # Save as baseline for future comparison

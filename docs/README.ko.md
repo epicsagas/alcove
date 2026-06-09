@@ -377,7 +377,7 @@ alcove promote      외부 볼트의 노트를 doc-repo에 가져오기
 alcove index        검색 인덱스 업데이트 (증분 — 변경된 파일만)
 alcove rebuild      검색 인덱스 전체 재구축 (스키마 변경 후 사용)
 alcove search       터미널에서 문서 검색
-alcove bench        검색 품질 벤치마크 (정밀도, 지연 시간, 회귀 탐지)
+alcove bench        검색 품질 벤치마크 (정밀도, 지연 시간, 회귀 탐지) [--corpus]
 alcove index-code   소스코드에서 코드 구조 인덱스 생성 [--language LANG] [--source PATH]
 alcove token        백그라운드 서버 인증용 베어러 토큰 출력
 alcove uninstall    스킬, 설정 및 레거시 파일 제거
@@ -463,17 +463,25 @@ alcove promote ~/my-brain/Projects/auth-notes.md --mv
 
 내장된 IR 지표와 회귀 탐지로 검색 품질을 측정하고 추적합니다.
 
+**독립 코퍼스 모드**(`--corpus`)는 자체 포함된 테스트 데이터셋(19개 합성 문서, 25개 쿼리)을 사용하여 빠르고 재현 가능한 CI 벤치마크를 실행합니다 — 실제 문서 불필요, 60초 이내 완료.
+
 ```bash
-# 정밀도 벤치마크 실행 (10개 카테고리, 50개 쿼리)
+# Run against the built-in eval corpus (recommended for CI)
+alcove bench --corpus --baseline benches/corpus/baseline.json
+
+# Update the corpus baseline after intentional changes
+alcove bench --corpus --save-baseline benches/corpus/baseline.json
+
+# Run against your real docs (50 queries across 10 categories)
 alcove bench --metrics precision
 
-# 향후 비교를 위해 베이스라인으로 저장
+# Save as baseline for future comparison
 alcove bench --output json --save-baseline benches/baseline.json
 
-# 베이스라인과 비교 — CI에서 회귀 탐지
+# Compare against baseline — detect regressions in CI
 alcove bench --baseline benches/baseline.json
 
-# 마크다운 보고서
+# Markdown report
 alcove bench --output markdown --output-file bench-report.md
 ```
 

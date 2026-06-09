@@ -630,6 +630,9 @@ pub struct VectorStore {
     id_map: std::cell::RefCell<IdMetaMap>,
     /// Path to the saved index file (for save/load).
     index_path: std::path::PathBuf,
+    // SAFETY: `Connection` is `!Send`, so `VectorStore` is confined to a single
+    // thread. The `RefCell` fields (`index`, `id_map`) are safe to borrow
+    // simultaneously because no concurrent access is possible.
 }
 
 #[cfg(feature = "turboquant")]
@@ -638,6 +641,12 @@ impl VectorStore {
     ///
     /// The SQLite database stores raw vectors and metadata.
     /// The TurboQuant index is saved alongside as `<path>.tvim`.
+    ///
+    /// # Panics
+    ///
+    /// The TurboQuant backend requires `dimension % 8 == 0` (4-bit quantization
+    /// packs 8 floats per u32). The default ArcticEmbedXS model (384-dim) satisfies
+    /// this. Using a model with an incompatible dimension will panic at index build.
     #[cfg_attr(not(feature = "embed"), allow(dead_code))]
     pub fn open(path: &Path, model: &str, dimension: usize) -> Result<Self> {
         if let Some(parent) = path.parent() {
@@ -783,6 +792,8 @@ impl VectorStore {
             vectors.push(embedding);
         }
 
+        // TurboQuant 4-bit quantization requires dimension to be a multiple of 8.
+        // The ArcticEmbedXS model (384-dim) satisfies this constraint.
         let mut idx = llm_kernel_vector_index::TurbovecIndex::new(self.dimension, 4)?;
         if !ids.is_empty() {
             idx.add_with_ids(&vectors, &ids)?;

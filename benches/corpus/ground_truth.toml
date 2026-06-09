@@ -1,0 +1,202 @@
+# Corpus ground truth for isolated eval
+#
+# 25 queries targeting benches/corpus/ synthetic documents.
+# All paths are relative to the corpus docs_root.
+# Categories: architecture, product, cross-project, cjk,
+#             chunk-precision, negative-control, navigation, edge-case, config
+
+# =============================================================================
+# Architecture (3 queries)
+# =============================================================================
+
+[[query]]
+text = "MCP server protocol transport"
+category = "architecture"
+difficulty = "easy"
+relevant_files = ["eval-project/ARCHITECTURE.md"]
+
+[[query]]
+text = "search index tantivy BM25"
+category = "architecture"
+difficulty = "medium"
+relevant_files = ["eval-project/ARCHITECTURE.md", "eval-project/BENCHMARK.md"]
+
+[[query]]
+text = "hybrid search RRF reciprocal rank fusion"
+category = "architecture"
+difficulty = "hard"
+relevant_files = ["eval-project/ARCHITECTURE.md"]
+
+# =============================================================================
+# Product (3 queries)
+# =============================================================================
+
+[[query]]
+text = "benchmark quality performance metrics"
+category = "product"
+difficulty = "easy"
+relevant_files = ["eval-project/BENCHMARK.md"]
+
+[[query]]
+text = "launch plan monetization pricing"
+category = "product"
+difficulty = "medium"
+relevant_files = ["eval-project/VALUATION.md"]
+
+[[query]]
+text = "interactive setup command"
+category = "product"
+difficulty = "medium"
+relevant_files = ["eval-project/PRD.md"]
+
+# =============================================================================
+# Cross-project (3 queries)
+# =============================================================================
+
+[[query]]
+text = "progress status tracking milestones"
+category = "cross-project"
+difficulty = "easy"
+relevant_files = [
+    "eval-project/PROGRESS.md",
+    "web-platform/PROGRESS.md",
+]
+
+[[query]]
+text = "architecture system design"
+category = "cross-project"
+difficulty = "medium"
+relevant_files = [
+    "eval-project/ARCHITECTURE.md",
+    "web-platform/ARCHITECTURE.md",
+    "data-pipeline/ARCHITECTURE.md",
+]
+
+[[query]]
+text = "secrets map environment variables"
+category = "cross-project"
+difficulty = "easy"
+relevant_files = ["eval-project/SECRETS_MAP.md"]
+
+# =============================================================================
+# CJK — Korean queries (3 queries)
+# =============================================================================
+
+[[query]]
+text = "검색 인덱스"
+category = "cjk"
+difficulty = "easy"
+relevant_files = ["korean-docs/ARCHITECTURE.md", "eval-project/ARCHITECTURE.md"]
+
+[[query]]
+text = "벤치마크 품질"
+category = "cjk"
+difficulty = "medium"
+relevant_files = ["korean-docs/BENCHMARK.md", "eval-project/BENCHMARK.md"]
+
+[[query]]
+text = "데이터 파이프라인 아키텍처"
+category = "cjk"
+difficulty = "medium"
+relevant_files = ["data-pipeline/ARCHITECTURE.md"]
+
+# =============================================================================
+# Chunk-level precision (3 queries — target specific headings)
+# =============================================================================
+
+[[query]]
+text = "Docker deployment container setup"
+category = "chunk-precision"
+difficulty = "medium"
+relevant_files = ["eval-project/DEPLOYMENT.md"]
+relevant_sections = [{ file = "eval-project/DEPLOYMENT.md", heading = "## Docker Deployment" }]
+
+[[query]]
+text = "health check monitoring endpoints"
+category = "chunk-precision"
+difficulty = "easy"
+relevant_files = ["eval-project/DEPLOYMENT.md"]
+relevant_sections = [{ file = "eval-project/DEPLOYMENT.md", heading = "## Health Checks" }]
+
+[[query]]
+text = "rollback procedure version downgrade"
+category = "chunk-precision"
+difficulty = "hard"
+relevant_files = ["eval-project/DEPLOYMENT.md"]
+relevant_sections = [{ file = "eval-project/DEPLOYMENT.md", heading = "## Rollback Procedure" }]
+
+# =============================================================================
+# Negative controls (3 queries — zero relevant files)
+# =============================================================================
+
+[[query]]
+text = "xyzzy-nonexistent-query-12345"
+category = "negative-control"
+difficulty = "easy"
+relevant_files = []
+
+[[query]]
+text = "quantum computing blockchain cryptocurrency"
+category = "negative-control"
+difficulty = "medium"
+relevant_files = []
+
+[[query]]
+text = "recipe cooking pasta kitchen"
+category = "negative-control"
+difficulty = "easy"
+relevant_files = []
+
+# =============================================================================
+# Navigation (2 queries)
+# =============================================================================
+
+[[query]]
+text = "code structure index AST tree-sitter"
+category = "navigation"
+difficulty = "medium"
+relevant_files = ["eval-project/CODE_INDEX.md"]
+
+[[query]]
+text = "conventions coding standards style"
+category = "navigation"
+difficulty = "easy"
+relevant_files = ["eval-project/CONVENTIONS.md"]
+
+# =============================================================================
+# Edge case (2 queries)
+# =============================================================================
+
+[[query]]
+text = "design decisions ADR"
+category = "edge-case"
+difficulty = "medium"
+relevant_files = ["eval-project/DECISIONS.md"]
+
+[[query]]
+text = "stream processing Kafka data pipeline"
+category = "edge-case"
+difficulty = "hard"
+relevant_files = ["data-pipeline/ARCHITECTURE.md"]
+
+# =============================================================================
+# Config (3 queries)
+# =============================================================================
+
+[[query]]
+text = "environment variable configuration reference"
+category = "config"
+difficulty = "easy"
+relevant_files = ["eval-project/SECRETS_MAP.md"]
+
+[[query]]
+text = "telemetry PostHog Sentry"
+category = "config"
+difficulty = "medium"
+relevant_files = ["eval-project/PROGRESS.md", "eval-project/SECRETS_MAP.md"]
+
+[[query]]
+text = "embedding model configuration provider"
+category = "config"
+difficulty = "medium"
+relevant_files = ["eval-project/SECRETS_MAP.md", "eval-project/PRD.md"]

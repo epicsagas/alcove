@@ -79,3 +79,39 @@ fn bench_with_custom_queries_path_errors_when_missing() {
         "should report config error, got: {stderr}"
     );
 }
+
+#[test]
+fn bench_corpus_succeeds() {
+    let output = Command::new(alcove_bin())
+        .arg("bench")
+        .arg("--corpus")
+        .arg("--metrics")
+        .arg("precision")
+        .arg("--output")
+        .arg("json")
+        .output()
+        .expect("failed to run alcove bench --corpus");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "bench --corpus should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains("precision") || stdout.contains("Benchmark"),
+        "should contain benchmark results, got: {stdout}"
+    );
+}
+
+#[test]
+fn bench_corpus_help_shows_flag() {
+    let output = Command::new(alcove_bin())
+        .arg("bench")
+        .arg("--help")
+        .output()
+        .expect("failed to run alcove bench --help");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--corpus"), "help should mention --corpus");
+}
