@@ -11,7 +11,7 @@ pub mod vault;
 
 pub mod code_index;
 
-#[cfg(feature = "vector")]
+#[cfg(any(feature = "vector", feature = "turboquant"))]
 pub mod vector;
 
 pub use config::{DocConfig, default_docs_root, load_config};
@@ -34,13 +34,18 @@ pub use embedding::{
 #[cfg(feature = "embed")]
 pub use index::search_hybrid;
 
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
+pub use vector::{
+    VectorMeta, VectorResult, VectorStore, cosine_similarity, reciprocal_rank_fusion,
+};
+
+#[cfg(feature = "turboquant")]
 pub use vector::{
     VectorMeta, VectorResult, VectorStore, cosine_similarity, reciprocal_rank_fusion,
 };
 
 // Re-export llm-kernel vector index types for downstream consumers.
-#[cfg(feature = "vector")]
+#[cfg(any(feature = "vector", feature = "turboquant"))]
 pub use llm_kernel::embedding::vector_index::{SearchHit, VectorIndex};
 
 pub use code_index::{CodeIndexResult, index_code_structure, index_code_structure_with_lang};

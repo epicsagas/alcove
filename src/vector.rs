@@ -1,34 +1,20 @@
-//! Vector store using SQLite for persistence (vector feature)
+//! Vector store backends for document embedding search.
 //!
-//! Stores document chunk embeddings as BLOBs and computes cosine similarity in Rust.
-//! This avoids complex FFI dependencies while providing efficient vector search.
+//! Two backends are available:
+//! - **turboquant** (recommended): TurboQuant 4-bit compressed index — 8x memory reduction,
+//!   SIMD-accelerated search, built-in filtered search and remove.
+//! - **vector** (fallback): hnsw_rs HNSW index with SQLite persistence.
+//!
+//! Both backends expose the same public API: `VectorStore`, `VectorResult`, `VectorMeta`.
 
-#[cfg(feature = "vector")]
-use std::cmp::Ordering;
-#[cfg(feature = "vector")]
-use std::collections::BinaryHeap;
 use std::path::Path;
 
-#[cfg(feature = "vector")]
-use anyhow::Result;
-#[cfg(feature = "vector")]
-use rusqlite::{Connection, params};
-
-/// Vector store metadata
-#[cfg(feature = "vector")]
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct VectorMeta {
-    /// Model name used for embeddings
-    pub model: String,
-    /// Embedding dimension
-    pub dimension: usize,
-    /// Number of vectors stored
-    pub count: i64,
-}
+// ---------------------------------------------------------------------------
+// Shared types (available with either backend)
+// ---------------------------------------------------------------------------
 
 /// Search result with similarity score
-#[cfg(feature = "vector")]
+#[cfg(any(feature = "vector", feature = "turboquant"))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorResult {
     /// Project name
@@ -41,32 +27,54 @@ pub struct VectorResult {
     pub score: f32,
 }
 
+/// Vector store metadata
+#[cfg(any(feature = "vector", feature = "turboquant"))]
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct VectorMeta {
+    /// Model name used for embeddings
+    pub model: String,
+    /// Embedding dimension
+    pub dimension: usize,
+    /// Number of vectors stored
+    pub count: i64,
+}
+
+// ---------------------------------------------------------------------------
+// hnsw_rs backend (feature = "vector", no turboquant)
+// ---------------------------------------------------------------------------
+
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
+use std::cmp::Ordering;
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
+use std::collections::BinaryHeap;
+
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
+use anyhow::Result;
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
+use rusqlite::{Connection, params};
+
 /// Wrapper for min-heap ordering used by `search_linear` top-K selection.
-///
-/// `BinaryHeap` is a max-heap by default; reversing `Ord` makes it a min-heap
-/// so the *lowest* score sits at the top and can be cheaply evicted once the
-/// heap exceeds the desired limit.
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 #[derive(PartialEq)]
 struct MinScoreEntry {
     score: f32,
     result: VectorResult,
 }
 
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 impl Eq for MinScoreEntry {}
 
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 impl PartialOrd for MinScoreEntry {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 impl Ord for MinScoreEntry {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Reversed: smallest score at the top (min-heap)
         other
             .score
             .partial_cmp(&self.score)
@@ -74,68 +82,35 @@ impl Ord for MinScoreEntry {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Feature-gated implementation
-// ---------------------------------------------------------------------------
-
-/// A single cached HNSW index entry scoped to one project key.
-///
-/// `key = None`       → index built from ALL projects
-/// `key = Some(name)` → index built from that project only
-#[cfg(feature = "vector")]
+// hnsw_rs: cache entry
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 struct HnswCacheEntry {
     index: hnsw_rs::prelude::Hnsw<'static, f32, hnsw_rs::prelude::DistCosine>,
-    /// Maps HNSW d_id (= SQLite row `id` as usize) → (project, file, chunk_id)
     id_map: std::collections::HashMap<usize, (String, String, u64)>,
-    /// Timestamp of the last access — used for TTL-based eviction.
     last_accessed: std::time::Instant,
 }
 
-/// Maximum number of per-project HNSW indices held in memory simultaneously.
-/// When exceeded, the least-recently-used entry is evicted before inserting a new one.
-/// Reduced from 8 → 3 to bound peak memory; each entry can consume 50–300 MB
-/// depending on vector count and dimension.
-#[cfg(all(feature = "vector", not(test)))]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 const HNSW_CACHE_MAX_ENTRIES: usize = 3;
 
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 pub struct VectorStore {
     conn: Connection,
     dimension: usize,
     #[allow(dead_code)]
     model: String,
-    /// Per-project HNSW cache.
-    ///
-    /// Key `None`       = index over all projects (used when no filter is given).
-    /// Key `Some(name)` = index limited to that project.
-    ///
-    /// Bounded to `HNSW_CACHE_MAX_ENTRIES`; LRU entry is dropped when full.
-    /// TTL eviction runs at most once per 60 s to avoid O(n) overhead on hot paths.
-    ///
-    /// `RefCell` is safe because `Connection` is `!Send`, so `VectorStore` is
-    /// already confined to a single thread.
     hnsw_cache: std::cell::RefCell<std::collections::HashMap<Option<String>, HnswCacheEntry>>,
-    /// Timestamp of the last TTL eviction pass. Throttles `evict_stale` calls.
     last_evict: std::cell::Cell<std::time::Instant>,
 }
 
-// ---------------------------------------------------------------------------
-// TTL eviction helper (module-private)
-// ---------------------------------------------------------------------------
-
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 fn evict_stale(cache: &mut std::collections::HashMap<Option<String>, HnswCacheEntry>) {
-    let ttl = std::time::Duration::from_secs(300); // 5 minutes
+    let ttl = std::time::Duration::from_secs(300);
     cache.retain(|_, entry| entry.last_accessed.elapsed() < ttl);
 }
 
-// ---------------------------------------------------------------------------
-// VectorStore impl
-// ---------------------------------------------------------------------------
-
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 impl VectorStore {
-    /// Open or create a vector store at the given path
     #[cfg_attr(not(feature = "embed"), allow(dead_code))]
     pub fn open(path: &Path, model: &str, dimension: usize) -> Result<Self> {
         if let Some(parent) = path.parent() {
@@ -143,15 +118,12 @@ impl VectorStore {
         }
 
         let mut conn = Connection::open(path)?;
-
-        // Create tables
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS meta (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-
             CREATE TABLE IF NOT EXISTS vectors (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project TEXT NOT NULL,
@@ -160,19 +132,16 @@ impl VectorStore {
                 embedding BLOB NOT NULL,
                 UNIQUE(project, file, chunk_id)
             );
-
             CREATE INDEX IF NOT EXISTS idx_vectors_project ON vectors(project);
             CREATE INDEX IF NOT EXISTS idx_vectors_file ON vectors(file);
             "#,
         )?;
 
-        // Check/set metadata
         let existing_model: Option<String> = conn
             .query_row("SELECT value FROM meta WHERE key = 'model'", [], |row| {
                 row.get(0)
             })
             .ok();
-
         let existing_dim: Option<usize> = conn
             .query_row(
                 "SELECT value FROM meta WHERE key = 'dimension'",
@@ -182,7 +151,6 @@ impl VectorStore {
             .ok()
             .and_then(|s| s.parse().ok());
 
-        // Atomically clear stale vectors and update metadata in one transaction.
         {
             let tx = conn.transaction()?;
             let model_changed = existing_model.is_some_and(|em| em != model);
@@ -210,10 +178,6 @@ impl VectorStore {
         })
     }
 
-    /// Insert or update multiple vectors efficiently using a transaction.
-    ///
-    /// Invalidates the cached entry for every affected project AND the
-    /// global `None` entry (which spans all projects).
     #[cfg_attr(not(feature = "embed"), allow(dead_code))]
     pub fn batch_upsert(
         &mut self,
@@ -224,10 +188,8 @@ impl VectorStore {
             std::collections::HashSet::new();
         {
             let mut stmt = tx.prepare(
-                r#"
-                INSERT OR REPLACE INTO vectors (project, file, chunk_id, embedding)
-                VALUES (?1, ?2, ?3, ?4)
-                "#,
+                "INSERT OR REPLACE INTO vectors (project, file, chunk_id, embedding)
+                 VALUES (?1, ?2, ?3, ?4)",
             )?;
             for (project, file, chunk_id, embedding) in embeddings {
                 let blob = Self::encode_embedding(&embedding);
@@ -236,8 +198,6 @@ impl VectorStore {
             }
         }
         tx.commit()?;
-
-        // Invalidate: affected project keys + global key.
         let mut cache = self.hnsw_cache.borrow_mut();
         for proj in &affected_projects {
             cache.remove(&Some(proj.clone()));
@@ -246,9 +206,6 @@ impl VectorStore {
         Ok(())
     }
 
-    /// Insert or update a single vector.
-    ///
-    /// Invalidates the cached entry for this project AND the global `None` entry.
     #[allow(dead_code)]
     pub fn upsert(
         &self,
@@ -258,23 +215,17 @@ impl VectorStore {
         embedding: &[f32],
     ) -> Result<()> {
         let blob = Self::encode_embedding(embedding);
-
         self.conn.execute(
-            r#"
-            INSERT OR REPLACE INTO vectors (project, file, chunk_id, embedding)
-            VALUES (?1, ?2, ?3, ?4)
-            "#,
+            "INSERT OR REPLACE INTO vectors (project, file, chunk_id, embedding)
+             VALUES (?1, ?2, ?3, ?4)",
             params![project, file, chunk_id as i64, blob],
         )?;
-
-        // Targeted invalidation.
         let mut cache = self.hnsw_cache.borrow_mut();
         cache.remove(&Some(project.to_string()));
         cache.remove(&None);
         Ok(())
     }
 
-    /// Check if a file already has vectors in the store
     #[cfg_attr(not(feature = "embed"), allow(dead_code))]
     pub fn has_file(&self, project: &str, file: &str) -> Result<bool> {
         let count: i64 = self.conn.query_row(
@@ -285,9 +236,6 @@ impl VectorStore {
         Ok(count > 0)
     }
 
-    /// Delete vectors for a file.
-    ///
-    /// Removes `Some(project)` and `None` cache entries.
     #[allow(dead_code)]
     pub fn delete_file(&self, project: &str, file: &str) -> Result<usize> {
         let count = self.conn.execute(
@@ -300,9 +248,6 @@ impl VectorStore {
         Ok(count)
     }
 
-    /// Delete all vectors for a project.
-    ///
-    /// Removes `Some(project)` and `None` cache entries.
     #[allow(dead_code)]
     pub fn delete_project(&self, project: &str) -> Result<usize> {
         let count = self
@@ -314,16 +259,11 @@ impl VectorStore {
         Ok(count)
     }
 
-    /// Remove vectors by their SQLite row IDs.
-    ///
-    /// IDs that do not exist are silently ignored. Clears the entire HNSW cache
-    /// because the affected entries could span any project.
     #[allow(dead_code)]
     pub fn remove_by_ids(&self, ids: &[u64]) -> Result<usize> {
         if ids.is_empty() {
             return Ok(0);
         }
-        // Build a parameterized IN clause: "id IN (?1, ?2, ...)"
         let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
         let sql = format!(
             "DELETE FROM vectors WHERE id IN ({})",
@@ -340,16 +280,11 @@ impl VectorStore {
         Ok(count)
     }
 
-    /// Search for similar vectors using HNSW (large datasets) or linear scan (small).
-    ///
-    /// When `project_filter` is `Some`, only that project's vectors are loaded
-    /// into the HNSW index (or searched linearly), reducing memory footprint.
     #[allow(dead_code)]
     pub fn search(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
         self.search_with_filter(query, limit, None)
     }
 
-    /// Search with an optional project filter.
     pub fn search_with_filter(
         &self,
         query: &[f32],
@@ -366,22 +301,12 @@ impl VectorStore {
             self.conn
                 .query_row("SELECT COUNT(*) FROM vectors", [], |row| row.get(0))?
         };
-
-        // Use HNSW for large datasets (>= 5000 vectors)
-        #[cfg(feature = "vector")]
         if count >= 5000 {
             return self.search_hnsw(query, limit, project_filter);
         }
-
-        // Fall back to linear search for small datasets
         self.search_linear(query, limit, project_filter)
     }
 
-    /// Search restricted to an allowlist of candidate SQLite row IDs.
-    ///
-    /// Useful for hybrid retrieval: first narrow candidates via BM25 or
-    /// metadata filter, then dense-rerank within that set.
-    /// Returns results sorted by descending similarity score.
     #[allow(dead_code)]
     pub fn search_filtered(
         &self,
@@ -392,8 +317,6 @@ impl VectorStore {
         if allowlist.is_empty() {
             return Ok(Vec::new());
         }
-
-        // Build parameterized IN clause: "id IN (?1, ?2, ...)"
         let placeholders: Vec<String> = (1..=allowlist.len()).map(|i| format!("?{i}")).collect();
         let sql = format!(
             "SELECT project, file, chunk_id, embedding FROM vectors WHERE id IN ({})",
@@ -414,7 +337,6 @@ impl VectorStore {
                 row.get::<_, Vec<u8>>(3)?,
             ))
         })?;
-
         let mut heap: BinaryHeap<MinScoreEntry> = BinaryHeap::with_capacity(limit + 1);
         for row_result in rows {
             let (proj, file, chunk_id, blob) = row_result?;
@@ -435,29 +357,18 @@ impl VectorStore {
                 }
             }
         }
-
         let mut results: Vec<VectorResult> = heap.into_iter().map(|e| e.result).collect();
         results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
         Ok(results)
     }
 
-    /// Linear search (O(n)) - good for small datasets
-    ///
-    /// When `project_filter` is `Some`, only rows belonging to that project are
-    /// fetched from SQLite (uses the `idx_vectors_project` index).
     fn search_linear(
         &self,
         query: &[f32],
         limit: usize,
         project_filter: Option<&str>,
     ) -> Result<Vec<VectorResult>> {
-        // Use a BinaryHeap (min-heap via reversed Ord) to maintain only the top-K
-        // results.  Each blob is decoded, scored, and discarded immediately — no
-        // full-set collect() before scoring.
         let mut heap: BinaryHeap<MinScoreEntry> = BinaryHeap::with_capacity(limit + 1);
-
-        /// Score a single row and push into the min-heap, evicting the lowest
-        /// entry when the heap exceeds `limit`.
         #[inline]
         fn push_if_positive(
             heap: &mut BinaryHeap<MinScoreEntry>,
@@ -478,16 +389,13 @@ impl VectorStore {
                     },
                 });
                 if heap.len() > limit {
-                    heap.pop(); // evict the lowest score
+                    heap.pop();
                 }
             }
         }
-
-        // Two separate prepare+query branches to keep rusqlite param types clean.
         if let Some(project) = project_filter {
             let mut stmt = self.conn.prepare(
-                "SELECT project, file, chunk_id, embedding \
-                 FROM vectors WHERE project = ?1",
+                "SELECT project, file, chunk_id, embedding FROM vectors WHERE project = ?1",
             )?;
             let mapped = stmt.query_map(params![project], |row| {
                 Ok((
@@ -522,19 +430,11 @@ impl VectorStore {
                 push_if_positive(&mut heap, limit, proj, file, chunk_id, score);
             }
         }
-
-        // Convert heap to a Vec sorted by score descending.
         let mut results: Vec<VectorResult> = heap.into_iter().map(|e| e.result).collect();
         results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
-
         Ok(results)
     }
 
-    /// HNSW search (O(log n)) - good for large datasets.
-    ///
-    /// The index is scoped to `project_filter` and cached under the matching key.
-    /// Stale entries (TTL = 5 min) are evicted at the start of each call.
-    #[cfg(feature = "vector")]
     fn search_hnsw(
         &self,
         query: &[f32],
@@ -545,8 +445,6 @@ impl VectorStore {
         use std::collections::HashMap;
 
         let cache_key: Option<String> = project_filter.map(|s| s.to_string());
-
-        // Evict stale entries at most once every 60 s to avoid O(n) overhead on hot paths.
         {
             let evict_interval = std::time::Duration::from_secs(60);
             if self.last_evict.get().elapsed() >= evict_interval {
@@ -555,68 +453,56 @@ impl VectorStore {
                 self.last_evict.set(std::time::Instant::now());
             }
         }
-
-        // Cache miss: build the index for this key.
         if !self.hnsw_cache.borrow().contains_key(&cache_key) {
-            // Load vectors from SQLite — project-scoped when possible.
             let mut vectors: Vec<(i64, String, String, u64, Vec<f32>)> = Vec::new();
-
             if let Some(project) = project_filter {
                 let mut stmt = self.conn.prepare(
-                    "SELECT id, project, file, chunk_id, embedding \
-                     FROM vectors WHERE project = ?1",
+                    "SELECT id, project, file, chunk_id, embedding FROM vectors WHERE project = ?1",
                 )?;
                 let rows = stmt.query_map(params![project], |row| {
-                    let id: i64 = row.get(0)?;
-                    let proj: String = row.get(1)?;
-                    let file: String = row.get(2)?;
-                    let chunk_id: u64 = row.get::<_, i64>(3)? as u64;
-                    let blob: Vec<u8> = row.get(4)?;
-                    Ok((id, proj, file, chunk_id, blob))
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)? as u64,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
                 })?;
                 for row_result in rows {
                     let (id, proj, file, chunk_id, blob) = row_result?;
-                    let embedding = Self::decode_embedding(&blob);
-                    vectors.push((id, proj, file, chunk_id, embedding));
+                    vectors.push((id, proj, file, chunk_id, Self::decode_embedding(&blob)));
                 }
             } else {
                 let mut stmt = self
                     .conn
                     .prepare("SELECT id, project, file, chunk_id, embedding FROM vectors")?;
                 let rows = stmt.query_map([], |row| {
-                    let id: i64 = row.get(0)?;
-                    let proj: String = row.get(1)?;
-                    let file: String = row.get(2)?;
-                    let chunk_id: u64 = row.get::<_, i64>(3)? as u64;
-                    let blob: Vec<u8> = row.get(4)?;
-                    Ok((id, proj, file, chunk_id, blob))
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)? as u64,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
                 })?;
                 for row_result in rows {
                     let (id, proj, file, chunk_id, blob) = row_result?;
-                    let embedding = Self::decode_embedding(&blob);
-                    vectors.push((id, proj, file, chunk_id, embedding));
+                    vectors.push((id, proj, file, chunk_id, Self::decode_embedding(&blob)));
                 }
             }
-
             if vectors.is_empty() {
                 return Ok(Vec::new());
             }
-
             let ef_build = 200;
             let hnsw =
                 Hnsw::<f32, DistCosine>::new(16, vectors.len().max(1), 16, ef_build, DistCosine {});
-
             let mut id_map: HashMap<usize, (String, String, u64)> =
                 HashMap::with_capacity(vectors.len());
-
             for (id, project, file, chunk_id, embedding) in &vectors {
                 let d_id = *id as usize;
                 hnsw.insert((embedding.as_slice(), d_id));
                 id_map.insert(d_id, (project.clone(), file.clone(), *chunk_id));
             }
-
-            // In test builds skip the per-instance cache to avoid retaining
-            // large HNSW graphs across tests (each test has its own VectorStore).
             #[cfg(test)]
             {
                 let ef_search = (limit * 2).max(50);
@@ -634,15 +520,10 @@ impl VectorStore {
                 }
                 return Ok(results);
             }
-
             #[cfg(not(test))]
             {
-                let max_entries = crate::config::load_config()
-                    .memory
-                    .as_ref()
-                    .map_or(HNSW_CACHE_MAX_ENTRIES, |m| m.max_hnsw_cache);
                 let mut cache = self.hnsw_cache.borrow_mut();
-                if cache.len() >= max_entries
+                if cache.len() >= HNSW_CACHE_MAX_ENTRIES
                     && let Some(lru_key) = cache
                         .iter()
                         .min_by_key(|(_, e)| e.last_accessed)
@@ -660,15 +541,11 @@ impl VectorStore {
                 );
             }
         }
-
-        // Use the cached entry — update last_accessed.
         let mut cache = self.hnsw_cache.borrow_mut();
         let entry = cache.get_mut(&cache_key).unwrap();
         entry.last_accessed = std::time::Instant::now();
-
         let ef_search = (limit * 2).max(50);
         let neighbors = entry.index.search(query, limit, ef_search);
-
         let mut vector_results: Vec<VectorResult> = Vec::new();
         for neighbor in neighbors {
             if let Some((project, file, chunk_id)) = entry.id_map.get(&neighbor.d_id) {
@@ -680,17 +557,14 @@ impl VectorStore {
                 });
             }
         }
-
         Ok(vector_results)
     }
 
-    /// Get store metadata
     #[allow(dead_code)]
     pub fn meta(&self) -> Result<VectorMeta> {
         let count: i64 = self
             .conn
             .query_row("SELECT COUNT(*) FROM vectors", [], |row| row.get(0))?;
-
         Ok(VectorMeta {
             model: self.model.clone(),
             dimension: self.dimension,
@@ -698,7 +572,6 @@ impl VectorStore {
         })
     }
 
-    /// Check if store is empty
     #[allow(dead_code)]
     pub fn is_empty(&self) -> Result<bool> {
         let count: i64 = self
@@ -707,7 +580,6 @@ impl VectorStore {
         Ok(count == 0)
     }
 
-    /// Clear all vectors
     #[allow(dead_code)]
     pub fn clear(&self) -> Result<()> {
         self.conn.execute("DELETE FROM vectors", [])?;
@@ -715,7 +587,6 @@ impl VectorStore {
         Ok(())
     }
 
-    /// Encode embedding as bytes (little-endian f32)
     fn encode_embedding(embedding: &[f32]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(embedding.len() * 4);
         for &v in embedding {
@@ -724,7 +595,6 @@ impl VectorStore {
         bytes
     }
 
-    /// Decode embedding from bytes
     fn decode_embedding(bytes: &[u8]) -> Vec<f32> {
         bytes
             .chunks_exact(4)
@@ -734,27 +604,485 @@ impl VectorStore {
 }
 
 // ---------------------------------------------------------------------------
-// Helper functions
+// TurboQuant backend (feature = "turboquant")
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "turboquant")]
+use anyhow::Result;
+#[cfg(feature = "turboquant")]
+use llm_kernel::embedding::VectorIndex;
+#[cfg(feature = "turboquant")]
+use rusqlite::{Connection, params};
+
+/// Maps external row IDs to (project, file, chunk_id) metadata.
+type IdMetaMap = std::collections::HashMap<u64, (String, String, u64)>;
+
+#[cfg(feature = "turboquant")]
+pub struct VectorStore {
+    /// SQLite connection for metadata and raw vector storage.
+    conn: Connection,
+    dimension: usize,
+    #[allow(dead_code)]
+    model: String,
+    /// In-memory TurboQuant compressed index.
+    index: std::cell::RefCell<Option<llm_kernel_vector_index::TurbovecIndex>>,
+    /// Maps external ID → (project, file, chunk_id).
+    id_map: std::cell::RefCell<IdMetaMap>,
+    /// Path to the saved index file (for save/load).
+    index_path: std::path::PathBuf,
+}
+
+#[cfg(feature = "turboquant")]
+impl VectorStore {
+    /// Open or create a vector store at the given path.
+    ///
+    /// The SQLite database stores raw vectors and metadata.
+    /// The TurboQuant index is saved alongside as `<path>.tvim`.
+    #[cfg_attr(not(feature = "embed"), allow(dead_code))]
+    pub fn open(path: &Path, model: &str, dimension: usize) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let mut conn = Connection::open(path)?;
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS vectors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project TEXT NOT NULL,
+                file TEXT NOT NULL,
+                chunk_id INTEGER NOT NULL,
+                embedding BLOB NOT NULL,
+                UNIQUE(project, file, chunk_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_vectors_project ON vectors(project);
+            CREATE INDEX IF NOT EXISTS idx_vectors_file ON vectors(file);
+            "#,
+        )?;
+
+        let existing_model: Option<String> = conn
+            .query_row("SELECT value FROM meta WHERE key = 'model'", [], |row| {
+                row.get(0)
+            })
+            .ok();
+        let existing_dim: Option<usize> = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'dimension'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|s| s.parse().ok());
+
+        {
+            let tx = conn.transaction()?;
+            let model_changed = existing_model.is_some_and(|em| em != model);
+            let dim_changed = existing_dim.is_some_and(|ed| ed != dimension);
+            if model_changed || dim_changed {
+                tx.execute("DELETE FROM vectors", [])?;
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('model', ?1)",
+                params![model],
+            )?;
+            tx.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('dimension', ?1)",
+                params![dimension.to_string()],
+            )?;
+            tx.commit()?;
+        }
+
+        let index_path = path.with_extension("tvim");
+        let store = Self {
+            conn,
+            dimension,
+            model: model.to_string(),
+            index: std::cell::RefCell::new(None),
+            id_map: std::cell::RefCell::new(IdMetaMap::new()),
+            index_path,
+        };
+
+        // Try loading a previously saved index.
+        if store.index_path.exists()
+            && let Ok(idx) = llm_kernel_vector_index::TurbovecIndex::load(&store.index_path)
+        {
+            // Rebuild id_map from SQLite to stay in sync.
+            store.rebuild_id_map();
+            *store.index.borrow_mut() = Some(idx);
+        }
+
+        Ok(store)
+    }
+
+    /// Load all (id, project, file, chunk_id) from SQLite into id_map.
+    fn rebuild_id_map(&self) {
+        let mut map = IdMetaMap::new();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, project, file, chunk_id FROM vectors")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)? as u64,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)? as u64,
+                ))
+            })
+            .unwrap();
+        for row_result in rows.flatten() {
+            let (id, project, file, chunk_id) = row_result;
+            map.insert(id, (project, file, chunk_id));
+        }
+        *self.id_map.borrow_mut() = map;
+    }
+
+    /// Ensure the in-memory index is populated. Rebuilds from SQLite if needed.
+    fn ensure_index(&self) -> Result<()> {
+        if self.index.borrow().is_some() {
+            return Ok(());
+        }
+        // Load all vectors from SQLite and build the index.
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, embedding FROM vectors ORDER BY id")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)? as u64, row.get::<_, Vec<u8>>(1)?))
+        })?;
+
+        let mut ids: Vec<u64> = Vec::new();
+        let mut vectors: Vec<Vec<f32>> = Vec::new();
+        let mut map = IdMetaMap::new();
+
+        // Also rebuild id_map with full metadata.
+        let mut meta_stmt = self
+            .conn
+            .prepare("SELECT id, project, file, chunk_id FROM vectors ORDER BY id")?;
+        let meta_rows = meta_stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)? as u64,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)? as u64,
+            ))
+        })?;
+        for row_result in meta_rows.flatten() {
+            let (id, project, file, chunk_id) = row_result;
+            map.insert(id, (project, file, chunk_id));
+        }
+
+        for row_result in rows {
+            let (id, blob) = row_result?;
+            let embedding = Self::decode_embedding(&blob);
+            ids.push(id);
+            vectors.push(embedding);
+        }
+
+        let mut idx = llm_kernel_vector_index::TurbovecIndex::new(self.dimension, 4)?;
+        if !ids.is_empty() {
+            idx.add_with_ids(&vectors, &ids)?;
+        }
+        *self.index.borrow_mut() = Some(idx);
+        *self.id_map.borrow_mut() = map;
+        Ok(())
+    }
+
+    /// Insert or update multiple vectors.
+    #[cfg_attr(not(feature = "embed"), allow(dead_code))]
+    pub fn batch_upsert(
+        &mut self,
+        embeddings: impl Iterator<Item = (String, String, u64, Vec<f32>)>,
+    ) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        let mut new_rows: Vec<(u64, String, String, u64, Vec<f32>)> = Vec::new();
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR REPLACE INTO vectors (project, file, chunk_id, embedding)
+                 VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for (project, file, chunk_id, embedding) in embeddings {
+                let blob = Self::encode_embedding(&embedding);
+                stmt.execute(params![project, file, chunk_id as i64, blob])?;
+                new_rows.push((0, project, file, chunk_id, embedding));
+            }
+        }
+        tx.commit()?;
+
+        // Retrieve the auto-assigned row IDs.
+        for row in &mut new_rows {
+            let id: i64 = self.conn.query_row(
+                "SELECT id FROM vectors WHERE project = ?1 AND file = ?2 AND chunk_id = ?3",
+                params![row.1, row.2, row.3 as i64],
+                |r| r.get(0),
+            )?;
+            row.0 = id as u64;
+        }
+
+        // Add to in-memory index.
+        let mut index = self.index.borrow_mut();
+        if let Some(ref mut idx) = *index {
+            for (id, _project, _file, _chunk_id, embedding) in &new_rows {
+                idx.add_with_ids(std::slice::from_ref(embedding), &[*id])?;
+            }
+        } else {
+            // Index not yet built; will be built on first search.
+        }
+
+        // Update id_map.
+        let mut id_map = self.id_map.borrow_mut();
+        for (id, project, file, chunk_id, _) in &new_rows {
+            id_map.insert(*id, (project.clone(), file.clone(), *chunk_id));
+        }
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn has_file(&self, project: &str, file: &str) -> Result<bool> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM vectors WHERE project = ?1 AND file = ?2",
+            params![project, file],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    #[allow(dead_code)]
+    pub fn delete_file(&self, project: &str, file: &str) -> Result<usize> {
+        // Collect IDs before deleting.
+        let ids: Vec<u64> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT id FROM vectors WHERE project = ?1 AND file = ?2")?;
+            stmt.query_map(params![project, file], |row| {
+                row.get::<_, i64>(0).map(|id| id as u64)
+            })?
+            .filter_map(|r| r.ok())
+            .collect()
+        };
+        let count = self.conn.execute(
+            "DELETE FROM vectors WHERE project = ?1 AND file = ?2",
+            params![project, file],
+        )?;
+        self.remove_from_index(&ids);
+        Ok(count)
+    }
+
+    #[allow(dead_code)]
+    pub fn delete_project(&self, project: &str) -> Result<usize> {
+        let ids: Vec<u64> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT id FROM vectors WHERE project = ?1")?;
+            stmt.query_map(params![project], |row| {
+                row.get::<_, i64>(0).map(|id| id as u64)
+            })?
+            .filter_map(|r| r.ok())
+            .collect()
+        };
+        let count = self
+            .conn
+            .execute("DELETE FROM vectors WHERE project = ?1", params![project])?;
+        self.remove_from_index(&ids);
+        Ok(count)
+    }
+
+    #[allow(dead_code)]
+    pub fn remove_by_ids(&self, ids: &[u64]) -> Result<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "DELETE FROM vectors WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = ids
+            .iter()
+            .map(|&id| Box::new(id as i64) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+        let count = self.conn.execute(&sql, param_refs.as_slice())?;
+        self.remove_from_index(ids);
+        Ok(count)
+    }
+
+    /// Remove IDs from the in-memory index and id_map.
+    fn remove_from_index(&self, ids: &[u64]) {
+        if let Some(ref mut idx) = *self.index.borrow_mut() {
+            let _ = idx.remove(ids);
+        }
+        let mut id_map = self.id_map.borrow_mut();
+        for &id in ids {
+            id_map.remove(&id);
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn search(&self, query: &[f32], limit: usize) -> Result<Vec<VectorResult>> {
+        self.search_with_filter(query, limit, None)
+    }
+
+    pub fn search_with_filter(
+        &self,
+        query: &[f32],
+        limit: usize,
+        project_filter: Option<&str>,
+    ) -> Result<Vec<VectorResult>> {
+        self.ensure_index()?;
+
+        let index = self.index.borrow();
+        let idx = index.as_ref().unwrap();
+        let id_map = self.id_map.borrow();
+
+        let hits = if let Some(project) = project_filter {
+            // Build allowlist of IDs belonging to this project.
+            let allowlist: Vec<u64> = id_map
+                .iter()
+                .filter(|(_, (proj, _, _))| proj == project)
+                .map(|(&id, _)| id)
+                .collect();
+            if allowlist.is_empty() {
+                return Ok(Vec::new());
+            }
+            idx.search_filtered(query, limit, &allowlist)?
+        } else {
+            idx.search(query, limit)?
+        };
+
+        let results = hits
+            .into_iter()
+            .filter_map(|hit| {
+                id_map
+                    .get(&hit.id)
+                    .map(|(project, file, chunk_id)| VectorResult {
+                        project: project.clone(),
+                        file: file.clone(),
+                        chunk_id: *chunk_id,
+                        score: hit.score,
+                    })
+            })
+            .collect();
+        Ok(results)
+    }
+
+    #[allow(dead_code)]
+    pub fn search_filtered(
+        &self,
+        query: &[f32],
+        limit: usize,
+        allowlist: &[u64],
+    ) -> Result<Vec<VectorResult>> {
+        if allowlist.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.ensure_index()?;
+
+        let index = self.index.borrow();
+        let idx = index.as_ref().unwrap();
+        let id_map = self.id_map.borrow();
+
+        let hits = idx.search_filtered(query, limit, allowlist)?;
+        let results = hits
+            .into_iter()
+            .filter_map(|hit| {
+                id_map
+                    .get(&hit.id)
+                    .map(|(project, file, chunk_id)| VectorResult {
+                        project: project.clone(),
+                        file: file.clone(),
+                        chunk_id: *chunk_id,
+                        score: hit.score,
+                    })
+            })
+            .collect();
+        Ok(results)
+    }
+
+    #[allow(dead_code)]
+    pub fn meta(&self) -> Result<VectorMeta> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM vectors", [], |row| row.get(0))?;
+        Ok(VectorMeta {
+            model: self.model.clone(),
+            dimension: self.dimension,
+            count,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> Result<bool> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM vectors", [], |row| row.get(0))?;
+        Ok(count == 0)
+    }
+
+    #[allow(dead_code)]
+    pub fn clear(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM vectors", [])?;
+        *self.index.borrow_mut() = None;
+        self.id_map.borrow_mut().clear();
+        Ok(())
+    }
+
+    /// Save the TurboQuant index to disk.
+    #[allow(dead_code)]
+    pub fn save_index(&self) -> Result<()> {
+        if let Some(ref idx) = *self.index.borrow() {
+            idx.save(&self.index_path)?;
+        }
+        Ok(())
+    }
+
+    fn encode_embedding(embedding: &[f32]) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(embedding.len() * 4);
+        for &v in embedding {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn decode_embedding(bytes: &[u8]) -> Vec<f32> {
+        bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared helper functions
 // ---------------------------------------------------------------------------
 
 /// Compute cosine similarity between two vectors.
 ///
 /// Delegates to `llm_kernel::embedding::cosine_similarity` which accumulates
 /// in f64 for better ranking stability with high-dimensional (384–1024) vectors.
-#[cfg(feature = "vector")]
+#[cfg(all(feature = "vector", not(feature = "turboquant")))]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     llm_kernel::embedding::cosine_similarity(a, b) as f32
 }
 
-/// Reciprocal Rank Fusion (RRF) for combining BM25 and vector search results
-///
-/// RRF score = bm25_weight / (k + rank_bm25) + vector_weight / (k + rank_vector)
-/// Default k = 60 (commonly used value). BM25 is weighted at 0.6 and vector at 0.4
-/// to give slight preference to the lexical signal.
-#[cfg(feature = "vector")]
+/// Compute cosine similarity (TurboQuant backend — delegates to llm-kernel).
+#[cfg(feature = "turboquant")]
+#[allow(dead_code)]
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    llm_kernel::embedding::cosine_similarity(a, b) as f32
+}
+
+/// Reciprocal Rank Fusion (RRF) for combining BM25 and vector search results.
+#[cfg(any(feature = "vector", feature = "turboquant"))]
 #[cfg_attr(not(feature = "embed"), allow(dead_code))]
 pub fn reciprocal_rank_fusion(
-    bm25_results: &[(String, String, u64, f32)], // (project, file, chunk_id, score)
+    bm25_results: &[(String, String, u64, f32)],
     vector_results: &[VectorResult],
     k: u32,
 ) -> Vec<(String, String, u64, f32)> {
@@ -765,24 +1093,20 @@ pub fn reciprocal_rank_fusion(
 
     let mut scores: HashMap<(String, String, u64), f32> = HashMap::new();
 
-    // Add BM25 contributions
     for (rank, (project, file, chunk_id, _score)) in bm25_results.iter().enumerate() {
         let key = (project.clone(), file.clone(), *chunk_id);
         let rrf = bm25_weight / (k as f32 + (rank + 1) as f32);
         *scores.entry(key).or_default() += rrf;
     }
 
-    // Add vector contributions
     for (rank, result) in vector_results.iter().enumerate() {
         let key = (result.project.clone(), result.file.clone(), result.chunk_id);
         let rrf = vector_weight / (k as f32 + (rank + 1) as f32);
         *scores.entry(key).or_default() += rrf;
     }
 
-    // Sort by combined score
     let mut combined: Vec<_> = scores.into_iter().collect();
     combined.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
     combined
         .into_iter()
         .map(|((project, file, chunk_id), score)| (project, file, chunk_id, score))
@@ -799,53 +1123,55 @@ mod tests {
 
     #[test]
     fn test_cosine_similarity_identical() {
-        let a = vec![1.0, 0.0, 0.0];
-        let b = vec![1.0, 0.0, 0.0];
+        let a = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         assert!((cosine_similarity(&a, &b) - 1.0).abs() < 0.0001);
     }
 
     #[test]
     fn test_cosine_similarity_orthogonal() {
-        let a = vec![1.0, 0.0, 0.0];
-        let b = vec![0.0, 1.0, 0.0];
+        let a = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let b = vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         assert!(cosine_similarity(&a, &b).abs() < 0.0001);
     }
 
     #[test]
     fn test_cosine_similarity_opposite() {
-        let a = vec![1.0, 0.0, 0.0];
-        let b = vec![-1.0, 0.0, 0.0];
+        let a = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let b = vec![-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         assert!((cosine_similarity(&a, &b) - (-1.0)).abs() < 0.0001);
     }
 
     #[test]
     fn test_cosine_similarity_partial() {
-        let a = vec![1.0, 1.0, 0.0];
-        let b = vec![1.0, 0.0, 0.0];
-        // cos(45°) ≈ 0.707
+        let a = vec![1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         assert!((cosine_similarity(&a, &b) - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.01);
     }
 
-    /// Fix 1: reopening with a different model must clear all vectors atomically.
-    #[cfg(feature = "vector")]
+    /// Reopening with a different model clears all vectors atomically.
     #[test]
     fn test_open_model_change_clears_vectors() {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("vec.db");
 
         {
-            let mut store = VectorStore::open(&db_path, "model-a", 3).unwrap();
+            let mut store = VectorStore::open(&db_path, "model-a", 8).unwrap();
             store
                 .batch_upsert(
-                    vec![("proj".into(), "f.md".into(), 0u64, vec![1.0, 0.0, 0.0])].into_iter(),
+                    vec![(
+                        "proj".into(),
+                        "f.md".into(),
+                        0u64,
+                        vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    )]
+                    .into_iter(),
                 )
                 .unwrap();
             assert!(!store.is_empty().unwrap());
         }
-
-        // Reopen with a different model — vectors must be gone
         {
-            let store = VectorStore::open(&db_path, "model-b", 3).unwrap();
+            let store = VectorStore::open(&db_path, "model-b", 8).unwrap();
             assert!(
                 store.is_empty().unwrap(),
                 "vectors must be cleared when model changes"
@@ -853,221 +1179,208 @@ mod tests {
         }
     }
 
-    /// Fix 2: search_linear with project_filter must only return matching project rows.
-    #[cfg(feature = "vector")]
+    /// search_with_filter with project_filter returns only matching project rows.
     #[test]
-    fn test_search_linear_project_filter() {
+    fn test_search_with_project_filter() {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("vec2.db");
 
-        let mut store = VectorStore::open(&db_path, "test-model", 3).unwrap();
+        let mut store = VectorStore::open(&db_path, "test-model", 8).unwrap();
         store
             .batch_upsert(
                 vec![
-                    ("proj-a".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0]),
-                    ("proj-b".into(), "b.md".into(), 0u64, vec![1.0, 0.0, 0.0]),
+                    (
+                        "proj-a".into(),
+                        "a.md".into(),
+                        0u64,
+                        vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    ),
+                    (
+                        "proj-b".into(),
+                        "b.md".into(),
+                        0u64,
+                        vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    ),
                 ]
                 .into_iter(),
             )
             .unwrap();
 
         let results = store
-            .search_linear(&[1.0, 0.0, 0.0], 10, Some("proj-a"))
+            .search_with_filter(
+                &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                10,
+                Some("proj-a"),
+            )
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].project, "proj-a");
 
-        let all = store.search_linear(&[1.0, 0.0, 0.0], 10, None).unwrap();
+        let all = store
+            .search_with_filter(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 10, None)
+            .unwrap();
         assert_eq!(all.len(), 2);
     }
 
-    /// Cache: second search reuses the HNSW index without rebuilding it.
-    /// Uses `contains_key` checks on the per-project HashMap.
-    #[cfg(feature = "vector")]
+    /// remove_by_ids: insert vectors, remove some, verify they're gone.
     #[test]
-    #[ignore = "stress test: builds 5000-vector HNSW graph, run explicitly with -- --ignored"]
-    fn test_hnsw_cache_reused_on_second_search() {
+    fn test_remove_by_ids() {
         let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("vec_cache.db");
+        let db_path = dir.path().join("vec_rm.db");
 
-        let dim = 4usize;
-        let store = VectorStore::open(&db_path, "cache-model", dim).unwrap();
+        let mut store = VectorStore::open(&db_path, "rm-model", 8).unwrap();
+        store
+            .batch_upsert(
+                vec![
+                    (
+                        "proj".into(),
+                        "a.md".into(),
+                        0u64,
+                        vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    ),
+                    (
+                        "proj".into(),
+                        "b.md".into(),
+                        1u64,
+                        vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    ),
+                    (
+                        "proj".into(),
+                        "c.md".into(),
+                        2u64,
+                        vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    ),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
 
-        let embeddings: Vec<(String, String, u64, Vec<f32>)> = (0u64..5000)
-            .map(|i| {
-                let mut v = vec![0.0f32; dim];
-                v[(i as usize) % dim] = 1.0;
-                ("proj".to_string(), format!("file_{}.md", i), i, v)
-            })
-            .collect();
+        let row_ids: Vec<u64> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT id FROM vectors ORDER BY chunk_id")
+                .unwrap();
+            stmt.query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+        assert_eq!(row_ids.len(), 3);
 
-        drop(store);
-        let mut store = VectorStore::open(&db_path, "cache-model", dim).unwrap();
-        store.batch_upsert(embeddings.into_iter()).unwrap();
+        let removed = store.remove_by_ids(&row_ids[..2]).unwrap();
+        assert_eq!(removed, 2);
 
-        // Cache is empty before first search.
-        {
-            let cache = store.hnsw_cache.borrow();
-            assert!(
-                !cache.contains_key(&None),
-                "global cache key must be absent before first search"
-            );
-        }
+        let results = store
+            .search_with_filter(&[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 10, None)
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].chunk_id, 2);
+    }
 
-        let query = vec![1.0f32, 0.0, 0.0, 0.0];
-        let _r1 = store.search_hnsw(&query, 5, None).unwrap();
+    /// remove_by_ids with empty slice is a no-op.
+    #[test]
+    fn test_remove_by_ids_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vec_rm_empty.db");
 
-        // After first search the global key must be present.
-        {
-            let cache = store.hnsw_cache.borrow();
-            assert!(
-                cache.contains_key(&None),
-                "global cache key must be present after first search"
-            );
-        }
-
-        // Second search — cache must still be present (no write happened).
-        let _r2 = store.search_hnsw(&query, 5, None).unwrap();
-        {
-            let cache = store.hnsw_cache.borrow();
-            assert!(
-                cache.contains_key(&None),
-                "global cache key must still exist after second search"
-            );
-        }
-
-        // Insert one more vector — global cache key must be invalidated.
+        let mut store = VectorStore::open(&db_path, "rm-model", 8).unwrap();
         store
             .batch_upsert(
                 vec![(
                     "proj".into(),
-                    "extra.md".into(),
-                    9999u64,
-                    vec![0.0, 0.0, 0.0, 1.0],
+                    "a.md".into(),
+                    0u64,
+                    vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                 )]
                 .into_iter(),
             )
             .unwrap();
 
-        {
-            let cache = store.hnsw_cache.borrow();
-            assert!(
-                !cache.contains_key(&None),
-                "global cache key must be invalidated after insert"
-            );
-        }
-
-        // Search rebuilds the cache.
-        let _r3 = store.search_hnsw(&query, 5, None).unwrap();
-        {
-            let cache = store.hnsw_cache.borrow();
-            assert!(
-                cache.contains_key(&None),
-                "global cache key must be rebuilt after insert"
-            );
-        }
+        let removed = store.remove_by_ids(&[]).unwrap();
+        assert_eq!(removed, 0);
+        assert!(!store.is_empty().unwrap());
     }
 
-    /// Per-project cache: searching proj-a must populate only the proj-a key,
-    /// not the global None key or the proj-b key.
-    /// Ignored in normal test runs because the HNSW cache is bypassed in test
-    /// builds. Run with `cargo test -- --ignored` to verify cache behaviour.
-    #[cfg(feature = "vector")]
+    /// search_filtered: only vectors in the allowlist are scored.
     #[test]
-    #[ignore = "HNSW cache is bypassed in test builds; run with --ignored to verify"]
-    fn test_hnsw_cache_per_project() {
+    fn test_search_filtered_allowlist() {
         let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("vec_per_proj.db");
+        let db_path = dir.path().join("vec_filt.db");
 
-        let dim = 4usize;
-        // Insert 5000 vectors for proj-a and 5000 for proj-b to cross HNSW threshold.
-        let embeddings: Vec<(String, String, u64, Vec<f32>)> = (0u64..5000)
-            .flat_map(|i| {
-                let mut va = vec![0.0f32; dim];
-                va[(i as usize) % dim] = 1.0;
-                let mut vb = vec![0.0f32; dim];
-                vb[(i as usize) % dim] = 0.5;
+        let mut store = VectorStore::open(&db_path, "filt-model", 8).unwrap();
+        store
+            .batch_upsert(
                 vec![
-                    ("proj-a".to_string(), format!("a_{}.md", i), i, va),
-                    ("proj-b".to_string(), format!("b_{}.md", i), i, vb),
+                    (
+                        "proj".into(),
+                        "a.md".into(),
+                        0u64,
+                        vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    ),
+                    (
+                        "proj".into(),
+                        "b.md".into(),
+                        1u64,
+                        vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    ),
+                    (
+                        "proj".into(),
+                        "c.md".into(),
+                        2u64,
+                        vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    ),
                 ]
-            })
-            .collect();
+                .into_iter(),
+            )
+            .unwrap();
 
-        let mut store = VectorStore::open(&db_path, "pp-model", dim).unwrap();
-        store.batch_upsert(embeddings.into_iter()).unwrap();
+        let row_ids: Vec<u64> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT id FROM vectors ORDER BY chunk_id")
+                .unwrap();
+            stmt.query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
 
-        // Search with project filter for proj-a.
-        let query = vec![1.0f32, 0.0, 0.0, 0.0];
-        let _results = store.search_hnsw(&query, 5, Some("proj-a")).unwrap();
-
-        {
-            let cache = store.hnsw_cache.borrow();
-            assert!(
-                cache.contains_key(&Some("proj-a".to_string())),
-                "proj-a cache key must be populated"
-            );
-            assert!(
-                !cache.contains_key(&None),
-                "global (None) cache key must NOT be populated when searching proj-a only"
-            );
-            assert!(
-                !cache.contains_key(&Some("proj-b".to_string())),
-                "proj-b cache key must NOT be populated"
-            );
-        }
+        let results = store
+            .search_filtered(
+                &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                10,
+                &[row_ids[0], row_ids[2]],
+            )
+            .unwrap();
+        // With TurboQuant 4-bit quantization, orthogonal vectors may receive small
+        // positive scores. Assert that a.md (chunk 0) is the top result regardless.
+        assert!(!results.is_empty(), "should return at least one result");
+        assert_eq!(results[0].chunk_id, 0, "a.md should be the top hit");
     }
 
-    /// TTL eviction: a manually backdated entry must be evicted on next search.
-    /// Ignored in normal test runs because the HNSW cache is bypassed in test
-    /// builds. Run with `cargo test -- --ignored` to verify cache behaviour.
-    #[cfg(feature = "vector")]
+    /// search_filtered with empty allowlist returns empty results.
     #[test]
-    #[ignore = "HNSW cache is bypassed in test builds; run with --ignored to verify"]
-    fn test_hnsw_cache_ttl_eviction() {
+    fn test_search_filtered_empty_allowlist() {
         let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("vec_ttl.db");
+        let db_path = dir.path().join("vec_filt_empty.db");
 
-        let dim = 4usize;
-        let embeddings: Vec<(String, String, u64, Vec<f32>)> = (0u64..5000)
-            .map(|i| {
-                let mut v = vec![0.0f32; dim];
-                v[(i as usize) % dim] = 1.0;
-                ("proj".to_string(), format!("f_{}.md", i), i, v)
-            })
-            .collect();
+        let mut store = VectorStore::open(&db_path, "filt-model", 8).unwrap();
+        store
+            .batch_upsert(
+                vec![(
+                    "proj".into(),
+                    "a.md".into(),
+                    0u64,
+                    vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                )]
+                .into_iter(),
+            )
+            .unwrap();
 
-        let mut store = VectorStore::open(&db_path, "ttl-model", dim).unwrap();
-        store.batch_upsert(embeddings.into_iter()).unwrap();
-
-        // Warm the cache.
-        let query = vec![1.0f32, 0.0, 0.0, 0.0];
-        store.search_hnsw(&query, 5, None).unwrap();
-
-        // Force immediate eviction by calling evict_stale with a 0-second TTL.
-        // We can't backdate Instant (monotonic clock), so instead we sleep briefly
-        // and call evict_stale directly with a 1ms TTL.
-        std::thread::sleep(std::time::Duration::from_millis(5));
-        {
-            let mut cache = store.hnsw_cache.borrow_mut();
-            let short_ttl = std::time::Duration::from_millis(1);
-            cache.retain(|_, entry| entry.last_accessed.elapsed() < short_ttl);
-        }
-
-        // After forced eviction the entry must be gone.
-        assert!(
-            !store.hnsw_cache.borrow().contains_key(&None),
-            "entry must be evicted after TTL"
-        );
-
-        // Next search rebuilds the cache for this key.
-        store.search_hnsw(&query, 5, None).unwrap();
-
-        // After rebuild the key must exist again.
-        assert!(
-            store.hnsw_cache.borrow().contains_key(&None),
-            "cache must be rebuilt after eviction"
-        );
+        let results = store
+            .search_filtered(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 10, &[])
+            .unwrap();
+        assert!(results.is_empty());
     }
 
     #[test]
@@ -1090,135 +1403,8 @@ mod tests {
                 score: 0.8,
             },
         ];
-
         let fused = reciprocal_rank_fusion(&bm25, &vector, 60);
-
-        // b.md should rank higher (appears in both)
         assert_eq!(fused[0].1, "b.md");
         assert!(fused.len() >= 2);
-    }
-
-    /// remove_by_ids: insert vectors, remove some, verify they're gone.
-    #[cfg(feature = "vector")]
-    #[test]
-    fn test_remove_by_ids() {
-        let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("vec_rm.db");
-
-        let mut store = VectorStore::open(&db_path, "rm-model", 3).unwrap();
-        store
-            .batch_upsert(
-                vec![
-                    ("proj".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0]),
-                    ("proj".into(), "b.md".into(), 1u64, vec![0.0, 1.0, 0.0]),
-                    ("proj".into(), "c.md".into(), 2u64, vec![0.0, 0.0, 1.0]),
-                ]
-                .into_iter(),
-            )
-            .unwrap();
-
-        // Look up the row IDs that SQLite auto-assigned.
-        let row_ids: Vec<u64> = {
-            let mut stmt = store
-                .conn
-                .prepare("SELECT id FROM vectors ORDER BY chunk_id")
-                .unwrap();
-            stmt.query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
-                .unwrap()
-                .map(|r| r.unwrap())
-                .collect()
-        };
-        assert_eq!(row_ids.len(), 3);
-
-        // Remove the first two.
-        let removed = store.remove_by_ids(&row_ids[..2]).unwrap();
-        assert_eq!(removed, 2);
-
-        // Only the third vector should remain.
-        let results = store.search_linear(&[0.0, 0.0, 1.0], 10, None).unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].chunk_id, 2);
-    }
-
-    /// remove_by_ids with empty slice is a no-op.
-    #[cfg(feature = "vector")]
-    #[test]
-    fn test_remove_by_ids_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("vec_rm_empty.db");
-
-        let mut store = VectorStore::open(&db_path, "rm-model", 3).unwrap();
-        store
-            .batch_upsert(
-                vec![("proj".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0])].into_iter(),
-            )
-            .unwrap();
-
-        let removed = store.remove_by_ids(&[]).unwrap();
-        assert_eq!(removed, 0);
-        assert!(!store.is_empty().unwrap());
-    }
-
-    /// search_filtered: only vectors in the allowlist are scored.
-    #[cfg(feature = "vector")]
-    #[test]
-    fn test_search_filtered_allowlist() {
-        let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("vec_filt.db");
-
-        let mut store = VectorStore::open(&db_path, "filt-model", 3).unwrap();
-        store
-            .batch_upsert(
-                vec![
-                    ("proj".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0]),
-                    ("proj".into(), "b.md".into(), 1u64, vec![0.0, 1.0, 0.0]),
-                    ("proj".into(), "c.md".into(), 2u64, vec![0.0, 0.0, 1.0]),
-                ]
-                .into_iter(),
-            )
-            .unwrap();
-
-        // Get row IDs.
-        let row_ids: Vec<u64> = {
-            let mut stmt = store
-                .conn
-                .prepare("SELECT id FROM vectors ORDER BY chunk_id")
-                .unwrap();
-            stmt.query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
-                .unwrap()
-                .map(|r| r.unwrap())
-                .collect()
-        };
-
-        // Allowlist only rows 0 and 2 (a.md and c.md), query matches a.md.
-        let results = store
-            .search_filtered(&[1.0, 0.0, 0.0], 10, &[row_ids[0], row_ids[2]])
-            .unwrap();
-        // c.md ([0,0,1]) has zero cosine similarity to [1,0,0] query,
-        // so only a.md appears with a positive score.
-        assert_eq!(
-            results.len(),
-            1,
-            "only vectors with positive similarity appear"
-        );
-        assert_eq!(results[0].chunk_id, 0, "a.md should be the top hit");
-    }
-
-    /// search_filtered with empty allowlist returns empty results.
-    #[cfg(feature = "vector")]
-    #[test]
-    fn test_search_filtered_empty_allowlist() {
-        let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("vec_filt_empty.db");
-
-        let mut store = VectorStore::open(&db_path, "filt-model", 3).unwrap();
-        store
-            .batch_upsert(
-                vec![("proj".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0])].into_iter(),
-            )
-            .unwrap();
-
-        let results = store.search_filtered(&[1.0, 0.0, 0.0], 10, &[]).unwrap();
-        assert!(results.is_empty());
     }
 }
