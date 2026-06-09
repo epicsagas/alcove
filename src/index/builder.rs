@@ -443,6 +443,9 @@ fn apply_schema_migration(dir: &Path, meta: &mut IndexMeta) -> Result<()> {
 fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
     let mut all_files: Vec<ProjectFile> = Vec::new();
     let mut project_count = 0u64;
+    let docs_root_canonical = docs_root
+        .canonicalize()
+        .unwrap_or_else(|_| docs_root.to_path_buf());
 
     for entry in std::fs::read_dir(docs_root)
         .context("Failed to read DOCS_ROOT")?
@@ -463,9 +466,6 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
         project_count += 1;
 
         let proj_cfg = effective_config(&path);
-        let docs_root_canonical = docs_root
-            .canonicalize()
-            .unwrap_or_else(|_| docs_root.to_path_buf());
         for walk_entry in WalkDir::new(&path).into_iter().flatten().filter(|e| {
             e.file_type().is_file()
                 && proj_cfg.is_indexable(e.path())
@@ -770,6 +770,7 @@ fn run_full_vector_indexing(
     }
 
     let model = resolve_model(&emb_cfg.model);
+    let model_name = model.as_str().to_string();
     let service = EmbeddingService::new(crate::config::EmbeddingConfig {
         model: emb_cfg.model.clone(),
         auto_download: emb_cfg.auto_download,
@@ -777,68 +778,69 @@ fn run_full_vector_indexing(
         enabled: true,
         query_cache_size: emb_cfg.query_cache_size,
     });
-    let _ = service.ensure_model();
-    if service.state() != crate::embedding::ModelState::Ready {
-        return Ok((
-            "model_not_ready".to_string(),
-            0,
-            0,
-            model.as_str().to_string(),
-        ));
-    }
 
+    // Open vector store and compute what needs embedding BEFORE loading the ONNX model.
     let vector_path = docs_root.join(".alcove").join("vectors.db");
     let mut store = VectorStore::open(&vector_path, service.model_name(), service.dimension())
         .map_err(|e| {
             eprintln!("[alcove] Failed to open vector store: {}", e);
             e
         })?;
+
+    let embedding_enabled = emb_cfg.enabled;
+    let to_embed: Vec<ProjectFile> = files_to_index
+        .into_iter()
+        .filter(|(proj, rel, _)| {
+            let proj_path = docs_root.join(proj);
+            let proj_cfg = effective_config(&proj_path);
+            if !proj_cfg.vector_index.unwrap_or(embedding_enabled) {
+                return false;
+            }
+            !matches!(store.has_file(proj, rel), Ok(true))
+        })
+        .collect();
+
+    // Early exit: nothing to embed — skip ONNX model loading entirely.
+    if to_embed.is_empty() {
+        let count = store.meta().map(|m| m.count as u64).unwrap_or(0);
+        return Ok(("ok".to_string(), count, 0, model_name));
+    }
+
+    // Only load the ONNX model when we have files to embed.
+    let _ = service.ensure_model();
+    if service.state() != crate::embedding::ModelState::Ready {
+        return Ok(("model_not_ready".to_string(), 0, 0, model_name));
+    }
+
     let mut counters = VectorCounters {
         vectors_indexed: 0,
         vector_errors: 0,
     };
+    let vpb = ProgressBar::new(to_embed.len() as u64);
+    vpb.set_style(
+        ProgressStyle::default_bar()
+            .template("  {spinner:.magenta}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
+            .progress_chars("━━╌"),
+    );
+    vpb.enable_steady_tick(Duration::from_millis(80));
+    vpb.set_message("embedding");
+    // Batch size tuned to model size: small < 100 MB → 128, medium ≤ 800 MB → 64, large → 32
+    let embed_batch: usize = match model.size_mb() {
+        s if s < 100 => 128,
+        s if s <= 800 => 64,
+        _ => 32,
+    };
+    embed_files_in_batches(
+        &to_embed,
+        &service,
+        &mut store,
+        &model,
+        embed_batch,
+        &vpb,
+        &mut counters,
+    );
+    vpb.finish_and_clear();
 
-    let embedding_enabled = emb_cfg.enabled;
-    if !files_to_index.is_empty() {
-        // Filter: skip projects where vector_index is explicitly false.
-        // When vector_index is unset (None), inherit from embedding.enabled.
-        // Also skip files already present in the vector store (incremental indexing).
-        let to_embed: Vec<ProjectFile> = files_to_index
-            .into_iter()
-            .filter(|(proj, rel, _)| {
-                let proj_path = docs_root.join(proj);
-                let proj_cfg = effective_config(&proj_path);
-                if !proj_cfg.vector_index.unwrap_or(embedding_enabled) {
-                    return false;
-                }
-                !matches!(store.has_file(proj, rel), Ok(true))
-            })
-            .collect();
-        let vpb = ProgressBar::new(to_embed.len() as u64);
-        vpb.set_style(
-            ProgressStyle::default_bar()
-                .template("  {spinner:.magenta}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
-                .progress_chars("━━╌"),
-        );
-        vpb.enable_steady_tick(Duration::from_millis(80));
-        vpb.set_message("embedding");
-        // Batch size tuned to model size: small < 100 MB → 128, medium ≤ 800 MB → 64, large → 32
-        let embed_batch: usize = match model.size_mb() {
-            s if s < 100 => 128,
-            s if s <= 800 => 64,
-            _ => 32,
-        };
-        embed_files_in_batches(
-            &to_embed,
-            &service,
-            &mut store,
-            &model,
-            embed_batch,
-            &vpb,
-            &mut counters,
-        );
-        vpb.finish_and_clear();
-    }
     if let Ok(meta) = store.meta() {
         counters.vectors_indexed = meta.count as u64;
     }
@@ -846,7 +848,7 @@ fn run_full_vector_indexing(
         "ok".to_string(),
         counters.vectors_indexed,
         counters.vector_errors,
-        model.as_str().to_string(),
+        model_name,
     ))
 }
 

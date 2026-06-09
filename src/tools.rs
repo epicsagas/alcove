@@ -247,25 +247,46 @@ fn default_search_limit() -> usize {
     20
 }
 
+/// File-level token AND matching: returns (score, line_num, snippet) if ALL query tokens
+/// appear somewhere in the file. Score = number of tokens on the best line.
+fn grep_file<'a>(content: &'a str, query_tokens: &[&str]) -> Option<(usize, usize, &'a str)> {
+    if query_tokens.is_empty() {
+        return None;
+    }
+    let content_lower = content.to_lowercase();
+    // File-level AND: every token must appear somewhere in the file
+    if !query_tokens.iter().all(|t| content_lower.contains(t)) {
+        return None;
+    }
+    // Find the best-matching line (most token hits)
+    let mut best = (0usize, 0usize, "");
+    for (idx, line) in content.lines().enumerate() {
+        let line_lower = line.to_lowercase();
+        let hits = query_tokens.iter().filter(|t| line_lower.contains(*t)).count();
+        if hits > best.0 {
+            best = (hits, idx + 1, line);
+        }
+    }
+    Some(best)
+}
+
 fn search_dir_for_query(
     dir: &Path,
     base: &Path,
-    query_lower: &str,
+    query_tokens: &[&str],
     source: &str,
     limit: usize,
     matches: &mut Vec<Value>,
 ) {
-    if !dir.exists() || matches.len() >= limit {
+    if !dir.exists() || matches.len() >= limit || query_tokens.is_empty() {
         return;
     }
+    let mut file_results: Vec<(usize, usize, String, String)> = Vec::new();
     for entry in WalkDir::new(dir)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
     {
-        if matches.len() >= limit {
-            return;
-        }
         let path = entry.path();
         if !is_doc_file(path) {
             continue;
@@ -283,18 +304,21 @@ fn search_dir_for_query(
             .to_string_lossy()
             .to_string();
 
-        for (idx, line) in content.lines().enumerate() {
-            if line.to_lowercase().contains(query_lower) {
-                matches.push(json!({
-                    "file": rel,
-                    "line": idx + 1,
-                    "snippet": line.trim(),
-                    "source": source,
-                }));
-                if matches.len() >= limit {
-                    return;
-                }
-            }
+        if let Some((score, line_num, snippet)) = grep_file(&content, query_tokens) {
+            file_results.push((score, line_num, snippet.trim().to_string(), rel));
+        }
+    }
+    // Sort by score descending so best matches come first
+    file_results.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, line_num, snippet, rel) in file_results {
+        matches.push(json!({
+            "file": rel,
+            "line": line_num,
+            "snippet": snippet,
+            "source": source,
+        }));
+        if matches.len() >= limit {
+            return;
         }
     }
 }
@@ -454,14 +478,16 @@ pub fn tool_search(
     }
 
     // Fall back to grep search if no index
+    // Token-level AND: each whitespace-separated token must appear on the line.
     let query_lower = query_trimmed.to_lowercase();
+    let query_tokens: Vec<&str> = query_lower.split_whitespace().collect();
     let mut matches = Vec::new();
 
     // 1. Search alcove folder
     search_dir_for_query(
         project_root,
         project_root,
-        &query_lower,
+        &query_tokens,
         "alcove",
         args.limit,
         &mut matches,
@@ -485,24 +511,19 @@ pub fn tool_search(
                 }
             };
             let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
-            for (idx, line) in content.lines().enumerate() {
-                if line.to_lowercase().contains(&query_lower) {
-                    matches.push(json!({
-                        "file": filename,
-                        "line": idx + 1,
-                        "snippet": line.trim(),
-                        "source": "project-repo",
-                    }));
-                    if matches.len() >= args.limit {
-                        break;
-                    }
-                }
+            if let Some((_, line_num, snippet)) = grep_file(&content, &query_tokens) {
+                matches.push(json!({
+                    "file": filename,
+                    "line": line_num,
+                    "snippet": snippet.trim(),
+                    "source": "project-repo",
+                }));
             }
         }
         search_dir_for_query(
             &rp.join("docs"),
             rp,
-            &query_lower,
+            &query_tokens,
             "project-repo",
             args.limit,
             &mut matches,
@@ -556,7 +577,9 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
     }
 
     // Fall back to grep search if no index
+    // Token-level AND: each whitespace-separated token must appear on the line.
     let query_lower = query_trimmed.to_lowercase();
+    let query_tokens: Vec<&str> = query_lower.split_whitespace().collect();
     let mut matches = Vec::new();
 
     let entries = std::fs::read_dir(docs_root).context("Failed to read DOCS_ROOT directory")?;
@@ -600,17 +623,15 @@ pub fn tool_search_global(docs_root: &Path, args_value: Value) -> Result<Value> 
                 .to_string_lossy()
                 .to_string();
 
-            for (idx, line) in content.lines().enumerate() {
-                if line.to_lowercase().contains(&query_lower) {
-                    matches.push(json!({
-                        "project": name,
-                        "file": rel,
-                        "line": idx + 1,
-                        "snippet": line.trim(),
-                    }));
-                    if matches.len() >= args.limit {
-                        break;
-                    }
+            if let Some((_, line_num, snippet)) = grep_file(&content, &query_tokens) {
+                matches.push(json!({
+                    "project": name,
+                    "file": rel,
+                    "line": line_num,
+                    "snippet": snippet.trim(),
+                }));
+                if matches.len() >= args.limit {
+                    break;
                 }
             }
         }
