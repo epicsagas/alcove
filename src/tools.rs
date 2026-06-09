@@ -262,7 +262,10 @@ fn grep_file<'a>(content: &'a str, query_tokens: &[&str]) -> Option<(usize, usiz
     let mut best = (0usize, 0usize, "");
     for (idx, line) in content.lines().enumerate() {
         let line_lower = line.to_lowercase();
-        let hits = query_tokens.iter().filter(|t| line_lower.contains(*t)).count();
+        let hits = query_tokens
+            .iter()
+            .filter(|t| line_lower.contains(*t))
+            .count();
         if hits > best.0 {
             best = (hits, idx + 1, line);
         }
