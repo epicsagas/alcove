@@ -314,6 +314,32 @@ impl VectorStore {
         Ok(count)
     }
 
+    /// Remove vectors by their SQLite row IDs.
+    ///
+    /// IDs that do not exist are silently ignored. Clears the entire HNSW cache
+    /// because the affected entries could span any project.
+    #[allow(dead_code)]
+    pub fn remove_by_ids(&self, ids: &[u64]) -> Result<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        // Build a parameterized IN clause: "id IN (?1, ?2, ...)"
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "DELETE FROM vectors WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = ids
+            .iter()
+            .map(|&id| Box::new(id as i64) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+        let count = self.conn.execute(&sql, param_refs.as_slice())?;
+        self.hnsw_cache.borrow_mut().clear();
+        Ok(count)
+    }
+
     /// Search for similar vectors using HNSW (large datasets) or linear scan (small).
     ///
     /// When `project_filter` is `Some`, only that project's vectors are loaded
@@ -349,6 +375,70 @@ impl VectorStore {
 
         // Fall back to linear search for small datasets
         self.search_linear(query, limit, project_filter)
+    }
+
+    /// Search restricted to an allowlist of candidate SQLite row IDs.
+    ///
+    /// Useful for hybrid retrieval: first narrow candidates via BM25 or
+    /// metadata filter, then dense-rerank within that set.
+    /// Returns results sorted by descending similarity score.
+    #[allow(dead_code)]
+    pub fn search_filtered(
+        &self,
+        query: &[f32],
+        limit: usize,
+        allowlist: &[u64],
+    ) -> Result<Vec<VectorResult>> {
+        if allowlist.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build parameterized IN clause: "id IN (?1, ?2, ...)"
+        let placeholders: Vec<String> = (1..=allowlist.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "SELECT project, file, chunk_id, embedding FROM vectors WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let sql_params: Vec<Box<dyn rusqlite::types::ToSql>> = allowlist
+            .iter()
+            .map(|&id| Box::new(id as i64) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            sql_params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)? as u64,
+                row.get::<_, Vec<u8>>(3)?,
+            ))
+        })?;
+
+        let mut heap: BinaryHeap<MinScoreEntry> = BinaryHeap::with_capacity(limit + 1);
+        for row_result in rows {
+            let (proj, file, chunk_id, blob) = row_result?;
+            let embedding = Self::decode_embedding(&blob);
+            let score = cosine_similarity(query, &embedding);
+            if score > 0.0 {
+                heap.push(MinScoreEntry {
+                    score,
+                    result: VectorResult {
+                        project: proj,
+                        file,
+                        chunk_id,
+                        score,
+                    },
+                });
+                if heap.len() > limit {
+                    heap.pop();
+                }
+            }
+        }
+
+        let mut results: Vec<VectorResult> = heap.into_iter().map(|e| e.result).collect();
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+        Ok(results)
     }
 
     /// Linear search (O(n)) - good for small datasets
@@ -1006,5 +1096,129 @@ mod tests {
         // b.md should rank higher (appears in both)
         assert_eq!(fused[0].1, "b.md");
         assert!(fused.len() >= 2);
+    }
+
+    /// remove_by_ids: insert vectors, remove some, verify they're gone.
+    #[cfg(feature = "vector")]
+    #[test]
+    fn test_remove_by_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vec_rm.db");
+
+        let mut store = VectorStore::open(&db_path, "rm-model", 3).unwrap();
+        store
+            .batch_upsert(
+                vec![
+                    ("proj".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0]),
+                    ("proj".into(), "b.md".into(), 1u64, vec![0.0, 1.0, 0.0]),
+                    ("proj".into(), "c.md".into(), 2u64, vec![0.0, 0.0, 1.0]),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        // Look up the row IDs that SQLite auto-assigned.
+        let row_ids: Vec<u64> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT id FROM vectors ORDER BY chunk_id")
+                .unwrap();
+            stmt.query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+        assert_eq!(row_ids.len(), 3);
+
+        // Remove the first two.
+        let removed = store.remove_by_ids(&row_ids[..2]).unwrap();
+        assert_eq!(removed, 2);
+
+        // Only the third vector should remain.
+        let results = store.search_linear(&[0.0, 0.0, 1.0], 10, None).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].chunk_id, 2);
+    }
+
+    /// remove_by_ids with empty slice is a no-op.
+    #[cfg(feature = "vector")]
+    #[test]
+    fn test_remove_by_ids_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vec_rm_empty.db");
+
+        let mut store = VectorStore::open(&db_path, "rm-model", 3).unwrap();
+        store
+            .batch_upsert(
+                vec![("proj".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0])].into_iter(),
+            )
+            .unwrap();
+
+        let removed = store.remove_by_ids(&[]).unwrap();
+        assert_eq!(removed, 0);
+        assert!(!store.is_empty().unwrap());
+    }
+
+    /// search_filtered: only vectors in the allowlist are scored.
+    #[cfg(feature = "vector")]
+    #[test]
+    fn test_search_filtered_allowlist() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vec_filt.db");
+
+        let mut store = VectorStore::open(&db_path, "filt-model", 3).unwrap();
+        store
+            .batch_upsert(
+                vec![
+                    ("proj".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0]),
+                    ("proj".into(), "b.md".into(), 1u64, vec![0.0, 1.0, 0.0]),
+                    ("proj".into(), "c.md".into(), 2u64, vec![0.0, 0.0, 1.0]),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        // Get row IDs.
+        let row_ids: Vec<u64> = {
+            let mut stmt = store
+                .conn
+                .prepare("SELECT id FROM vectors ORDER BY chunk_id")
+                .unwrap();
+            stmt.query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+
+        // Allowlist only rows 0 and 2 (a.md and c.md), query matches a.md.
+        let results = store
+            .search_filtered(&[1.0, 0.0, 0.0], 10, &[row_ids[0], row_ids[2]])
+            .unwrap();
+        // c.md ([0,0,1]) has zero cosine similarity to [1,0,0] query,
+        // so only a.md appears with a positive score.
+        assert_eq!(
+            results.len(),
+            1,
+            "only vectors with positive similarity appear"
+        );
+        assert_eq!(results[0].chunk_id, 0, "a.md should be the top hit");
+    }
+
+    /// search_filtered with empty allowlist returns empty results.
+    #[cfg(feature = "vector")]
+    #[test]
+    fn test_search_filtered_empty_allowlist() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("vec_filt_empty.db");
+
+        let mut store = VectorStore::open(&db_path, "filt-model", 3).unwrap();
+        store
+            .batch_upsert(
+                vec![("proj".into(), "a.md".into(), 0u64, vec![1.0, 0.0, 0.0])].into_iter(),
+            )
+            .unwrap();
+
+        let results = store.search_filtered(&[1.0, 0.0, 0.0], 10, &[]).unwrap();
+        assert!(results.is_empty());
     }
 }

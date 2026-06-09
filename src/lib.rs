@@ -39,4 +39,8 @@ pub use vector::{
     VectorMeta, VectorResult, VectorStore, cosine_similarity, reciprocal_rank_fusion,
 };
 
+// Re-export llm-kernel vector index types for downstream consumers.
+#[cfg(feature = "vector")]
+pub use llm_kernel::embedding::vector_index::{SearchHit, VectorIndex};
+
 pub use code_index::{CodeIndexResult, index_code_structure, index_code_structure_with_lang};
