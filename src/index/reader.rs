@@ -2,6 +2,26 @@ use std::path::Path;
 
 use anyhow::Result;
 
+/// `\f`(form-feed)로 구분된 PDF 페이지를 `--- Page N ---` 마커가 있는 단일 문자열로 변환한다.
+/// 첫 페이지는 마커 없이 그대로 유지되며, N은 1-based 페이지 번호다.
+#[cfg(all(unix, feature = "pdf"))]
+pub(crate) fn inject_page_markers(text: String) -> String {
+    if !text.contains('\x0C') {
+        return text;
+    }
+    let mut pages = text.split('\x0C');
+    let first = pages.next().unwrap_or("").to_string();
+    std::iter::once(first)
+        .chain(pages.enumerate().map(|(i, page)| {
+            format!(
+                "\n--- Page {} ---\n{}",
+                i + 2,
+                page.trim_start_matches('\n')
+            )
+        }))
+        .collect()
+}
+
 /// Helper to extract text from XML tags (e.g., w:t for Word, a:t for PPT)
 #[cfg(feature = "office")]
 pub(crate) fn extract_xml_text(content: &str, tag_name: &[u8]) -> Result<String> {
@@ -62,7 +82,7 @@ impl FileReader for PdfReader {
         });
         // Fallback to pdftotext if pdf_extract failed or returned empty content.
         match result {
-            Ok(text) if !text.trim().is_empty() => Ok(text),
+            Ok(text) if !text.trim().is_empty() => Ok(inject_page_markers(text)),
             _ => {
                 use std::time::{Duration, Instant};
                 let pdftotext_bin = [
@@ -107,6 +127,7 @@ impl FileReader for PdfReader {
                         .map_err(|e| anyhow::anyhow!("pdftotext read error: {}", e))?;
                     String::from_utf8(buf)
                         .map_err(|e| anyhow::anyhow!("pdftotext output not UTF-8: {}", e))
+                        .map(inject_page_markers)
                 } else {
                     Err(anyhow::anyhow!("pdftotext failed"))
                 }
