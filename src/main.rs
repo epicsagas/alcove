@@ -21,7 +21,7 @@ mod vault;
 
 mod code_index;
 
-#[cfg(feature = "vector")]
+#[cfg(any(feature = "vector", feature = "turboquant"))]
 mod vector;
 
 #[cfg(feature = "alcove-server")]
