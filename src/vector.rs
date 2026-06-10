@@ -625,7 +625,7 @@ pub struct VectorStore {
     #[allow(dead_code)]
     model: String,
     /// In-memory TurboQuant compressed index.
-    index: std::cell::RefCell<Option<llm_kernel_vector_index::TurbovecIndex>>,
+    index: std::cell::RefCell<Option<llm_kernel::embedding::TurbovecIndex>>,
     /// Maps external ID → (project, file, chunk_id).
     id_map: std::cell::RefCell<IdMetaMap>,
     /// Path to the saved index file (for save/load).
@@ -717,7 +717,7 @@ impl VectorStore {
 
         // Try loading a previously saved index.
         if store.index_path.exists()
-            && let Ok(idx) = llm_kernel_vector_index::TurbovecIndex::load(&store.index_path)
+            && let Ok(idx) = llm_kernel::embedding::TurbovecIndex::load(&store.index_path)
         {
             // Rebuild id_map from SQLite to stay in sync.
             store.rebuild_id_map();
@@ -794,7 +794,7 @@ impl VectorStore {
 
         // TurboQuant 4-bit quantization requires dimension to be a multiple of 8.
         // The ArcticEmbedXS model (384-dim) satisfies this constraint.
-        let mut idx = llm_kernel_vector_index::TurbovecIndex::new(self.dimension, 4)?;
+        let mut idx = llm_kernel::embedding::TurbovecIndex::new(self.dimension, 4)?;
         if !ids.is_empty() {
             idx.add_with_ids(&vectors, &ids)?;
         }
