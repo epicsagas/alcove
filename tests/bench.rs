@@ -81,6 +81,7 @@ fn bench_with_custom_queries_path_errors_when_missing() {
 }
 
 #[test]
+#[ignore] // Heavy: runs full embedding + search benchmark. Use `cargo test -- --ignored` or `make bench`.
 fn bench_corpus_succeeds() {
     let output = Command::new(alcove_bin())
         .arg("bench")
