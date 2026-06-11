@@ -762,6 +762,19 @@ pub async fn run_server(
         }
     };
 
+    // Auto-build BM25 index on startup if not present, so /search never returns 503
+    // on a fresh or post-restart server.
+    if !crate::index::index_exists(&docs_root) {
+        let docs_root_bg = docs_root.clone();
+        tokio::task::spawn_blocking(move || {
+            eprintln!("[alcove] search index not found — building BM25 index in background...");
+            match crate::index::build_index_bm25_only(&docs_root_bg) {
+                Ok(_) => eprintln!("[alcove] background BM25 index build complete"),
+                Err(e) => eprintln!("[alcove] background BM25 index build failed: {e}"),
+            }
+        });
+    }
+
     let state = Arc::new(ServerState {
         docs_root,
         token,
