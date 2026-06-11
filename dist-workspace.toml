@@ -24,3 +24,6 @@ install-updater = false
 publish-jobs = ["homebrew", "./publish-crates"]
 allow-dirty = ["ci"]
 macos-sign = false
+
+[dist.dependencies.apt]
+libopenblas-dev = "*"
