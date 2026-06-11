@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-06-11
+
+### Fixed
+
+- Auto-build BM25 index on HTTP server startup when no index exists, preventing `/search` from returning 503 on fresh or post-restart servers
+
 ## [0.12.0] — 2026-06-11
 
 ### Added
