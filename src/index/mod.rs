@@ -716,7 +716,7 @@ mod tests {
         let pdf_path = tmp.path().join("broken.pdf");
         std::fs::write(&pdf_path, b"%PDF-1.4 broken content").unwrap();
         let start = Instant::now();
-        let _ = crate::index::reader::read_file_content(&pdf_path);
+        let _ = read_file_content(&pdf_path);
         assert!(
             start.elapsed() < Duration::from_secs(35),
             "read_file_content must not block longer than the 30s timeout"

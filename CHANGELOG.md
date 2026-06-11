@@ -7,13 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-06-11
+
 ### Added
 
-- Search quality benchmark framework with 50 queries across 10 categories (`benches/ground_truth.toml`)
+- TurboQuant 4-bit vector index backend (replaces hnsw_rs) (#30)
+- Multi document-root support (#27)
+- Heading-level markdown chunking (#28)
+- PDF form-feed → `--- Page N ---` marker conversion (#31)
+- Persistent embedding cache for full rebuilds
+- `alcove path` command and doctor path summary (#26)
+- Isolated eval corpus with `--corpus` flag for CI/regression testing
 - IR metrics: NDCG@K, MAP@K, MRR alongside existing Precision@K and Recall@K
 - Chunk-level precision evaluation for heading-based section accuracy
 - Regression detection with configurable thresholds (`--baseline`, `--save-baseline`)
-- Baseline reference benchmark (`benches/baseline.json`) at v0.11.7
+- Baseline reference benchmark (`benches/baseline.json`)
+
+### Changed
+
+- Migrated to llm-kernel 0.3.5 `vector-index` feature
+- Upgraded llm-kernel from 0.3 to 0.3.5
+- Replaced openssl-sys with rustls for all remaining dependencies
+
+### Fixed
+
+- File-level grep matching and deferred ONNX loading
+- Ambiguous env detection and tilde expansion in config paths
+- Duplicate project-resolution block in MCP handler
 
 ## [0.11.7] — 2026-06-07
 

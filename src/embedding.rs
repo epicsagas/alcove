@@ -250,27 +250,29 @@ impl EmbeddingService {
 
     pub fn ensure_model(&self) -> Result<(), String> {
         let state = self.state.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        match state {
-            ModelState::Ready => return Ok(()),
-            ModelState::Disabled => {
-                return Err("Embedding is disabled in configuration".to_string());
-            }
-            ModelState::Failed(e) => return Err(e),
-            ModelState::NotLoaded | ModelState::Cached | ModelState::Loading => {
-                // In test builds, skip model download entirely — the ONNX Runtime
-                // native library increases per-process resource pressure enough to
-                // cause EAGAIN on Tantivy commits when many tests run in parallel.
-                #[cfg(test)]
-                {
-                    *self.state.lock().unwrap_or_else(|e| e.into_inner()) =
-                        ModelState::Failed("Model download skipped in test build".to_string());
-                    self.download_cvar.notify_all();
-                    return Err("Model download skipped in test build".to_string());
-                }
-                #[cfg(not(test))]
-                self.start_download();
-            }
+        if matches!(state, ModelState::Ready) {
+            return Ok(());
         }
+        if matches!(state, ModelState::Disabled) {
+            return Err("Embedding is disabled in configuration".to_string());
+        }
+        if let ModelState::Failed(e) = state {
+            return Err(e);
+        }
+
+        // State is NotLoaded | Cached | Loading.
+        // In test builds, skip model download entirely — the ONNX Runtime
+        // native library increases per-process resource pressure enough to
+        // cause EAGAIN on Tantivy commits when many tests run in parallel.
+        #[cfg(test)]
+        {
+            *self.state.lock().unwrap_or_else(|e| e.into_inner()) =
+                ModelState::Failed("Model download skipped in test build".to_string());
+            self.download_cvar.notify_all();
+            return Err("Model download skipped in test build".to_string());
+        }
+        #[cfg(not(test))]
+        self.start_download();
 
         let deadline = Instant::now() + Duration::from_secs(300);
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
