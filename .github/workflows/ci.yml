@@ -88,6 +88,10 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Persist fastembed/ort ONNX Runtime downloads so a transient
+          # re-fetch doesn't break native linking on cache misses.
+          cache-directories: ~/Library/Caches/ort.pyke.io
       - name: Test
         run: cargo test --locked --features full-macos -- --test-threads=1
 
