@@ -30,8 +30,8 @@ lint: ## Run clippy lints
 test: ## Run tests (2 threads — Tantivy IndexWriter is memory-heavy under parallelism)
 	cargo test -- --test-threads=2
 
-test-full: ## Run all tests including ignored stress tests (alcove-full feature)
-	cargo test --features alcove-full -- --test-threads=1 --include-ignored
+test-full: ## Run all tests including ignored stress tests (full feature set)
+	cargo test --features full-macos -- --test-threads=1 --include-ignored
 
 clean: ## Clean build artifacts
 	cargo clean
