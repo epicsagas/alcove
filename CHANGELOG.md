@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] — 2026-07-03
+
+### Changed
+
+- Upgraded llm-kernel from 0.9.2 to 0.14 (forward-compatible — no source changes; alcove's API surface was unaffected by the 0.10–0.14 breaking changes)
+
+### Security
+
+- Cleared RUSTSEC-2026-0187 (lopdf), RUSTSEC-2026-0193 (ammonia), and RUSTSEC-2026-0194/0195 (quick-xml) by bumping pdf-extract 0.10 → 0.12, llm-transpile 0.3 → 0.4, and the direct quick-xml dep 0.40 → 0.41; the residual quick-xml 0.39 advisory (via calamine, whose latest release still pins `^0.39`) is documented-ignored in `.cargo/audit.toml`
+
+### Fixed
+
+- Pinned macOS CI and release runners to macos-14 and injected the `clang_rt.osx` link path, working around the Xcode 16.4 compiler-rt regression that broke the ort/fastembed static link for the `aarch64-apple-darwin`/`full-macos` build
+
 ## [0.12.1] — 2026-06-11
 
 ### Fixed
