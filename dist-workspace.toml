@@ -27,3 +27,12 @@ macos-sign = false
 
 [dist.dependencies.apt]
 libopenblas-dev = "*"
+
+# Pin the native Apple Silicon build to macos-14. The rolling macos-latest
+# image intermittently ships a broken compiler-rt path, breaking the
+# ort/fastembed static link ("ld: library 'clang_rt.osx' not found") for the
+# full-macos aarch64-apple-darwin artifact. macos-14 has a stable Xcode/clang
+# toolchain. Revisit once ort's prebuilt static archive tracks the newer clang
+# runtime path.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-14"
