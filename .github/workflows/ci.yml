@@ -83,7 +83,15 @@ jobs:
 
   test:
     name: Test
-    runs-on: macos-latest
+    # Pinned to macos-14 to dodge rolling-image compiler-rt regressions, AND
+    # works around a clang_rt link failure present on the Xcode 16.4 image
+    # (both macos-latest and macos-14): ort-sys emits `-lclang_rt.osx` plus a
+    # `-L .../clang/17/lib/darwin` search path that does not exist on this
+    # toolchain, so `ld: library 'clang_rt.osx' not found` aborts the link of
+    # the full-macos test binary. The step below locates the real
+    # libclang_rt.osx.a and exposes its directory as a link path. Revisit once
+    # ort's prebuilt static archive tracks the newer clang runtime path.
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -92,8 +100,20 @@ jobs:
           # Persist fastembed/ort ONNX Runtime downloads so a transient
           # re-fetch doesn't break native linking on cache misses.
           cache-directories: ~/Library/Caches/ort.pyke.io
+      - name: Locate clang_rt.osx (Xcode 16.4 link-path workaround)
+        run: |
+          set -e
+          RT="$(find /Applications/Xcode*.app -name 'libclang_rt.osx.a' -print -quit 2>/dev/null)"
+          if [ -z "$RT" ]; then
+            echo "::error::libclang_rt.osx.a not found under /Applications/Xcode*.app"
+            exit 1
+          fi
+          echo "Found clang_rt at: $RT"
+          echo "CLANG_RT_DIR=$(dirname "$RT")" >> "$GITHUB_ENV"
       - name: Test
         run: cargo test --locked --features full-macos -- --test-threads=1
+        env:
+          RUSTFLAGS: "-L${{ env.CLANG_RT_DIR }}"
 
   test-linux:
     name: Test (Linux)
