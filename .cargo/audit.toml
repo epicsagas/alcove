@@ -1,0 +1,24 @@
+# cargo-audit advisory ignores.
+#
+# Each entry here is an advisory that cannot be cleared by bumping an alcove
+# dependency because the vulnerable crate reaches alcove only transitively,
+# through a crate whose *latest* release still pins the vulnerable version.
+# Every ignore names the upstream blocker and MUST be removed once that
+# upstream ships a fixed build.
+
+[advisories]
+ignore = [
+    # quick-xml <0.41 — quadratic runtime on duplicate start-tag attributes,
+    # plus unbounded namespace-declaration allocation (NsReader) DoS.
+    #
+    # Reaches alcove only via calamine 0.35, the latest calamine release,
+    # which still pins quick-xml ^0.39. alcove's OWN quick-xml dependency is
+    # already 0.41 (the direct office-feature dep). The office spreadsheet
+    # parser feeds calamine attacker-controlled bytes only from local files
+    # the user explicitly indexes, so the DoS surface is limited.
+    #
+    # Tracked upstream on calamine. Remove both entries once calamine ships a
+    # build against quick-xml >=0.41.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
