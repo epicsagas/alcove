@@ -60,9 +60,9 @@ rusqlite = { version = "0.40", features = ["bundled"], optional = true }
 hnsw_rs = { version = "0.3", optional = true }
 
 # Document parsers
-pdf-extract = { version = "0.10", optional = true }  # Unix-only
+pdf-extract = { version = "0.12", optional = true }  # Unix-only
 zip = { version = "8.5", optional = true }
-quick-xml = { version = "0.40", optional = true }
+quick-xml = { version = "0.41", optional = true }
 calamine = { version = "0.35", optional = true }
 
 # Lightweight sync HTTP client for MCP proxy mode
@@ -70,7 +70,7 @@ calamine = { version = "0.35", optional = true }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Token-optimized document transpiler (optional, transpile feature)
-llm-transpile = { version = "0.3", optional = true }
+llm-transpile = { version = "0.4", optional = true }
 
 # Code structure indexing (core always present; grammars are feature-gated)
 tree-sitter = "0.26"
