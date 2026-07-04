@@ -1,0 +1,28 @@
+# Injected by cargo-dist into the build-local-artifacts job before `dist build`
+# (see dist-workspace.toml -> [dist].github-build-setup).
+#
+# Works around the Xcode 16.4 clang_rt link-path regression: ort-sys emits
+# `-lclang_rt.osx` with a `-L .../clang/17/lib/darwin` search path that does
+# not exist on this toolchain, so `ld: library 'clang_rt.osx' not found`
+# aborts the macOS static ort/fastembed link for the aarch64-apple-darwin /
+# full-macos artifact. We locate the real libclang_rt.osx.a and expose its
+# directory to the link step via RUSTFLAGS. Only the native Apple Silicon
+# build is affected. Revisit once ort's prebuilt static archive tracks the
+# newer clang runtime path.
+- name: Locate clang_rt.osx (macOS aarch64 only)
+  if: ${{ env.CARGO_DIST_TARGET == 'aarch64-apple-darwin' }}
+  shell: bash
+  run: |
+    set -e
+    RT="$(find /Applications/Xcode*.app -name 'libclang_rt.osx.a' -print -quit 2>/dev/null)"
+    if [ -z "$RT" ]; then
+      echo "::error::libclang_rt.osx.a not found under /Applications/Xcode*.app"
+      exit 1
+    fi
+    echo "Found clang_rt at: $RT"
+    echo "CLANG_RT_DIR=$(dirname "$RT")" >> "$GITHUB_ENV"
+- name: Export RUSTFLAGS for macOS link
+  if: ${{ env.CARGO_DIST_TARGET == 'aarch64-apple-darwin' }}
+  shell: bash
+  run: |
+    echo "RUSTFLAGS=-L${CLANG_RT_DIR}" >> "$GITHUB_ENV"

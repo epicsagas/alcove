@@ -24,6 +24,10 @@ install-updater = false
 publish-jobs = ["homebrew", "./publish-crates"]
 allow-dirty = ["ci"]
 macos-sign = false
+# Inject clang_rt.osx link-path setup before `dist build` so the macOS
+# aarch64-apple-darwin artifact links under the Xcode 16.4 image. See
+# .github/dist/build-setup.yml.
+github-build-setup = "../dist/build-setup.yml"
 
 [dist.dependencies.apt]
 libopenblas-dev = "*"

@@ -127,6 +127,23 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
+      - name: "Locate clang_rt.osx (macOS aarch64 only)"
+        if: "${{ env.CARGO_DIST_TARGET == 'aarch64-apple-darwin' }}"
+        run: |
+          set -e
+          RT="$(find /Applications/Xcode*.app -name 'libclang_rt.osx.a' -print -quit 2>/dev/null)"
+          if [ -z "$RT" ]; then
+            echo "::error::libclang_rt.osx.a not found under /Applications/Xcode*.app"
+            exit 1
+          fi
+          echo "Found clang_rt at: $RT"
+          echo "CLANG_RT_DIR=$(dirname "$RT")" >> "$GITHUB_ENV"
+        shell: "bash"
+      - name: "Export RUSTFLAGS for macOS link"
+        if: "${{ env.CARGO_DIST_TARGET == 'aarch64-apple-darwin' }}"
+        run: |
+          echo "RUSTFLAGS=-L${CLANG_RT_DIR}" >> "$GITHUB_ENV"
+        shell: "bash"
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest
