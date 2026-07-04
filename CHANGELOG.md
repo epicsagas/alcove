@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.4] — 2026-07-04
+
+### Changed
+
+- Rolled back llm-kernel 0.14 → 0.9.2: llm-kernel 0.12.0 removed `ort-load-dynamic` in favor of a statically-linked ONNX Runtime, which broke the Linux and Windows `dist` release builds (the static archive references glibc 2.38+ symbols like `__isoc23_strtoll` and 50 unresolved MSVC CRT externals). 0.9.2 uses dynamic ort linking, restoring release compatibility. The RUSTSEC advisory cleanup, the macOS `clang_rt` link fix, and the `cargo audit` green state are all retained (independent of llm-kernel).
+
 ## [0.12.3] — 2026-07-03
+
+> Not published — the tag's release run built macOS only; Linux and Windows artifacts failed to link (see 0.12.4).
 
 ### Changed
 
