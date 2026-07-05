@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.6] — 2026-07-06
+
+### Changed
+
+- Trimmed dist release targets to `aarch64-apple-darwin` (macOS) and `x86_64-unknown-linux-gnu` (Linux). The llm-kernel 0.15 static-ort link fails the `dist build` (LTO `dist` profile) on Windows (unresolved MSVC CRT externals in `libort_sys`) and the aarch64-linux cross-build (ARM `libopenblas.so`). Both are tracked separately; macOS and x86_64-linux artifacts build and publish cleanly. `powershell` installer dropped (no Windows target).
+
 ## [0.12.5] — 2026-07-06
+
+> Not published — release built macOS + x86_64-linux only; Windows (dist-LTO CRT) and aarch64-linux (cross OpenBLAS) failed to link (see 0.12.6).
 
 ### Changed
 

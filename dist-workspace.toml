@@ -8,17 +8,13 @@ ci = "github"
 targets = [
   "aarch64-apple-darwin",
   "x86_64-unknown-linux-gnu",
-  "aarch64-unknown-linux-gnu",
-  "x86_64-pc-windows-msvc",
 ]
-installers = ["homebrew", "shell", "powershell"]
+installers = ["homebrew", "shell"]
 tap = "epicsagas/homebrew-tap"
 create-release = true
 features = ["full-cross"]
 features-aarch64-apple-darwin = ["full-macos"]
-features-aarch64-unknown-linux-gnu = ["full-cross"]
 features-x86_64-unknown-linux-gnu = ["full-cross"]
-features-x86_64-pc-windows-msvc = ["full-cross"]
 install-path = "CARGO_HOME"
 install-updater = false
 publish-jobs = ["homebrew", "./publish-crates"]
@@ -45,4 +41,3 @@ aarch64-apple-darwin = "macos-14"
 # (glibc 2.35) fails the release link with `undefined symbol: __isoc23_strtoll`.
 # Trade-off: the produced binaries require glibc >= 2.38 at runtime.
 x86_64-unknown-linux-gnu = "ubuntu-24.04"
-aarch64-unknown-linux-gnu = "ubuntu-24.04"
