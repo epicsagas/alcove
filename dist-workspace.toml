@@ -40,3 +40,9 @@ libopenblas-dev = "*"
 # runtime path.
 [dist.github-custom-runners]
 aarch64-apple-darwin = "macos-14"
+# Linux builds on ubuntu-24.04 (glibc 2.39): llm-kernel >= 0.12 statically
+# links ort, whose archive references glibc 2.38+ symbols. The 22.04 image
+# (glibc 2.35) fails the release link with `undefined symbol: __isoc23_strtoll`.
+# Trade-off: the produced binaries require glibc >= 2.38 at runtime.
+x86_64-unknown-linux-gnu = "ubuntu-24.04"
+aarch64-unknown-linux-gnu = "ubuntu-24.04"

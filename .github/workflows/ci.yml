@@ -152,3 +152,30 @@ jobs:
         with:
           name: sbom
           path: "*.cdx.json"
+
+  # Release-link gate: `cargo check` does not link, so a static-link
+  # regression (e.g. ort's static archive requiring glibc 2.38+ / MSVC CRT
+  # symbols) only surfaces at `cargo build --release`. Run that here on the
+  # exact runner images the dist release uses, so a link failure fails the PR
+  # instead of the tagged release run.
+  release-build-linux:
+    name: Release build (Linux, static ort link)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install OpenBLAS (required by TurboQuant/turbovec)
+        run: sudo apt-get update && sudo apt-get install -y libopenblas-dev
+      - name: Release build
+        run: cargo build --release --locked --features full-cross
+
+  release-build-windows:
+    name: Release build (Windows, static ort link)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Release build
+        run: cargo build --release --locked --features full-cross
