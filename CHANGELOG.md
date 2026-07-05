@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.5] — 2026-07-06
+
+### Changed
+
+- Upgraded llm-kernel 0.9.2 → 0.15.0. Restores the upgrade path that 0.12.4 rolled back: llm-kernel 0.15.0 hardened the dynamic-linking escape hatch (mutually-exclusive `embedding-fastembed` / `embedding-fastembed-dynamic-linking`) and added a release-link CI gate, so the static ort link is now safe to consume upstream-side (llm-kernel [#55]).
+
+### Fixed
+
+- dist Linux artifacts now build on `ubuntu-24.04` (glibc 2.39) to satisfy the static ort archive's glibc ≥2.38 link requirement. Trade-off: produced Linux binaries require glibc ≥2.38 at runtime (ubuntu-24.04+ / recent distros).
+- CI gained `Release build (Linux/Windows)` jobs running `cargo build --release --locked --features full-cross`, so a static-link regression is caught on the PR (not at tagged-release time — the gap that let 0.12.3 ship a broken release).
+
+[llm-kernel #55]: https://github.com/epicsagas/llm-kernel/issues/55
+
 ## [0.12.4] — 2026-07-04
 
 ### Changed
