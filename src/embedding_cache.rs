@@ -9,9 +9,10 @@ use rusqlite::params;
 
 /// Persistent embedding cache backed by SQLite.
 ///
-/// The database file (`embedding_cache.db`) lives alongside `vectors.db` but
-/// is **not** deleted during `force_rebuild`, so cached embeddings survive
-/// across rebuilds.
+/// The database file (`embedding_cache.db`) lives alongside `vectors.db`.
+/// During a `force_rebuild` it is moved aside to `embedding_cache.db.bak`
+/// (regenerated on re-index) so stale embeddings from a model or prefix change
+/// are not reused; a normal incremental index keeps the cache intact.
 pub struct EmbeddingCache {
     conn: rusqlite::Connection,
 }

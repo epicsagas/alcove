@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Upgraded llm-kernel 0.15 → 0.25 (forward-compatible — no source changes; alcove's API surface was unaffected by the 0.16–0.25 breaking changes)
+
+> **Re-index required for BGE-en-v1.5 and mxbai users.** llm-kernel 0.25 extended the BGE-style instruction prefix (`"Represent this sentence for searching relevant passages: "`) from the Arctic models to `BGESmallENV15`, `BGEBaseENV15`, `BGELargeENV15`, and `MxbaiEmbedLargeV1`, which previously had no query prefix. alcove applies prefixes at both index and query time, so indexes built with an earlier llm-kernel using one of those four models now embed queries into a different region of the embedding space than their stored documents, degrading vector search relevance. Run `alcove rebuild` (or `alcove vault rebuild <name>` for a vault) to re-embed. The default model (`MultilingualE5Small`) and all other models are unaffected.
+
 ## [0.12.6] — 2026-07-06
 
 ### Changed

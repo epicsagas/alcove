@@ -292,6 +292,34 @@ pub fn build_index(docs_root: &Path) -> Result<JsonValue> {
     build_index_with_mode(docs_root, false)
 }
 
+/// Move `embedding_cache.db` (plus its WAL/SHM sidecars) aside to `.bak`
+/// during a force rebuild, so stale embeddings are not reused after a model
+/// or prefix change (e.g. llm-kernel 0.25 query-prefix addition).
+///
+/// Returns the backup path if the cache existed and was moved, `None` if there
+/// was nothing to back up. An existing `.bak` from a prior rebuild is replaced.
+fn backup_embedding_cache(alcove_dir: &Path) -> Result<Option<PathBuf>> {
+    let cache_path = alcove_dir.join("embedding_cache.db");
+    if !cache_path.exists() {
+        return Ok(None);
+    }
+    let backup_path = alcove_dir.join("embedding_cache.db.bak");
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path)?;
+    }
+    // Move the main DB plus SQLite WAL-mode sidecars so the backup is complete.
+    for suffix in ["", "-wal", "-shm"] {
+        let src = alcove_dir.join(format!("embedding_cache.db{suffix}"));
+        if src.exists() {
+            std::fs::rename(
+                &src,
+                alcove_dir.join(format!("embedding_cache.db{suffix}.bak")),
+            )?;
+        }
+    }
+    Ok(Some(backup_path))
+}
+
 pub fn rebuild_index(docs_root: &Path) -> Result<JsonValue> {
     // Evict the cached reader before wiping the index directory so that any
     // search initiated after this call opens a fresh reader on the new data.
@@ -328,6 +356,9 @@ fn build_index_with_options(
         if vectors_path.exists() {
             std::fs::remove_file(&vectors_path)?;
         }
+        // Back up the embedding cache so stale embeddings (e.g. from a prefix
+        // change) are not reused; it is regenerated during re-indexing.
+        backup_embedding_cache(&docs_root.join(".alcove"))?;
     }
     let result = build_index_inner(docs_root, skip_embedding);
     release_lock(docs_root);
@@ -1371,6 +1402,8 @@ pub fn rebuild_vault_index(vault_path: &Path) -> Result<JsonValue> {
     if vectors_path.exists() {
         std::fs::remove_file(&vectors_path)?;
     }
+    // Back up the embedding cache so stale embeddings are not reused.
+    backup_embedding_cache(&vault_path.join(".alcove"))?;
 
     build_vault_index(vault_path)
 }

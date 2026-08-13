@@ -548,12 +548,20 @@ mod tests {
                 Some("search_document: ")
             );
 
+            // llm-kernel 0.25 extended this BGE-style instruction prefix from the
+            // Arctic models to BGE-en-v1.5 and mxbai. Indexes built with an older
+            // llm-kernel using those models need re-embedding — queries land in a
+            // different region of the embedding space than the stored documents.
             let arctic_query_prefix = "Represent this sentence for searching relevant passages: ";
             for m in [
                 EmbeddingModel::SnowflakeArcticEmbedXS,
                 EmbeddingModel::SnowflakeArcticEmbedS,
                 EmbeddingModel::SnowflakeArcticEmbedM,
                 EmbeddingModel::SnowflakeArcticEmbedL,
+                EmbeddingModel::BGESmallENV15,
+                EmbeddingModel::BGEBaseENV15,
+                EmbeddingModel::BGELargeENV15,
+                EmbeddingModel::MxbaiEmbedLargeV1,
             ] {
                 assert_eq!(
                     m.query_prefix(),
