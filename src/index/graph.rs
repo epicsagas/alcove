@@ -235,12 +235,12 @@ pub(crate) fn rebuild_doc_graph(
         let _ = std::fs::write(&stamp_path, &stamp);
     }
 
-    let mode = if file_set_changed { "rebuilt" } else { "updated" };
-    Ok(format!(
-        "{mode} {}/{} docs",
-        processed,
-        current_ids.len()
-    ))
+    let mode = if file_set_changed {
+        "rebuilt"
+    } else {
+        "updated"
+    };
+    Ok(format!("{mode} {}/{} docs", processed, current_ids.len()))
 }
 
 /// Stamp content: deterministic hash of the sorted doc-id set, so adding or

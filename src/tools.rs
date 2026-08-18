@@ -726,14 +726,16 @@ fn resolve_doc_id(file: &str) -> String {
 
 #[cfg(feature = "doc-graph")]
 fn doc_links_to_json(links: Vec<crate::index::graph::DocLink>) -> Value {
-    json!(links
-        .into_iter()
-        .map(|l| json!({
-            "doc_id": l.doc_id,
-            "title": l.title,
-            "relation": l.relation,
-        }))
-        .collect::<Vec<_>>())
+    json!(
+        links
+            .into_iter()
+            .map(|l| json!({
+                "doc_id": l.doc_id,
+                "title": l.title,
+                "relation": l.relation,
+            }))
+            .collect::<Vec<_>>()
+    )
 }
 
 /// Return documents that link *to* the given file (backlinks).
