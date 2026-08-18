@@ -588,6 +588,58 @@ pub async fn get_doc_file(
     map_tool_result(result)
 }
 
+// ---------------------------------------------------------------------------
+// Document relationship graph (doc-graph feature)
+// ---------------------------------------------------------------------------
+
+/// Query params for the backlinks/related-docs endpoints.
+#[cfg(all(feature = "alcove-server", feature = "doc-graph"))]
+#[derive(Debug, Deserialize)]
+pub struct DocRefQuery {
+    /// Docs-root-relative path of the document (e.g. "backend/PRD.md").
+    pub file: String,
+}
+
+/// GET /docs/backlinks?file=...
+#[cfg(all(feature = "alcove-server", feature = "doc-graph"))]
+pub async fn get_doc_backlinks(
+    State(srv): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Query(query): Query<DocRefQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&srv, &headers)?;
+    let docs_root = srv.docs_root.clone();
+    let args = json!({ "file": query.file });
+    let result =
+        tokio::task::spawn_blocking(move || crate::tools::tool_get_doc_backlinks(&docs_root, args))
+            .await
+            .unwrap_or_else(|e| {
+                eprintln!("[alcove] get_doc_backlinks task failed: {e}");
+                Err(anyhow::anyhow!("Internal server error"))
+            });
+    map_tool_result(result)
+}
+
+/// GET /docs/related?file=...
+#[cfg(all(feature = "alcove-server", feature = "doc-graph"))]
+pub async fn get_related_docs(
+    State(srv): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Query(query): Query<DocRefQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&srv, &headers)?;
+    let docs_root = srv.docs_root.clone();
+    let args = json!({ "file": query.file });
+    let result =
+        tokio::task::spawn_blocking(move || crate::tools::tool_get_related_docs(&docs_root, args))
+            .await
+            .unwrap_or_else(|e| {
+                eprintln!("[alcove] get_related_docs task failed: {e}");
+                Err(anyhow::anyhow!("Internal server error"))
+            });
+    map_tool_result(result)
+}
+
 /// GET /projects/{name}/audit
 #[cfg(feature = "alcove-server")]
 pub async fn get_audit(

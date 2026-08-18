@@ -706,6 +706,67 @@ pub fn tool_get_file(project_root: &Path, args_value: Value) -> Result<Value> {
 }
 
 // ---------------------------------------------------------------------------
+// Tools: get_doc_backlinks / get_related_docs (doc-graph feature)
+// ---------------------------------------------------------------------------
+
+/// Args shared by the backlinks/related-docs tools.
+#[cfg(feature = "doc-graph")]
+#[derive(Debug, Deserialize)]
+struct DocRefArgs {
+    /// Docs-root-relative path of the document (e.g. "backend/PRD.md").
+    file: String,
+}
+
+/// Resolve a `{ file }` arg into a graph doc id (docs-root-relative, forward
+/// slashes). Accepts both `project/rel` and bare paths.
+#[cfg(feature = "doc-graph")]
+fn resolve_doc_id(file: &str) -> String {
+    file.replace('\\', "/")
+}
+
+#[cfg(feature = "doc-graph")]
+fn doc_links_to_json(links: Vec<crate::index::graph::DocLink>) -> Value {
+    json!(links
+        .into_iter()
+        .map(|l| json!({
+            "doc_id": l.doc_id,
+            "title": l.title,
+            "relation": l.relation,
+        }))
+        .collect::<Vec<_>>())
+}
+
+/// Return documents that link *to* the given file (backlinks).
+#[cfg(feature = "doc-graph")]
+pub fn tool_get_doc_backlinks(docs_root: &Path, args: Value) -> Result<Value> {
+    let args: DocRefArgs =
+        serde_json::from_value(args).context("get_doc_backlinks requires { file }")?;
+    let doc_id = resolve_doc_id(&args.file);
+    let graph = crate::index::graph::DocGraph::open(docs_root)?;
+    let backlinks = graph.backlinks(&doc_id)?;
+    let count = backlinks.len();
+    Ok(json!({
+        "doc_id": doc_id,
+        "backlinks": doc_links_to_json(backlinks),
+        "count": count,
+    }))
+}
+
+/// Return documents that the given file links *to* (outgoing references).
+#[cfg(feature = "doc-graph")]
+pub fn tool_get_related_docs(docs_root: &Path, args: Value) -> Result<Value> {
+    let args: DocRefArgs =
+        serde_json::from_value(args).context("get_related_docs requires { file }")?;
+    let doc_id = resolve_doc_id(&args.file);
+    let graph = crate::index::graph::DocGraph::open(docs_root)?;
+    let related = graph.related_docs(&doc_id)?;
+    Ok(json!({
+        "doc_id": doc_id,
+        "related": doc_links_to_json(related),
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Tool: list_projects
 // ---------------------------------------------------------------------------
 

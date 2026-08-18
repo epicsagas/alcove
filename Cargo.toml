@@ -56,7 +56,7 @@ llm-kernel = { version = "0.25", default-features = false }
 fastembed = { version = "5", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"], optional = true }
 
 # Storage & indexing
-rusqlite = { version = "0.40", features = ["bundled"], optional = true }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 hnsw_rs = { version = "0.3", optional = true }
 
 # Document parsers
@@ -107,6 +107,10 @@ office = ["zip", "quick-xml", "calamine"]
 alcove-server = ["axum", "tokio", "tower-http", "socket2"]
 transpile = ["dep:llm-transpile"]
 
+# Document relationship graph (wikilinks/backlinks) — llm-kernel graph backend.
+# Opt-in: adds zero crates (graph = ["store","dep:serde_json"], both already present).
+doc-graph = ["llm-kernel/graph"]
+
 # Language parsers (feature-gated for compile time control)
 lang-rust = ["dep:tree-sitter-rust"]
 lang-python = ["dep:tree-sitter-python"]
@@ -127,8 +131,8 @@ lang-all = [
 ]
 
 # Preset feature groups
-full-macos = ["core", "embed", "turboquant", "pdf", "office", "alcove-server", "lang-all"]
-full-cross = ["core", "embed", "turboquant", "office", "alcove-server", "lang-all"]
+full-macos = ["core", "embed", "turboquant", "pdf", "office", "alcove-server", "lang-all", "doc-graph"]
+full-cross = ["core", "embed", "turboquant", "office", "alcove-server", "lang-all", "doc-graph"]
 # Backward compat: full = full-macos on existing macOS ARM builds
 full = ["full-cross"]
 

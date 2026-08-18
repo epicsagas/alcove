@@ -1,6 +1,8 @@
 pub mod builder;
 pub mod cache;
 pub mod chunker;
+#[cfg(feature = "doc-graph")]
+pub(crate) mod graph;
 pub(crate) mod frontmatter;
 pub mod lock;
 pub mod reader;

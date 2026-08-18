@@ -796,7 +796,15 @@ pub async fn run_server(
         .route("/vaults", get(rest_routes::get_list_vaults))
         .route("/vaults/backup", post(rest_routes::post_backup_vault))
         .route("/promote", post(rest_routes::post_promote))
-        .route("/index-code", post(rest_routes::post_index_code))
+        .route("/index-code", post(rest_routes::post_index_code));
+
+    // Document relationship graph routes (optional, feature-gated).
+    #[cfg(feature = "doc-graph")]
+    let rest = rest
+        .route("/docs/backlinks", get(rest_routes::get_doc_backlinks))
+        .route("/docs/related", get(rest_routes::get_related_docs));
+
+    let rest = rest
         // Project-scoped endpoints
         .route("/projects/{name}/docs", get(rest_routes::get_project_docs))
         .route("/projects/{name}/audit", get(rest_routes::get_audit))

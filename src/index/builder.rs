@@ -397,7 +397,7 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
     let (all_files, project_count) = scan_all_files(docs_root)?;
 
     let (files_to_index, current_files, skipped_count) =
-        filter_changed_files(all_files, docs_root, &meta);
+        filter_changed_files(all_files.clone(), docs_root, &meta);
 
     let needs_full_rebuild = !dir.join("meta.json").exists() || meta.files.is_empty();
 
@@ -435,6 +435,16 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
 
     let (vector_status, vectors_indexed, vector_errors, embedding_model) =
         run_vector_indexing(docs_root, skip_embedding, files_to_index)?;
+
+    // Document relationship graph (wikilinks/backlinks). Built from the full
+    // file set so the filename map covers every indexed doc; idempotent
+    // upsert + prune keeps it in sync with the filesystem.
+    #[cfg(feature = "doc-graph")]
+    {
+        if let Err(e) = super::graph::rebuild_doc_graph(docs_root, &all_files) {
+            eprintln!("[alcove] doc graph build failed: {e}");
+        }
+    }
 
     // Final metadata save after all indexing steps (Tantivy + Vector) are complete
     meta.files = current_files;
@@ -1340,6 +1350,25 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
             } else {
                 vector_status = "model_not_ready".to_string();
             }
+        }
+    }
+
+    // Document relationship graph for the vault (same backend as project docs).
+    #[cfg(feature = "doc-graph")]
+    {
+        let vault_files: Vec<ProjectFile> = files
+            .iter()
+            .map(|fp| {
+                let rel = fp
+                    .strip_prefix(vault_path)
+                    .unwrap_or(fp)
+                    .to_string_lossy()
+                    .to_string();
+                (vault_name.clone(), rel, fp.clone())
+            })
+            .collect();
+        if let Err(e) = super::graph::rebuild_doc_graph(vault_path, &vault_files) {
+            eprintln!("[alcove] vault doc graph build failed: {e}");
         }
     }
 

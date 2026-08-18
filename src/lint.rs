@@ -20,12 +20,14 @@ fn inline_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"`[^`\n]+`").unwrap())
 }
 
-fn wiki_link_re() -> &'static Regex {
+/// Compiled wikilink regex: `[[target]]` or `[[target|alias]]` (group 1 = target).
+pub(crate) fn wiki_link_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]").unwrap())
 }
 
-fn md_link_re() -> &'static Regex {
+/// Compiled markdown link regex: `[text](path)` (group 1 = path).
+pub(crate) fn md_link_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\[(?:[^\]]*)\]\(([^)]+)\)").unwrap())
 }
@@ -109,7 +111,7 @@ fn collect_doc_files(docs_root: &Path, project_filter: Option<&str>) -> Vec<Path
 
 /// Build a lookup map: filename (no ext, lowercased) → full path.
 /// Used for Obsidian-style wikilink resolution.
-fn build_filename_map(files: &[PathBuf]) -> HashMap<String, PathBuf> {
+pub(crate) fn build_filename_map(files: &[PathBuf]) -> HashMap<String, PathBuf> {
     let mut map = HashMap::new();
     for path in files {
         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
@@ -140,7 +142,7 @@ fn is_index_file(path: &Path) -> bool {
 /// spans with spaces, preserving byte offsets so downstream regex matches
 /// remain valid. This prevents TOML `[[table]]` syntax inside code fences
 /// from being parsed as Obsidian-style wikilinks.
-fn strip_code_blocks(content: &str) -> String {
+pub(crate) fn strip_code_blocks(content: &str) -> String {
     let after_fences =
         fence_re().replace_all(content, |caps: &regex::Captures| " ".repeat(caps[0].len()));
     inline_re()
@@ -180,6 +182,54 @@ fn extract_links(content: &str) -> Vec<String> {
     links
 }
 
+/// Resolve a link target to its actual file path.
+///
+/// Tries, in order: relative to the containing file's directory (with and
+/// without `.md`), relative to docs_root, then Obsidian-style filename match
+/// via `filename_map`. Returns `None` when the target does not resolve to an
+/// existing file on disk.
+pub(crate) fn resolve_link_path(
+    link: &str,
+    containing_file: &Path,
+    docs_root: &Path,
+    filename_map: &HashMap<String, PathBuf>,
+) -> Option<PathBuf> {
+    // Try relative path from containing file's directory
+    if let Some(parent) = containing_file.parent() {
+        let candidate = parent.join(link);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        // Try with .md extension
+        let with_md = parent.join(format!("{}.md", link));
+        if with_md.exists() {
+            return Some(with_md);
+        }
+    }
+
+    // Try relative path from docs_root
+    let from_root = docs_root.join(link);
+    if from_root.exists() {
+        return Some(from_root);
+    }
+    let from_root_md = docs_root.join(format!("{}.md", link));
+    if from_root_md.exists() {
+        return Some(from_root_md);
+    }
+
+    // Obsidian-style: match by filename anywhere under docs_root
+    let link_lower = link.to_lowercase();
+    let filename_part = Path::new(&link_lower)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&link_lower);
+    if let Some(p) = filename_map.get(filename_part) {
+        return Some(p.clone());
+    }
+    let stem = filename_part.strip_suffix(".md").unwrap_or(filename_part);
+    filename_map.get(stem).cloned()
+}
+
 /// Resolve a link target relative to the file that contains it and docs_root.
 /// Returns true if the link resolves to an existing file.
 fn resolve_link(
@@ -188,43 +238,7 @@ fn resolve_link(
     docs_root: &Path,
     filename_map: &HashMap<String, PathBuf>,
 ) -> bool {
-    // Try relative path from containing file's directory
-    if let Some(parent) = containing_file.parent() {
-        let candidate = parent.join(link);
-        if candidate.exists() {
-            return true;
-        }
-        // Try with .md extension
-        let with_md = parent.join(format!("{}.md", link));
-        if with_md.exists() {
-            return true;
-        }
-    }
-
-    // Try relative path from docs_root
-    let from_root = docs_root.join(link);
-    if from_root.exists() {
-        return true;
-    }
-    let from_root_md = docs_root.join(format!("{}.md", link));
-    if from_root_md.exists() {
-        return true;
-    }
-
-    // Obsidian-style: match by filename anywhere under docs_root
-    let link_lower = link.to_lowercase();
-    // Strip any path prefix — use just the filename part
-    let filename_part = Path::new(&link_lower)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(&link_lower);
-
-    if filename_map.contains_key(filename_part) {
-        return true;
-    }
-    // Also try stripping .md suffix for stem lookup
-    let stem = filename_part.strip_suffix(".md").unwrap_or(filename_part);
-    filename_map.contains_key(stem)
+    resolve_link_path(link, containing_file, docs_root, filename_map).is_some()
 }
 
 // ---------------------------------------------------------------------------

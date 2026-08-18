@@ -646,6 +646,52 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                 "required": ["source_path"]
             }),
         },
+        #[cfg(feature = "doc-graph")]
+        ToolDescription {
+            name: "get_doc_backlinks".into(),
+            description: concat!(
+                "Return documents that link TO a given file (backlinks). ",
+                "Use this to discover which documents reference a doc via ",
+                "[[wikilinks]] or [markdown links].\n",
+                "\n",
+                "Requires the `doc-graph` feature and a built index. Returns ",
+                "{ doc_id, title, relation } for each backlink."
+            )
+            .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "description": "Docs-root-relative path of the document (e.g. \"backend/PRD.md\")"
+                    }
+                },
+                "required": ["file"]
+            }),
+        },
+        #[cfg(feature = "doc-graph")]
+        ToolDescription {
+            name: "get_related_docs".into(),
+            description: concat!(
+                "Return documents that a given file links TO (outgoing references). ",
+                "Use this to follow a document's outgoing [[wikilinks]] and ",
+                "[markdown links].\n",
+                "\n",
+                "Requires the `doc-graph` feature and a built index. Returns ",
+                "{ doc_id, title, relation } for each outgoing reference."
+            )
+            .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "description": "Docs-root-relative path of the document (e.g. \"backend/PRD.md\")"
+                    }
+                },
+                "required": ["file"]
+            }),
+        },
     ];
 
     RpcResponse::ok(id, json!({ "tools": tools }))
@@ -664,8 +710,12 @@ fn tool_enum(name: &str) -> Option<Tool> {
         "backup_vault" => Some(Tool::BackupVault),
         "check_doc_changes" => Some(Tool::CheckDocChanges),
         "configure_project" => Some(Tool::ConfigureProject),
+        #[cfg(feature = "doc-graph")]
+        "get_doc_backlinks" => Some(Tool::GetDocBacklinks),
         "get_doc_file" => Some(Tool::GetDocFile),
         "get_project_docs_overview" => Some(Tool::GetProjectDocsOverview),
+        #[cfg(feature = "doc-graph")]
+        "get_related_docs" => Some(Tool::GetRelatedDocs),
         "init_project" => Some(Tool::InitProject),
         "lint_project" => Some(Tool::LintProject),
         "list_projects" => Some(Tool::ListProjects),
@@ -1060,6 +1110,10 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         "index_code_structure" => {
             tools::tool_index_code_structure(&docs_root, &resolved.name, call.arguments)
         }
+        #[cfg(feature = "doc-graph")]
+        "get_doc_backlinks" => tools::tool_get_doc_backlinks(&docs_root, call.arguments),
+        #[cfg(feature = "doc-graph")]
+        "get_related_docs" => tools::tool_get_related_docs(&docs_root, call.arguments),
         other => Err(anyhow::anyhow!("Unknown tool: {other}")),
     };
 
