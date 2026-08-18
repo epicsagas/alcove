@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- acknowledgments: temporal validity model (`valid_until` / `last_verified`, query-time expiry exclusion) credited to the Data Olympus lifecycle schema by @ajdelaguila (see README, discussion in #37)
+
+
 - agent memory (#37): `memory_store` / `memory_recall` MCP tools + REST `POST /memory/store`, `GET /memory/recall` — durable cross-session memory in the `memory` vault with optional `valid_until` expiry, hybrid recall. Skill docs updated with memory + doc-graph endpoint reference
 
 ### Changed
