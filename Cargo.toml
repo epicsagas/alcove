@@ -114,8 +114,9 @@ alcove-server = ["axum", "tokio", "tower-http", "socket2"]
 transpile = ["dep:llm-transpile"]
 
 # Document relationship graph (wikilinks/backlinks) — llm-kernel graph backend.
-# Opt-in: adds zero crates (graph = ["store","dep:serde_json"], both already present).
-doc-graph = ["llm-kernel/graph"]
+# Opt-in: needs rusqlite for direct lifecycle calls (mark_verified /
+# count_expired_nodes) — same 0.32 pin llm-kernel's graph backend uses.
+doc-graph = ["llm-kernel/graph", "rusqlite"]
 
 # Language parsers (feature-gated for compile time control)
 lang-rust = ["dep:tree-sitter-rust"]

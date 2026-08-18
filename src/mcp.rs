@@ -692,6 +692,44 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                 "required": ["file"]
             }),
         },
+        #[cfg(feature = "doc-graph")]
+        ToolDescription {
+            name: "verify_doc".into(),
+            description: concat!(
+                "Stamp last_verified=now on a document's graph node. Use after ",
+                "confirming a document's facts are still current, so freshness ",
+                "signals (stale tagging, expiry) stay accurate.\n",
+                "\n",
+                "Requires the `doc-graph` feature and a built index."
+            )
+            .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "description": "Docs-root-relative path of the document (e.g. \"backend/PRD.md\")"
+                    }
+                },
+                "required": ["file"]
+            }),
+        },
+        #[cfg(feature = "doc-graph")]
+        ToolDescription {
+            name: "count_expired_docs".into(),
+            description: concat!(
+                "Count documents whose valid_until has passed (excluded from ",
+                "backlinks/related recall). Use to gauge how many docs need ",
+                "re-verification.\n",
+                "\n",
+                "Requires the `doc-graph` feature and a built index."
+            )
+            .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+            }),
+        },
     ];
 
     RpcResponse::ok(id, json!({ "tools": tools }))
@@ -716,6 +754,10 @@ fn tool_enum(name: &str) -> Option<Tool> {
         "get_project_docs_overview" => Some(Tool::GetProjectDocsOverview),
         #[cfg(feature = "doc-graph")]
         "get_related_docs" => Some(Tool::GetRelatedDocs),
+        #[cfg(feature = "doc-graph")]
+        "verify_doc" => Some(Tool::VerifyDoc),
+        #[cfg(feature = "doc-graph")]
+        "count_expired_docs" => Some(Tool::CountExpiredDocs),
         "init_project" => Some(Tool::InitProject),
         "lint_project" => Some(Tool::LintProject),
         "list_projects" => Some(Tool::ListProjects),
@@ -1114,6 +1156,10 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
         "get_doc_backlinks" => tools::tool_get_doc_backlinks(&docs_root, call.arguments),
         #[cfg(feature = "doc-graph")]
         "get_related_docs" => tools::tool_get_related_docs(&docs_root, call.arguments),
+        #[cfg(feature = "doc-graph")]
+        "verify_doc" => tools::tool_verify_doc(&docs_root, call.arguments),
+        #[cfg(feature = "doc-graph")]
+        "count_expired_docs" => tools::tool_count_expired_docs(&docs_root),
         other => Err(anyhow::anyhow!("Unknown tool: {other}")),
     };
 

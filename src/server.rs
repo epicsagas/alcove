@@ -802,7 +802,9 @@ pub async fn run_server(
     #[cfg(feature = "doc-graph")]
     let rest = rest
         .route("/docs/backlinks", get(rest_routes::get_doc_backlinks))
-        .route("/docs/related", get(rest_routes::get_related_docs));
+        .route("/docs/related", get(rest_routes::get_related_docs))
+        .route("/docs/verify", post(rest_routes::post_verify_doc))
+        .route("/docs/expired", get(rest_routes::get_expired_docs));
 
     let rest = rest
         // Project-scoped endpoints

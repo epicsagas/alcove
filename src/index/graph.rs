@@ -98,7 +98,13 @@ impl DocGraph {
     }
 
     /// Documents that link *to* `doc_id` (backlinks).
+    ///
+    /// An expired doc (valid_until in the past) recalls nothing — same
+    /// exclusion rule as for link targets, applied to the queried node.
     pub fn backlinks(&self, doc_id: &str) -> Result<Vec<DocLink>> {
+        if self.is_expired(doc_id)? {
+            return Ok(Vec::new());
+        }
         let edges = self
             .backend
             .edges_for_node_dir(doc_id, EdgeDirection::In, None)?;
@@ -106,11 +112,24 @@ impl DocGraph {
     }
 
     /// Documents that `doc_id` links *to* (outgoing references).
+    ///
+    /// An expired doc recalls nothing (see [`backlinks`](Self::backlinks)).
     pub fn related_docs(&self, doc_id: &str) -> Result<Vec<DocLink>> {
+        if self.is_expired(doc_id)? {
+            return Ok(Vec::new());
+        }
         let edges = self
             .backend
             .edges_for_node_dir(doc_id, EdgeDirection::Out, None)?;
         self.edges_to_doc_links(edges, |e| e.target.clone())
+    }
+
+    /// Whether the node exists with `valid_until` set and in the past.
+    pub fn is_expired(&self, doc_id: &str) -> Result<bool> {
+        Ok(self
+            .backend
+            .read_node(doc_id)?
+            .is_some_and(|n| !n.valid_until.is_empty() && n.valid_until < now_iso()))
     }
 
     /// Read a document node's title, if present.
@@ -126,7 +145,7 @@ impl DocGraph {
         edges: Vec<GraphEdge>,
         key: impl Fn(&GraphEdge) -> String,
     ) -> Result<Vec<DocLink>> {
-        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let now = now_iso();
         // Temporal validity: a link is dropped from recall when *either*
         // endpoint has expired (valid_until set and in the past) — an
         // exclusion rule at query time, per the #37 lifecycle discussion.
@@ -173,6 +192,12 @@ fn path_to_doc_id(abs: &Path, docs_root: &Path) -> Option<String> {
     abs.strip_prefix(docs_root)
         .ok()
         .map(|p| p.to_string_lossy().replace('\\', "/"))
+}
+
+/// Current UTC time, ISO 8601 with second precision — the comparison key for
+/// `valid_until`.
+fn now_iso() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 /// Build (or incrementally update) the doc graph for `docs_root`.
@@ -488,6 +513,8 @@ mod tests {
         assert!(related[0].valid_until.is_empty());
         // Backlinks on c also vanish once every incoming edge target is expired.
         assert!(g.backlinks("proj/c.md").unwrap().is_empty());
+        // The expired doc itself recalls nothing in either direction.
+        assert!(g.related_docs("proj/c.md").unwrap().is_empty());
         // read_doc_title still sees the node — expiry is recall-only, not deletion.
         assert!(g.read_doc_title("proj/c.md").unwrap().is_some());
     }

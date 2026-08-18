@@ -640,6 +640,44 @@ pub async fn get_related_docs(
     map_tool_result(result)
 }
 
+/// POST /docs/verify?file=... — stamp last_verified=now on a doc node.
+#[cfg(all(feature = "alcove-server", feature = "doc-graph"))]
+pub async fn post_verify_doc(
+    State(srv): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Query(query): Query<DocRefQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&srv, &headers)?;
+    let docs_root = srv.docs_root.clone();
+    let args = json!({ "file": query.file });
+    let result =
+        tokio::task::spawn_blocking(move || crate::tools::tool_verify_doc(&docs_root, args))
+            .await
+            .unwrap_or_else(|e| {
+                eprintln!("[alcove] verify_doc task failed: {e}");
+                Err(anyhow::anyhow!("Internal server error"))
+            });
+    map_tool_result(result)
+}
+
+/// GET /docs/expired — count docs whose valid_until has passed.
+#[cfg(all(feature = "alcove-server", feature = "doc-graph"))]
+pub async fn get_expired_docs(
+    State(srv): State<Arc<ServerState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&srv, &headers)?;
+    let docs_root = srv.docs_root.clone();
+    let result =
+        tokio::task::spawn_blocking(move || crate::tools::tool_count_expired_docs(&docs_root))
+            .await
+            .unwrap_or_else(|e| {
+                eprintln!("[alcove] expired-count task failed: {e}");
+                Err(anyhow::anyhow!("Internal server error"))
+            });
+    map_tool_result(result)
+}
+
 /// GET /projects/{name}/audit
 #[cfg(feature = "alcove-server")]
 pub async fn get_audit(

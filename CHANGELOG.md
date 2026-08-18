@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- doc-graph: temporal validity — `get_doc_backlinks` / `get_related_docs` (and the REST endpoints) now surface `valid_until` / `last_verified` on each link and exclude links whose either endpoint has expired, at query time (llm-kernel graph temporal-validity fields, #37)
+- doc-graph: temporal validity — `get_doc_backlinks` / `get_related_docs` (and the REST endpoints) now surface `valid_until` / `last_verified` on each link and exclude links whose either endpoint has expired, at query time (llm-kernel graph temporal-validity fields, #37). Querying an expired doc itself returns empty in both directions
+- doc-graph: `verify_doc` MCP tool + `POST /docs/verify` — stamp `last_verified=now` on a doc node (llm-kernel `mark_verified`)
+- doc-graph: `count_expired_docs` MCP tool + `GET /docs/expired` — count docs excluded from recall by expiry (llm-kernel `count_expired_nodes`)
 
 ### Fixed
 
