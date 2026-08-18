@@ -434,17 +434,20 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
         count_vector_skipped_projects(docs_root, embedding_enabled_for_count);
 
     let (vector_status, vectors_indexed, vector_errors, embedding_model) =
-        run_vector_indexing(docs_root, skip_embedding, files_to_index)?;
+        run_vector_indexing(docs_root, skip_embedding, files_to_index.clone())?;
 
     // Document relationship graph (wikilinks/backlinks). Built from the full
-    // file set so the filename map covers every indexed doc; idempotent
-    // upsert + prune keeps it in sync with the filesystem.
+    // file set so the filename map covers every indexed doc; incremental runs
+    // reprocess only the changed files (full rebuild on any file-set change).
     #[cfg(feature = "doc-graph")]
-    {
-        if let Err(e) = super::graph::rebuild_doc_graph(docs_root, &all_files) {
-            eprintln!("[alcove] doc graph build failed: {e}");
-        }
-    }
+    let doc_graph_status =
+        match super::graph::rebuild_doc_graph(docs_root, &all_files, Some(&files_to_index)) {
+            Ok(status) => status,
+            Err(e) => {
+                eprintln!("[alcove] doc graph build failed: {e}");
+                format!("error: {e}")
+            }
+        };
 
     // Final metadata save after all indexing steps (Tantivy + Vector) are complete
     meta.files = current_files;
@@ -452,7 +455,7 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
     meta.chunk_strategy_version = CHUNK_STRATEGY_VERSION;
     let _ = meta.save(docs_root);
 
-    Ok(json!({
+    let result = json!({
         "status": "ok",
         "projects": project_count,
         "indexed": indexed_count,
@@ -463,7 +466,14 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
         "vector_errors": vector_errors,
         "embedding_model": embedding_model,
         "vector_skipped_projects": vector_skipped_projects,
-    }))
+    });
+    #[cfg(feature = "doc-graph")]
+    let result = {
+        let mut r = result;
+        r["doc_graph"] = json!(doc_graph_status);
+        r
+    };
+    Ok(result)
 }
 
 /// Step 1: Apply schema migration — wipe index dir if schema or chunking strategy is outdated.
@@ -1355,7 +1365,7 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
 
     // Document relationship graph for the vault (same backend as project docs).
     #[cfg(feature = "doc-graph")]
-    {
+    let vault_doc_graph_status = {
         let vault_files: Vec<ProjectFile> = files
             .iter()
             .map(|fp| {
@@ -1367,12 +1377,16 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
                 (vault_name.clone(), rel, fp.clone())
             })
             .collect();
-        if let Err(e) = super::graph::rebuild_doc_graph(vault_path, &vault_files) {
-            eprintln!("[alcove] vault doc graph build failed: {e}");
+        match super::graph::rebuild_doc_graph(vault_path, &vault_files, None) {
+            Ok(status) => status,
+            Err(e) => {
+                eprintln!("[alcove] vault doc graph build failed: {e}");
+                format!("error: {e}")
+            }
         }
-    }
+    };
 
-    Ok(json!({
+    let result = json!({
         "status": "ok",
         "vault": vault_name,
         "files": file_count,
@@ -1381,7 +1395,14 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
         "vector_errors": vector_errors,
         "vector_status": vector_status,
         "embedding_model": embedding_model,
-    }))
+    });
+    #[cfg(feature = "doc-graph")]
+    let result = {
+        let mut r = result;
+        r["doc_graph"] = json!(vault_doc_graph_status);
+        r
+    };
+    Ok(result)
 }
 
 /// Build BM25 indexes for all registered vaults.

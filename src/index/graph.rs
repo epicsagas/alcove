@@ -30,24 +30,26 @@ const TS: &str = "1970-01-01T00:00:00Z";
 /// Lives in its own SQLite file (`.alcove/docgraph.db`) to avoid any schema
 /// collision with the vector/embedding-cache DBs (graph uses `nodes`/`edges`,
 /// alcove uses `vectors`/`meta`).
-#[allow(dead_code)]
-pub(crate) struct DocGraph {
+///
+/// `pub`: the lib target compiles this module but only the bin target (MCP
+/// tools) constructs `DocGraph` — crate-private visibility trips `-D
+/// dead_code` on the lib build.
+pub struct DocGraph {
     backend: SqliteGraph,
 }
 
 /// A resolved document reference — doc id + title + relation type.
 #[derive(Debug, Clone)]
-pub(crate) struct DocLink {
-    pub(crate) doc_id: String,
-    pub(crate) title: String,
-    pub(crate) relation: String,
+pub struct DocLink {
+    pub doc_id: String,
+    pub title: String,
+    pub relation: String,
 }
 
 impl DocGraph {
     /// Open (creating if needed) the graph DB under `.alcove/docgraph.db`.
     /// `SqliteGraph::open` applies the schema + migrations automatically.
-    #[allow(dead_code)]
-    pub(crate) fn open(docs_root: &Path) -> Result<Self> {
+    pub fn open(docs_root: &Path) -> Result<Self> {
         let alcove_dir = docs_root.join(".alcove");
         std::fs::create_dir_all(&alcove_dir)?;
         let db_path = alcove_dir.join("docgraph.db");
@@ -93,7 +95,7 @@ impl DocGraph {
     }
 
     /// Documents that link *to* `doc_id` (backlinks).
-    pub(crate) fn backlinks(&self, doc_id: &str) -> Result<Vec<DocLink>> {
+    pub fn backlinks(&self, doc_id: &str) -> Result<Vec<DocLink>> {
         let edges = self
             .backend
             .edges_for_node_dir(doc_id, EdgeDirection::In, None)?;
@@ -101,7 +103,7 @@ impl DocGraph {
     }
 
     /// Documents that `doc_id` links *to* (outgoing references).
-    pub(crate) fn related_docs(&self, doc_id: &str) -> Result<Vec<DocLink>> {
+    pub fn related_docs(&self, doc_id: &str) -> Result<Vec<DocLink>> {
         let edges = self
             .backend
             .edges_for_node_dir(doc_id, EdgeDirection::Out, None)?;
@@ -109,8 +111,10 @@ impl DocGraph {
     }
 
     /// Read a document node's title, if present.
-    #[allow(dead_code)] // used by tests and future tool surface
-    pub(crate) fn read_doc_title(&self, doc_id: &str) -> Result<Option<String>> {
+    // Used by this module's tests; the bin tools surface titles via
+    // backlinks/related_docs only. Would trip -D dead_code on the bin target.
+    #[allow(dead_code)]
+    pub fn read_doc_title(&self, doc_id: &str) -> Result<Option<String>> {
         Ok(self.backend.read_node(doc_id)?.map(|n| n.title))
     }
 
@@ -155,19 +159,24 @@ fn path_to_doc_id(abs: &Path, docs_root: &Path) -> Option<String> {
         .map(|p| p.to_string_lossy().replace('\\', "/"))
 }
 
-/// Build the doc graph for `docs_root` from `files`.
+/// Build (or incrementally update) the doc graph for `docs_root`.
 ///
-/// `files`: `(project, rel_to_project, absolute_path)` tuples — the same shape
-/// `builder::scan_all_files` produces. Markdown links/wikilinks are extracted
-/// per file, resolved against a filename map built from the full file set, and
-/// upserted as directed edges.
+/// `files`: full `(project, rel_to_project, absolute_path)` set — the same
+/// shape `builder::scan_all_files` produces. Used for the filename map
+/// (Obsidian-style bare-name resolution) and the prune diff.
 ///
-/// Idempotent: nodes are upserted, out-edges are replaced per file, and docs
-/// absent from `files` are pruned (node + edges) via `delete_node`.
+/// `changed`: subset of `files` whose contents may have changed (the
+/// incremental-index delta). When the on-disk file set differs from the last
+/// run (stamp mismatch, missing graph DB), a full rebuild happens regardless
+/// and `changed` is ignored — this also repairs links in unchanged files that
+/// start/stopped resolving when another doc was added or removed.
+///
+/// Returns a short status string for the index result JSON.
 pub(crate) fn rebuild_doc_graph(
     docs_root: &Path,
     files: &[(String, String, PathBuf)],
-) -> Result<()> {
+    changed: Option<&[(String, String, PathBuf)]>,
+) -> Result<String> {
     let graph = DocGraph::open(docs_root)?;
 
     // filename map over all indexed files (Obsidian-style bare-name links).
@@ -179,7 +188,25 @@ pub(crate) fn rebuild_doc_graph(
         .filter_map(|(_, _, abs)| path_to_doc_id(abs, docs_root))
         .collect();
 
-    for (_proj, _rel, abs) in files {
+    // Full rebuild when the file set changed since the last run or the graph
+    // DB is gone (stamp can outlive a manually deleted docgraph.db).
+    let stamp_path = docs_root.join(".alcove").join("docgraph.stamp");
+    let stamp = stamp_text(&current_ids);
+    let db_exists = docs_root.join(".alcove").join("docgraph.db").exists();
+    let stamp_matches = std::fs::read_to_string(&stamp_path).is_ok_and(|s| s == stamp);
+    let file_set_changed = !db_exists || !stamp_matches;
+
+    let to_process: Vec<&(String, String, PathBuf)> = if file_set_changed {
+        files.iter().collect()
+    } else {
+        match changed {
+            Some(delta) => delta.iter().collect(),
+            None => Vec::new(),
+        }
+    };
+
+    let processed = to_process.len();
+    for (_proj, _rel, abs) in to_process {
         let Some(doc_id) = path_to_doc_id(abs, docs_root) else {
             continue;
         };
@@ -198,14 +225,35 @@ pub(crate) fn rebuild_doc_graph(
         graph.refresh_out_edges(&doc_id, &edges)?;
     }
 
-    // Prune nodes no longer present.
-    for id in graph.all_doc_ids() {
-        if !current_ids.contains(&id) {
-            let _ = graph.backend.delete_node(&id);
+    // Prune nodes no longer present (only meaningful on a full rebuild).
+    if file_set_changed {
+        for id in graph.all_doc_ids() {
+            if !current_ids.contains(&id) {
+                let _ = graph.backend.delete_node(&id);
+            }
         }
+        let _ = std::fs::write(&stamp_path, &stamp);
     }
 
-    Ok(())
+    let mode = if file_set_changed { "rebuilt" } else { "updated" };
+    Ok(format!(
+        "{mode} {}/{} docs",
+        processed,
+        current_ids.len()
+    ))
+}
+
+/// Stamp content: deterministic hash of the sorted doc-id set, so adding or
+/// removing any file triggers a full graph rebuild.
+fn stamp_text(ids: &std::collections::HashSet<String>) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut sorted: Vec<&String> = ids.iter().collect();
+    sorted.sort();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for id in sorted {
+        id.hash(&mut hasher);
+    }
+    format!("{:016x}", hasher.finish())
 }
 
 /// Extract directed edges from `content`: `[[wikilink]]` and `[text](path)`
@@ -239,10 +287,10 @@ fn extract_edges(
     // Wikilinks: [[target]] or [[target|alias]]
     for cap in wiki_link_re().captures_iter(&prose) {
         let raw = cap[1].trim();
-        if let Some(abs) = resolve_link_path(raw, containing_file, docs_root, filename_map) {
-            if let Some(tid) = path_to_doc_id(&abs, docs_root) {
-                push(tid, REL_WIKILINK);
-            }
+        let tid = resolve_link_path(raw, containing_file, docs_root, filename_map)
+            .and_then(|abs| path_to_doc_id(&abs, docs_root));
+        if let Some(tid) = tid {
+            push(tid, REL_WIKILINK);
         }
     }
 
@@ -260,11 +308,10 @@ fn extract_edges(
         if path_part.is_empty() {
             continue;
         }
-        if let Some(abs) = resolve_link_path(path_part, containing_file, docs_root, filename_map)
-        {
-            if let Some(tid) = path_to_doc_id(&abs, docs_root) {
-                push(tid, REL_LINK);
-            }
+        let tid = resolve_link_path(path_part, containing_file, docs_root, filename_map)
+            .and_then(|abs| path_to_doc_id(&abs, docs_root));
+        if let Some(tid) = tid {
+            push(tid, REL_LINK);
         }
     }
 
@@ -309,7 +356,7 @@ mod tests {
         write(root, "proj/a.md", "# A\n\nSee [[b]] for details.\n");
         write(root, "proj/b.md", "# B\n\nReferenced by a.\n");
         let files = make_files(root, &["proj/a.md", "proj/b.md"]);
-        rebuild_doc_graph(root, &files).unwrap();
+        rebuild_doc_graph(root, &files, None).unwrap();
 
         let g = DocGraph::open(root).unwrap();
         // a links to b
@@ -330,7 +377,7 @@ mod tests {
         write(root, "proj/a.md", "# A\n\nLink to [b](b.md).\n");
         write(root, "proj/b.md", "# B\n");
         let files = make_files(root, &["proj/a.md", "proj/b.md"]);
-        rebuild_doc_graph(root, &files).unwrap();
+        rebuild_doc_graph(root, &files, None).unwrap();
 
         let g = DocGraph::open(root).unwrap();
         let related = g.related_docs("proj/a.md").unwrap();
@@ -349,7 +396,7 @@ mod tests {
         );
         write(root, "proj/dependencies.md", "# Deps\n");
         let files = make_files(root, &["proj/a.md", "proj/dependencies.md"]);
-        rebuild_doc_graph(root, &files).unwrap();
+        rebuild_doc_graph(root, &files, None).unwrap();
 
         let g = DocGraph::open(root).unwrap();
         let related = g.related_docs("proj/a.md").unwrap();
@@ -365,13 +412,15 @@ mod tests {
         write(root, "proj/b.md", "# B\n");
         write(root, "proj/c.md", "# C\n");
         let files = make_files(root, &["proj/a.md", "proj/b.md", "proj/c.md"]);
-        rebuild_doc_graph(root, &files).unwrap();
+        rebuild_doc_graph(root, &files, None).unwrap();
         let g = DocGraph::open(root).unwrap();
         assert_eq!(g.related_docs("proj/a.md").unwrap().len(), 2);
 
-        // Edit a.md to drop the link to c.
+        // Edit a.md to drop the link to c. Same file set, so the incremental
+        // path runs: only a.md is reprocessed (stamp matches).
         write(root, "proj/a.md", "# A\n\n[[b]] only.\n");
-        rebuild_doc_graph(root, &files).unwrap();
+        let files_a = make_files(root, &["proj/a.md"]);
+        rebuild_doc_graph(root, &files, Some(&files_a)).unwrap();
         let g = DocGraph::open(root).unwrap();
         let related = g.related_docs("proj/a.md").unwrap();
         assert_eq!(related.len(), 1);
@@ -385,12 +434,12 @@ mod tests {
         write(root, "proj/a.md", "# A\n\n[[b]]\n");
         write(root, "proj/b.md", "# B\n");
         let files = make_files(root, &["proj/a.md", "proj/b.md"]);
-        rebuild_doc_graph(root, &files).unwrap();
+        rebuild_doc_graph(root, &files, None).unwrap();
 
         // Remove b from the file set → should be pruned.
         std::fs::remove_file(root.join("proj/b.md")).unwrap();
         let files = make_files(root, &["proj/a.md"]);
-        rebuild_doc_graph(root, &files).unwrap();
+        rebuild_doc_graph(root, &files, None).unwrap();
 
         let g = DocGraph::open(root).unwrap();
         assert!(g.read_doc_title("proj/b.md").unwrap().is_none());

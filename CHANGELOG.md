@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- doc-graph: resolved `-D warnings` clippy failures on the lib target (dead-code on `DocGraph`/`DocLink`, collapsible `if`s in `extract_edges`) that broke the CI `Check` job
+
 ### Changed
 
+- doc-graph: incremental graph updates — incremental index runs now reprocess only changed files instead of re-reading every document (full rebuild only when the file set changes, tracked via `.alcove/docgraph.stamp`; also triggers on a missing `docgraph.db`). Graph build status is now surfaced in the index result JSON as `doc_graph` instead of being logged to stderr only
 - Upgraded llm-kernel 0.15 → 0.25 (forward-compatible — no source changes; alcove's API surface was unaffected by the 0.16–0.25 breaking changes)
 
 > **Re-index required for BGE-en-v1.5 and mxbai users.** llm-kernel 0.25 extended the BGE-style instruction prefix (`"Represent this sentence for searching relevant passages: "`) from the Arctic models to `BGESmallENV15`, `BGEBaseENV15`, `BGELargeENV15`, and `MxbaiEmbedLargeV1`, which previously had no query prefix. alcove applies prefixes at both index and query time, so indexes built with an earlier llm-kernel using one of those four models now embed queries into a different region of the embedding space than their stored documents, degrading vector search relevance. Run `alcove rebuild` (or `alcove vault rebuild <name>` for a vault) to re-embed. The default model (`MultilingualE5Small`) and all other models are unaffected.

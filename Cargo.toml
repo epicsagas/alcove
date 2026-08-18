@@ -56,6 +56,9 @@ llm-kernel = { version = "0.25", default-features = false }
 fastembed = { version = "5", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"], optional = true }
 
 # Storage & indexing
+# ponytail: pinned to 0.32 because llm-kernel 0.25's graph backend links
+# bundled sqlite3 0.30, which conflicts with 0.38 in one binary. Revisit when
+# llm-kernel modernizes its sqlite — track in #49.
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 hnsw_rs = { version = "0.3", optional = true }
 
