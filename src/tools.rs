@@ -733,6 +733,8 @@ fn doc_links_to_json(links: Vec<crate::index::graph::DocLink>) -> Value {
                 "doc_id": l.doc_id,
                 "title": l.title,
                 "relation": l.relation,
+                "valid_until": l.valid_until,
+                "last_verified": l.last_verified,
             }))
             .collect::<Vec<_>>()
     )

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- doc-graph: temporal validity — `get_doc_backlinks` / `get_related_docs` (and the REST endpoints) now surface `valid_until` / `last_verified` on each link and exclude links whose either endpoint has expired, at query time (llm-kernel graph temporal-validity fields, #37)
+
 ### Fixed
 
 - doc-graph: resolved `-D warnings` clippy failures on the lib target (dead-code on `DocGraph`/`DocLink`, collapsible `if`s in `extract_edges`) that broke the CI `Check` job

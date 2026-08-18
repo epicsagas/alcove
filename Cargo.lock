@@ -2411,8 +2411,7 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 [[package]]
 name = "llm-kernel"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f92af1170a3daad4d70e6b9186a7bd9d2f3c21e32c0e7083a2e689aa56868ec0"
+source = "git+https://github.com/epicsagas/llm-kernel?rev=dbf9c5f#dbf9c5f3fe3663fad7c2cb56e7d1b265fff950bc"
 dependencies = [
  "async-trait",
  "fastembed",

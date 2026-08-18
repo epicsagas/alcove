@@ -38,12 +38,15 @@ pub struct DocGraph {
     backend: SqliteGraph,
 }
 
-/// A resolved document reference — doc id + title + relation type.
+/// A resolved document reference — doc id + title + relation type, plus the
+/// target node's temporal-validity metadata (empty when unset).
 #[derive(Debug, Clone)]
 pub struct DocLink {
     pub doc_id: String,
     pub title: String,
     pub relation: String,
+    pub valid_until: String,
+    pub last_verified: String,
 }
 
 impl DocGraph {
@@ -123,18 +126,31 @@ impl DocGraph {
         edges: Vec<GraphEdge>,
         key: impl Fn(&GraphEdge) -> String,
     ) -> Result<Vec<DocLink>> {
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        // Temporal validity: a link is dropped from recall when *either*
+        // endpoint has expired (valid_until set and in the past) — an
+        // exclusion rule at query time, per the #37 lifecycle discussion.
+        let expired = |id: &str| -> Result<bool> {
+            Ok(self
+                .backend
+                .read_node(id)?
+                .is_some_and(|n| !n.valid_until.is_empty() && n.valid_until < now))
+        };
         let mut out = Vec::with_capacity(edges.len());
         for edge in edges {
             let doc_id = key(&edge);
-            let title = self
-                .backend
-                .read_node(&doc_id)?
-                .map(|n| n.title)
-                .unwrap_or_default();
+            let Some(node) = self.backend.read_node(&doc_id)? else {
+                continue;
+            };
+            if expired(&doc_id)? || expired(&edge.target)? {
+                continue;
+            }
             out.push(DocLink {
                 doc_id,
-                title,
+                title: node.title,
                 relation: edge.relation,
+                valid_until: node.valid_until,
+                last_verified: node.last_verified,
             });
         }
         Ok(out)
@@ -446,5 +462,33 @@ mod tests {
         // The dangling edge a→b must be gone too.
         let related = g.related_docs("proj/a.md").unwrap();
         assert!(related.is_empty(), "edge to pruned node must be removed");
+    }
+
+    #[test]
+    fn expired_target_excluded_from_recall() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write(root, "proj/a.md", "# A\n\n[[b]] [[c]]\n");
+        write(root, "proj/b.md", "# B\n");
+        write(root, "proj/c.md", "# C\n");
+        let files = make_files(root, &["proj/a.md", "proj/b.md", "proj/c.md"]);
+        rebuild_doc_graph(root, &files, None).unwrap();
+
+        // Expire c: set valid_until in the past, then upsert back.
+        let g = DocGraph::open(root).unwrap();
+        let mut node = g.backend.read_node("proj/c.md").unwrap().unwrap();
+        node.valid_until = "2020-01-01T00:00:00+00:00".to_string();
+        node.last_verified = "2019-12-01T00:00:00+00:00".to_string();
+        g.backend.upsert_node(&node).unwrap();
+
+        // Related docs: b stays, expired c drops out at query time.
+        let related = g.related_docs("proj/a.md").unwrap();
+        assert_eq!(related.len(), 1, "expired target must be excluded");
+        assert_eq!(related[0].doc_id, "proj/b.md");
+        assert!(related[0].valid_until.is_empty());
+        // Backlinks on c also vanish once every incoming edge target is expired.
+        assert!(g.backlinks("proj/c.md").unwrap().is_empty());
+        // read_doc_title still sees the node — expiry is recall-only, not deletion.
+        assert!(g.read_doc_title("proj/c.md").unwrap().is_some());
     }
 }
