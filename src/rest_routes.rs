@@ -640,6 +640,43 @@ pub async fn get_related_docs(
     map_tool_result(result)
 }
 
+/// POST /memory/store — store a memory note (JSON body).
+#[cfg(feature = "alcove-server")]
+pub async fn post_memory_store(
+    State(srv): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    axum::Json(body): axum::Json<Value>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&srv, &headers)?;
+    let result = tokio::task::spawn_blocking(move || crate::tools::tool_memory_store(body))
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("[alcove] memory_store task failed: {e}");
+            Err(anyhow::anyhow!("Internal server error"))
+        });
+    map_tool_result(result)
+}
+
+/// GET /memory/recall?q=...&limit=N — hybrid search over stored memories.
+#[cfg(feature = "alcove-server")]
+pub async fn get_memory_recall(
+    State(srv): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Query(query): Query<VaultSearchQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorResponse>)> {
+    check_auth(&srv, &headers)?;
+    let result = tokio::task::spawn_blocking(move || {
+        let limit = query.limit;
+        crate::tools::tool_memory_recall(serde_json::json!({ "q": query.q, "limit": limit }))
+    })
+    .await
+    .unwrap_or_else(|e| {
+        eprintln!("[alcove] memory_recall task failed: {e}");
+        Err(anyhow::anyhow!("Internal server error"))
+    });
+    map_tool_result(result)
+}
+
 /// POST /docs/verify?file=... — stamp last_verified=now on a doc node.
 #[cfg(all(feature = "alcove-server", feature = "doc-graph"))]
 pub async fn post_verify_doc(

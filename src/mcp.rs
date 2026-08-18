@@ -730,6 +730,44 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                 "properties": {},
             }),
         },
+        ToolDescription {
+            name: "memory_store".into(),
+            description: concat!(
+                "Store a durable memory note in alcove's `memory` vault. Use for ",
+                "facts, decisions, or preferences worth recalling across sessions. ",
+                "Set valid_until (ISO 8601) for time-sensitive facts — expired ",
+                "memories drop out of recall.\n",
+                "\n",
+                "Returns the stored filename. The note is indexed immediately."
+            )
+            .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "content": { "type": "string", "description": "Memory content (markdown)" },
+                    "title": { "type": "string", "description": "Short title (defaults to first line)" },
+                    "project": { "type": "string", "description": "Origin project/tool (metadata)" },
+                    "valid_until": { "type": "string", "description": "ISO 8601 — after this timestamp the memory stops appearing in recall" }
+                },
+                "required": ["content"]
+            }),
+        },
+        ToolDescription {
+            name: "memory_recall".into(),
+            description: concat!(
+                "Recall stored memories by hybrid (BM25 + vector) search. Use to ",
+                "surface prior decisions, facts, and preferences before acting."
+            )
+            .into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "q": { "type": "string", "description": "Search query" },
+                    "limit": { "type": "integer", "description": "Max results (default 10)" }
+                },
+                "required": ["q"]
+            }),
+        },
     ];
 
     RpcResponse::ok(id, json!({ "tools": tools }))
@@ -766,6 +804,8 @@ fn tool_enum(name: &str) -> Option<Tool> {
         "rebuild_index" => Some(Tool::RebuildIndex),
         "search_project_docs" => Some(Tool::SearchProjectDocs),
         "search_vault" => Some(Tool::SearchVault),
+        "memory_store" => Some(Tool::MemoryStore),
+        "memory_recall" => Some(Tool::MemoryRecall),
         "validate_docs" => Some(Tool::ValidateDocs),
         "index_code_structure" => Some(Tool::IndexCodeStructure),
         _ => None,
@@ -885,6 +925,18 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
                     .collect();
                 ok!(json!(arr))
             }
+            Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
+        };
+    }
+    if call.name == "memory_store" {
+        return match tools::tool_memory_store(call.arguments) {
+            Ok(v) => RpcResponse::ok(id, v),
+            Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
+        };
+    }
+    if call.name == "memory_recall" {
+        return match tools::tool_memory_recall(call.arguments) {
+            Ok(v) => RpcResponse::ok(id, v),
             Err(e) => err!(-32002, format!("Tool `{}` failed: {e}", call.name)),
         };
     }

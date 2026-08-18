@@ -740,6 +740,116 @@ fn doc_links_to_json(links: Vec<crate::index::graph::DocLink>) -> Value {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Tools: memory_store / memory_recall (#37 — Claude Code memory backend)
+// ---------------------------------------------------------------------------
+
+/// Vault name backing the agent-memory feature.
+const MEMORY_VAULT: &str = "memory";
+
+#[derive(Debug, Deserialize)]
+struct MemoryStoreArgs {
+    /// The memory content (markdown).
+    content: String,
+    /// Short title; defaults to the first line of `content`.
+    title: Option<String>,
+    /// Origin project/tool this fact came from (metadata only).
+    project: Option<String>,
+    /// ISO 8601 timestamp after which this memory stops appearing in recall.
+    valid_until: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MemoryRecallArgs {
+    q: String,
+    #[serde(default = "default_memory_limit")]
+    limit: usize,
+}
+
+fn default_memory_limit() -> usize {
+    10
+}
+
+/// Path to the memory vault, creating it on first use.
+fn memory_vault_path() -> Result<PathBuf> {
+    let root = crate::vault::vaults_root();
+    let dir = root.join(MEMORY_VAULT);
+    if !dir.exists() {
+        crate::vault::create_vault(MEMORY_VAULT)?;
+    }
+    Ok(dir)
+}
+
+/// Slugify a title: lowercase, non-alphanumeric → '-', collapsed, capped.
+fn slugify(title: &str) -> String {
+    let mut s = String::new();
+    let mut prev_dash = false;
+    for c in title.chars() {
+        if c.is_alphanumeric() {
+            s.extend(c.to_lowercase());
+            prev_dash = false;
+        } else if !prev_dash && !s.is_empty() {
+            s.push('-');
+            prev_dash = true;
+        }
+    }
+    s.trim_end_matches('-').chars().take(60).collect()
+}
+
+/// Store a memory note into the `memory` vault and re-index it.
+///
+/// ponytail: full vault re-index per store — fine at human note-taking
+/// cadence; switch to incremental vault indexing if agents store in bursts.
+pub fn tool_memory_store(args: Value) -> Result<Value> {
+    let args: MemoryStoreArgs =
+        serde_json::from_value(args).context("memory_store requires { content }")?;
+    let vault_path = memory_vault_path()?;
+
+    let title = args.title.clone().unwrap_or_else(|| {
+        args.content
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("memory")
+            .trim()
+            .to_string()
+    });
+    // Slugify: lowercase, non-alphanumeric → '-', collapse, trim, cap length.
+    let slug = slugify(&title);
+    let ts = chrono::Utc::now().format("%Y%m%dT%H%M%S");
+    let filename = format!("{ts}-{slug}.md");
+
+    let mut frontmatter = String::from("---\n");
+    if let Some(p) = &args.project {
+        frontmatter.push_str(&format!("project: {p}\n"));
+    }
+    if let Some(v) = &args.valid_until {
+        frontmatter.push_str(&format!("valid_until: {v}\n"));
+    }
+    frontmatter.push_str("---\n\n");
+
+    let dest = vault_path.join(&filename);
+    std::fs::write(&dest, format!("{frontmatter}{}", args.content))
+        .with_context(|| format!("writing {}", dest.display()))?;
+
+    let index = crate::index::build_vault_index(&vault_path)?;
+    Ok(json!({
+        "stored": filename,
+        "vault": MEMORY_VAULT,
+        "title": title,
+        "valid_until": args.valid_until,
+        "index": index,
+    }))
+}
+
+/// Recall memories by hybrid search over the `memory` vault.
+pub fn tool_memory_recall(args: Value) -> Result<Value> {
+    let args: MemoryRecallArgs =
+        serde_json::from_value(args).context("memory_recall requires { q }")?;
+    let vault_path = memory_vault_path()?;
+    let result = crate::index::search_vault(&vault_path, &args.q, args.limit)?;
+    Ok(result)
+}
+
 /// Return documents that link *to* the given file (backlinks).
 #[cfg(feature = "doc-graph")]
 pub fn tool_get_doc_backlinks(docs_root: &Path, args: Value) -> Result<Value> {
@@ -2660,6 +2770,19 @@ pub fn tool_index_code_structure(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn slugify_collapses_and_caps() {
+        use super::slugify;
+        assert_eq!(
+            slugify("Hello,  World!! — 알고리즘 노트"),
+            "hello-world-알고리즘-노트"
+        );
+        assert_eq!(slugify("--leading and trailing--"), "leading-and-trailing");
+        assert!(slugify("").is_empty());
+        let long = "a".repeat(100);
+        assert_eq!(slugify(&long).len(), 60);
+    }
+
     use super::*;
     use std::fs;
     use tempfile::TempDir;
