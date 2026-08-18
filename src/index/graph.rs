@@ -132,6 +132,16 @@ impl DocGraph {
             .is_some_and(|n| !n.valid_until.is_empty() && n.valid_until < now_iso()))
     }
 
+    /// Stamp `last_verified` on a node. Returns `false` for an unknown id.
+    pub fn mark_verified(&self, doc_id: &str, now: &str) -> Result<bool> {
+        self.backend.mark_verified(doc_id, now).map_err(Into::into)
+    }
+
+    /// Count nodes whose `valid_until` is set and earlier than `now`.
+    pub fn count_expired_nodes(&self, now: &str) -> Result<u64> {
+        self.backend.count_expired_nodes(now).map_err(Into::into)
+    }
+
     /// Read a document node's title, if present.
     // Used by this module's tests; the bin tools surface titles via
     // backlinks/related_docs only. Would trip -D dead_code on the bin target.

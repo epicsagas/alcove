@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- llm-kernel dependency moved from git rev `dbf9c5f` back to crates.io `0.26` (temporal validity published). Lifecycle calls (`mark_verified`, `count_expired_nodes`) now go through `SqliteGraph` wrapper methods instead of a direct rusqlite connection — `doc-graph` no longer enables the `rusqlite` feature
+
 ### Added
 
 - doc-graph: temporal validity — `get_doc_backlinks` / `get_related_docs` (and the REST endpoints) now surface `valid_until` / `last_verified` on each link and exclude links whose either endpoint has expired, at query time (llm-kernel graph temporal-validity fields, #37). Querying an expired doc itself returns empty in both directions

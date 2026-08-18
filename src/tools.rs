@@ -770,26 +770,14 @@ pub fn tool_get_related_docs(docs_root: &Path, args: Value) -> Result<Value> {
     }))
 }
 
-/// Open a direct SQLite connection to the doc graph DB for llm-kernel
-/// lifecycle calls (`mark_verified`, `count_expired_nodes`) — `SqliteGraph`
-/// does not expose its connection.
-#[cfg(feature = "doc-graph")]
-fn docgraph_conn(docs_root: &Path) -> Result<rusqlite::Connection> {
-    let db = docs_root.join(".alcove").join("docgraph.db");
-    if !db.exists() {
-        anyhow::bail!("doc graph not built — run `alcove index` first");
-    }
-    rusqlite::Connection::open(&db).with_context(|| format!("opening {}", db.display()))
-}
-
 /// Stamp `last_verified` on a doc node with the current time.
 #[cfg(feature = "doc-graph")]
 pub fn tool_verify_doc(docs_root: &Path, args: Value) -> Result<Value> {
     let args: DocRefArgs = serde_json::from_value(args).context("verify_doc requires { file }")?;
     let doc_id = resolve_doc_id(&args.file);
-    let conn = docgraph_conn(docs_root)?;
+    let graph = crate::index::graph::DocGraph::open(docs_root)?;
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    if !llm_kernel::graph::mark_verified(&conn, &doc_id, &now)? {
+    if !graph.mark_verified(&doc_id, &now)? {
         anyhow::bail!("unknown doc: {doc_id}");
     }
     Ok(json!({
@@ -801,9 +789,9 @@ pub fn tool_verify_doc(docs_root: &Path, args: Value) -> Result<Value> {
 /// Count doc nodes whose `valid_until` has passed (excluded from recall).
 #[cfg(feature = "doc-graph")]
 pub fn tool_count_expired_docs(docs_root: &Path) -> Result<Value> {
-    let conn = docgraph_conn(docs_root)?;
+    let graph = crate::index::graph::DocGraph::open(docs_root)?;
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let expired = llm_kernel::graph::count_expired_nodes(&conn, &now)?;
+    let expired = graph.count_expired_nodes(&now)?;
     Ok(json!({
         "expired": expired,
     }))

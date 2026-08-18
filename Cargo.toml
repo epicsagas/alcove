@@ -52,14 +52,11 @@ chrono = { version = "0.4", features = ["clock"] }
 # Embedding backend — delegates to llm-kernel for model catalog, metadata,
 # and LRU cache. fastembed remains a direct dep for FastEmbedSession
 # (prefix control). llm-kernel uses the same rustls-based defaults.
-# ponytail: git dep — temporal validity (valid_until/last_verified) landed on
-# llm-kernel main after 0.25.0 without a version bump. Flip back to a crates.io
-# version requirement once llm-kernel publishes (tracked in #37).
-llm-kernel = { git = "https://github.com/epicsagas/llm-kernel", rev = "dbf9c5f", default-features = false }
+llm-kernel = { version = "0.26", default-features = false }
 fastembed = { version = "5", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"], optional = true }
 
 # Storage & indexing
-# ponytail: pinned to 0.32 because llm-kernel 0.25's graph backend links
+# ponytail: pinned to 0.32 because llm-kernel's graph backend (0.26 still) links
 # bundled sqlite3 0.30, which conflicts with 0.38 in one binary. Revisit when
 # llm-kernel modernizes its sqlite — track in #49.
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
@@ -114,9 +111,7 @@ alcove-server = ["axum", "tokio", "tower-http", "socket2"]
 transpile = ["dep:llm-transpile"]
 
 # Document relationship graph (wikilinks/backlinks) — llm-kernel graph backend.
-# Opt-in: needs rusqlite for direct lifecycle calls (mark_verified /
-# count_expired_nodes) — same 0.32 pin llm-kernel's graph backend uses.
-doc-graph = ["llm-kernel/graph", "rusqlite"]
+doc-graph = ["llm-kernel/graph"]
 
 # Language parsers (feature-gated for compile time control)
 lang-rust = ["dep:tree-sitter-rust"]
