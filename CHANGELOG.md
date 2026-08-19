@@ -7,29 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-08-19
+
 ### Added
 
 - acknowledgments: temporal validity model (`valid_until` / `last_verified`, query-time expiry exclusion) credited to the Data Olympus lifecycle schema by @ajdelaguila (see README, discussion in #37)
-
-
 - agent memory (#37): `memory_store` / `memory_recall` MCP tools + REST `POST /memory/store`, `GET /memory/recall` — durable cross-session memory in the `memory` vault with optional `valid_until` expiry, hybrid recall. Skill docs updated with memory + doc-graph endpoint reference
-
-### Changed
-
-- llm-kernel dependency moved from git rev `dbf9c5f` back to crates.io `0.26` (temporal validity published). Lifecycle calls (`mark_verified`, `count_expired_nodes`) now go through `SqliteGraph` wrapper methods instead of a direct rusqlite connection — `doc-graph` no longer enables the `rusqlite` feature
-
-### Added
-
 - doc-graph: temporal validity — `get_doc_backlinks` / `get_related_docs` (and the REST endpoints) now surface `valid_until` / `last_verified` on each link and exclude links whose either endpoint has expired, at query time (llm-kernel graph temporal-validity fields, #37). Querying an expired doc itself returns empty in both directions
 - doc-graph: `verify_doc` MCP tool + `POST /docs/verify` — stamp `last_verified=now` on a doc node (llm-kernel `mark_verified`)
 - doc-graph: `count_expired_docs` MCP tool + `GET /docs/expired` — count docs excluded from recall by expiry (llm-kernel `count_expired_nodes`)
 
 ### Fixed
 
+- doc-graph: expiry comparison now parses `valid_until` / now as RFC 3339 datetimes — a lexicographic string compare mis-ordered mixed UTC offsets (e.g. `23:00+09:00` vs `15:00Z`), keeping expired docs in recall
+- doc-graph: out-edge refresh (delete + re-insert on re-index) is now a single transaction via `SqliteGraph::with_tx` (llm-kernel 0.26.2) — a mid-refresh failure no longer leaves the doc with missing edges
+- memory: `memory_store` rejects content over 1 MiB and validates `valid_until` as RFC 3339
 - doc-graph: resolved `-D warnings` clippy failures on the lib target (dead-code on `DocGraph`/`DocLink`, collapsible `if`s in `extract_edges`) that broke the CI `Check` job
 
 ### Changed
 
+- llm-kernel dependency moved from git rev `dbf9c5f` back to crates.io `0.26` (temporal validity published). Lifecycle calls (`mark_verified`, `count_expired_nodes`) now go through `SqliteGraph` wrapper methods instead of a direct rusqlite connection — `doc-graph` no longer enables the `rusqlite` feature
+- doc-graph: link resolution no longer re-reads the queried node once per edge (one node read per link instead of two)
 - doc-graph: incremental graph updates — incremental index runs now reprocess only changed files instead of re-reading every document (full rebuild only when the file set changes, tracked via `.alcove/docgraph.stamp`; also triggers on a missing `docgraph.db`). Graph build status is now surfaced in the index result JSON as `doc_graph` instead of being logged to stderr only
 - Upgraded llm-kernel 0.15 → 0.25 (forward-compatible — no source changes; alcove's API surface was unaffected by the 0.16–0.25 breaking changes)
 
