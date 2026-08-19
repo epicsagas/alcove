@@ -719,6 +719,9 @@ struct DocRefArgs {
 
 /// Resolve a `{ file }` arg into a graph doc id (docs-root-relative, forward
 /// slashes). Accepts both `project/rel` and bare paths.
+///
+/// The id is only ever used as a SQLite graph key (never joined onto the
+/// filesystem), so `..`/absolute paths can't traverse — they just match no node.
 #[cfg(feature = "doc-graph")]
 fn resolve_doc_id(file: &str) -> String {
     file.replace('\\', "/")
@@ -770,6 +773,10 @@ fn default_memory_limit() -> usize {
     10
 }
 
+/// Hard cap on memory content — the tool is REST-exposed, don't let a runaway
+/// agent write unbounded files.
+const MAX_MEMORY_CONTENT: usize = 1 << 20; // 1 MiB
+
 /// Path to the memory vault, creating it on first use.
 fn memory_vault_path() -> Result<PathBuf> {
     let root = crate::vault::vaults_root();
@@ -803,6 +810,13 @@ fn slugify(title: &str) -> String {
 pub fn tool_memory_store(args: Value) -> Result<Value> {
     let args: MemoryStoreArgs =
         serde_json::from_value(args).context("memory_store requires { content }")?;
+    if args.content.len() > MAX_MEMORY_CONTENT {
+        anyhow::bail!("content exceeds {} bytes", MAX_MEMORY_CONTENT);
+    }
+    if let Some(v) = &args.valid_until {
+        chrono::DateTime::parse_from_rfc3339(v)
+            .context("valid_until must be an ISO 8601 / RFC 3339 timestamp")?;
+    }
     let vault_path = memory_vault_path()?;
 
     let title = args.title.clone().unwrap_or_else(|| {

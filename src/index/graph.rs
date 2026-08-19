@@ -83,18 +83,32 @@ impl DocGraph {
     ///
     /// Deletes only the node's *outgoing* edges by id, not every touching edge
     /// (llm-kernel's `remove_edges_for_node` is bidirectional and would also
-    /// wipe incoming backlinks from other docs).
+    /// wipe incoming backlinks from other docs). Delete + insert run in one
+    /// transaction (`with_tx`, llm-kernel 0.26.1) so a failure mid-refresh
+    /// rolls back to the previous edges. The out-edge listing happens before
+    /// the tx — alcove is the single writer, so no race in practice.
     fn refresh_out_edges(&self, doc_id: &str, edges: &[GraphEdge]) -> Result<()> {
-        for existing in self
+        let existing_ids: Vec<String> = self
             .backend
             .edges_for_node_dir(doc_id, EdgeDirection::Out, None)?
-        {
-            let _ = self.backend.delete_edge(&existing.id);
-        }
-        if !edges.is_empty() {
-            self.backend.append_edges(edges)?;
-        }
-        Ok(())
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        self.backend
+            .with_tx(|conn| {
+                for id in &existing_ids {
+                    llm_kernel::graph::store::delete_edge(conn, id)?;
+                }
+                if !edges.is_empty() {
+                    // append_edges() opens its own tx — nested tx fails, so
+                    // use the per-edge insert inside this one.
+                    for edge in edges {
+                        llm_kernel::graph::store::append_edge(conn, edge)?;
+                    }
+                }
+                Ok(())
+            })
+            .map_err(|e| anyhow::anyhow!(e))
     }
 
     /// Documents that link *to* `doc_id` (backlinks).
@@ -129,7 +143,7 @@ impl DocGraph {
         Ok(self
             .backend
             .read_node(doc_id)?
-            .is_some_and(|n| !n.valid_until.is_empty() && n.valid_until < now_iso()))
+            .is_some_and(|n| expired_before(&n.valid_until, &now_iso())))
     }
 
     /// Stamp `last_verified` on a node. Returns `false` for an unknown id.
@@ -156,22 +170,31 @@ impl DocGraph {
         key: impl Fn(&GraphEdge) -> String,
     ) -> Result<Vec<DocLink>> {
         let now = now_iso();
-        // Temporal validity: a link is dropped from recall when *either*
-        // endpoint has expired (valid_until set and in the past) — an
-        // exclusion rule at query time, per the #37 lifecycle discussion.
-        let expired = |id: &str| -> Result<bool> {
-            Ok(self
-                .backend
-                .read_node(id)?
-                .is_some_and(|n| !n.valid_until.is_empty() && n.valid_until < now))
-        };
         let mut out = Vec::with_capacity(edges.len());
         for edge in edges {
             let doc_id = key(&edge);
             let Some(node) = self.backend.read_node(&doc_id)? else {
                 continue;
             };
-            if expired(&doc_id)? || expired(&edge.target)? {
+            // Temporal validity: a link is dropped from recall when *either*
+            // endpoint has expired (valid_until set and in the past) — an
+            // exclusion rule at query time, per the #37 lifecycle discussion.
+            // `node` is the doc_id endpoint; check the other endpoint only
+            // when it differs (the queried endpoint was already checked by
+            // the caller via `is_expired`).
+            let other = if doc_id == edge.target {
+                &edge.source
+            } else {
+                &edge.target
+            };
+            let other_expired = if other == &doc_id {
+                false
+            } else {
+                self.backend
+                    .read_node(other)?
+                    .is_some_and(|n| expired_before(&n.valid_until, &now))
+            };
+            if expired_before(&node.valid_until, &now) || other_expired {
                 continue;
             }
             out.push(DocLink {
@@ -208,6 +231,24 @@ fn path_to_doc_id(abs: &Path, docs_root: &Path) -> Option<String> {
 /// `valid_until`.
 fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+/// Whether `valid_until` (ISO 8601) is set and earlier than `now`.
+///
+/// Parsed as datetimes so mixed UTC-offsets compare correctly (a plain
+/// lexicographic compare mis-orders e.g. `23:00+09:00` vs `15:00Z`);
+/// falls back to string compare if either side fails to parse.
+fn expired_before(valid_until: &str, now: &str) -> bool {
+    if valid_until.is_empty() {
+        return false;
+    }
+    match (
+        chrono::DateTime::parse_from_rfc3339(valid_until),
+        chrono::DateTime::parse_from_rfc3339(now),
+    ) {
+        (Ok(v), Ok(n)) => v < n,
+        _ => valid_until < now,
+    }
 }
 
 /// Build (or incrementally update) the doc graph for `docs_root`.
@@ -296,6 +337,10 @@ pub(crate) fn rebuild_doc_graph(
 
 /// Stamp content: deterministic hash of the sorted doc-id set, so adding or
 /// removing any file triggers a full graph rebuild.
+///
+/// `DefaultHasher` is not stable across platforms/releases — fine here: the
+/// stamp is only compared against one written by the same binary on the same
+/// machine, and a mismatch just triggers a (correct) full rebuild.
 fn stamp_text(ids: &std::collections::HashSet<String>) -> String {
     use std::hash::{Hash, Hasher};
     let mut sorted: Vec<&String> = ids.iter().collect();
@@ -324,6 +369,9 @@ fn extract_edges(
 
     let mut push = |target: String, relation: &str| {
         // Deterministic edge id so re-inserts are idempotent (INSERT OR IGNORE).
+        // ponytail: a `->` inside a filename could alias two distinct edges —
+        // pathological, and the cost is one dropped duplicate edge; switch to a
+        // hash id if it ever bites.
         let id = format!("{relation}:{source_id}->{target}");
         edges.push(GraphEdge {
             id,
@@ -527,5 +575,22 @@ mod tests {
         assert!(g.related_docs("proj/c.md").unwrap().is_empty());
         // read_doc_title still sees the node — expiry is recall-only, not deletion.
         assert!(g.read_doc_title("proj/c.md").unwrap().is_some());
+    }
+
+    #[test]
+    fn expired_before_handles_mixed_utc_offsets() {
+        // 2026-08-18T23:00+09:00 == 14:00Z, earlier than 15:00Z — but a plain
+        // string compare would say "23..." > "15..." and keep it unexpired.
+        assert!(expired_before(
+            "2026-08-18T23:00:00+09:00",
+            "2026-08-18T15:00:00Z"
+        ));
+        assert!(!expired_before(
+            "2026-08-19T10:00:00+09:00", // 19th 01:00Z — future
+            "2026-08-18T15:00:00Z"
+        ));
+        assert!(!expired_before("", "2026-08-18T15:00:00Z"));
+        // Unparseable value falls back to string compare rather than panicking.
+        assert!(expired_before("garbage", "zzz") == ("garbage" < "zzz"));
     }
 }

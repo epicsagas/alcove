@@ -641,7 +641,7 @@ pub async fn get_related_docs(
 }
 
 /// POST /memory/store — store a memory note (JSON body).
-#[cfg(feature = "alcove-server")]
+#[cfg(all(feature = "alcove-server", feature = "doc-graph"))]
 pub async fn post_memory_store(
     State(srv): State<Arc<ServerState>>,
     headers: HeaderMap,
@@ -658,7 +658,7 @@ pub async fn post_memory_store(
 }
 
 /// GET /memory/recall?q=...&limit=N — hybrid search over stored memories.
-#[cfg(feature = "alcove-server")]
+#[cfg(all(feature = "alcove-server", feature = "doc-graph"))]
 pub async fn get_memory_recall(
     State(srv): State<Arc<ServerState>>,
     headers: HeaderMap,
