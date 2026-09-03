@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "R=\"${GROK_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-.}}\"; node \"$R/registry/scripts/install.js\"",
+            "timeout": 60
+          }
+        ],
+        "description": "Install alcove binary if missing, register MCP server"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "TOOL=$(command -v alcove 2>/dev/null); test -n \"$TOOL\" && \"$TOOL\" reap || echo '[alcove] not found, skipping'",
+            "timeout": 30
+          }
+        ],
+        "description": "Reap orphaned alcove stdio proxy processes"
+      }
+    ]
+  }
+}
