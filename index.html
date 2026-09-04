@@ -57,7 +57,7 @@
   .query .cur{display:inline-block;width:9px;height:19px;background:var(--brass);vertical-align:-3px;margin-left:2px;animation:blink 1.1s steps(1) infinite}
   @keyframes blink{50%{opacity:0}}
   .cards{margin-top:18px;display:grid;gap:14px}
-  .rcard{position:relative;background:var(--card);color:var(--ink);border-radius:4px;padding:24px 26px 20px;opacity:0;animation:cardin .45s ease forwards}
+  .rcard{position:relative;background:var(--card);color:var(--ink);border-radius:4px;padding:24px 26px 20px;opacity:0;animation:cardin .45s ease forwards;min-width:0}
   .rcard::before{content:"";position:absolute;top:-11px;left:26px;width:74px;height:12px;background:var(--card);border-radius:4px 4px 0 0}
   .rcard::after{content:"";position:absolute;top:-11px;left:26px;width:74px;height:0;border-top:1px solid var(--edge)}
   .rcard:nth-child(1){animation-delay:.35s}
