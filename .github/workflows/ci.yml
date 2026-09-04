@@ -127,6 +127,14 @@ jobs:
       - name: Test
         run: cargo test --locked --features full-cross -- --test-threads=1
 
+  install-docs:
+    name: Install docs consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check installer docs match dist targets
+        run: bash scripts/check-install-docs.sh
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest

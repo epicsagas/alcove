@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- install: README quick-start URLs pointed at hand-maintained `scripts/install.{sh,ps1}` that were never published as release assets — every platform's one-line installer 404'd (issue #50 reported it for Windows). Docs now point at the dist-generated `alcove-installer.sh`, the Windows section directs to `cargo install alcove --features full-cross` (no Windows release target since #46), Linux is labeled x86_64-only, and the dead scripts plus the dead `binstall` Windows override are removed. A new CI `install-docs` job (`scripts/check-install-docs.sh`) fails if docs reference unpublished installer assets or advertise installers for target families missing from `dist-workspace.toml`
+
 ## [0.13.0] — 2026-08-19
 
 ### Added

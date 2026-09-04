@@ -154,17 +154,19 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
-### Linux (x86_64 / ARM64)
+### Linux (x86_64)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/epicsagas/alcove/releases/latest/download/install.sh | sh
+  https://github.com/epicsagas/alcove/releases/latest/download/alcove-installer.sh | sh
 ```
 
 ### Windows (x86_64 / ARM64)
 
+Pre-built Windows binaries are not currently published. Build from source:
+
 ```powershell
-irm https://github.com/epicsagas/alcove/releases/latest/download/install.ps1 | iex
+cargo install alcove --features full-cross
 ```
 
 ### Antigravity (Gemini CLI)
