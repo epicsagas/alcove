@@ -1,0 +1,31 @@
+# .rs-guardignore — paths excluded from rs-guard review diffs.
+# Syntax follows .gitignore conventions: glob patterns, `!` negation, `/` directory suffix.
+# Lines starting with `#` are comments. Blank lines are ignored.
+#
+# WARNING: Excluding lockfiles (Cargo.lock, package-lock.json, etc.) hides
+# dependency changes from LLM review. For supply-chain security, consider
+# keeping lockfiles reviewable and only excluding generated/vendored code.
+
+# Lockfiles (uncomment to exclude — see warning above about supply-chain review)
+# Cargo.lock
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+# poetry.lock
+# Gemfile.lock
+# go.sum
+# composer.lock
+
+# Generated / vendored code
+vendor/
+node_modules/
+target/
+dist/
+build/
+*.min.js
+*.min.css
+
+# Auto-generated protobuf / OpenAPI stubs
+*.pb.go
+*_pb2.py
+openapi_client/
