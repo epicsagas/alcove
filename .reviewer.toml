@@ -1,0 +1,22 @@
+# rs-guard configuration
+# See https://github.com/nebulaideas/rs-guard/blob/main/docs/CONFIGURATION.md
+
+provider = "deepseek"
+# model = "deepseek-v4-flash"
+temperature = 0.1
+# important_issues_threshold = 3
+
+# Project rules injection (v1.5.0)
+# Auto-detects AGENTS.md, CLAUDE.md, .github/copilot-instructions.md,
+# .gemini/styleguide.md, .cursor/rules/*.md, and .windsurfrules.
+project_rules_enabled = true
+# rules_file = "docs/my-project-rules.md"
+
+# GitHub-native UX (v1.7)
+# check_run = true               # Publish a GitHub Check Run (requires checks: write)
+# check_run_name = "rs-guard"    # Custom Check Run name
+# Note: --findings and --inline-comments are CLI/env only, NOT TOML keys.
+
+[providers.deepseek]
+api_key_env = "DEEPSEEK_API_KEY"
+# base_url = "https://api.deepseek.com"

@@ -1,0 +1,48 @@
+name: AI Code Review (deepseek)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Only run one review per PR at a time.
+# New pushes cancel in-progress reviews so the latest commit is always reviewed.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Skip draft PRs to avoid wasting tokens on work-in-progress.
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write       # Required for --check-run (v1.7)
+    steps:
+      # Pinned from actions/checkout@v5 (93cb6efe) to avoid Node.js 20 deprecation.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      # Install Rust toolchain (MSRV 1.92).
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+
+      # Install rs-guard v1.8.0 from crates.io. --locked ensures
+      # reproducible transitive dependencies; --version pins the crate.
+      - name: Install rs-guard
+        run: cargo install rs-guard --locked --version "1.8.0"
+
+      # Run the AI code review.
+      # The tool reads the diff from the PR, sends it to the configured LLM,
+      # parses the structured verdict, and posts the review back to GitHub.
+      - name: AI Code Review
+        run: ./rs-guard --provider deepseek --prompt-file .github/review-prompt.md
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO_FULL_NAME: ${{ github.repository }}
