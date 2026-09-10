@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
     "SessionStart": [
       {
@@ -10,8 +9,7 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/registry/scripts/install.js\"",
             "async": false
           }
-        ],
-        "description": "Install alcove binary if missing (cross-platform), register MCP server"
+        ]
       }
     ],
     "SessionEnd": [
@@ -23,8 +21,7 @@
             "command": "TOOL=$(command -v alcove 2>/dev/null); test -n \"$TOOL\" && \"$TOOL\" reap || echo '[alcove] not found, skipping'",
             "async": true
           }
-        ],
-        "description": "Reap orphaned alcove stdio proxy processes"
+        ]
       }
     ]
   }

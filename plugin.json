@@ -1,6 +1,6 @@
 {
   "name": "alcove",
-  "version": "0.12.2",
+  "version": "0.12.3",
   "description": "Local-first memory server — hybrid BM25+vector search over private project docs, tree-sitter code indexing, vaults, lint, and launchd lifecycle. One setup, every coding agent.",
   "author": {
     "name": "epicsagas",
@@ -9,5 +9,6 @@
   "homepage": "https://github.com/epicsagas/alcove",
   "repository": "https://github.com/epicsagas/alcove",
   "license": "Apache-2.0",
-  "skills": "./registry/skills/"
+  "skills": "./registry/skills/",
+  "hooks": "./.grok-plugin/hooks.json"
 }

@@ -1,6 +1,6 @@
 {
   "name": "alcove",
-  "version": "0.12.2",
+  "version": "0.12.3",
   "description": "Local-first memory server — hybrid BM25+vector search, vault management, lint, and launchd lifecycle for project knowledge.",
   "author": {
     "name": "epicsagas",
@@ -21,5 +21,5 @@
     "launchd"
   ],
   "skills": "./registry/skills/",
-  "hooks": "./hooks/hooks.json"
+  "hooks": "./.grok-plugin/hooks.json"
 }
