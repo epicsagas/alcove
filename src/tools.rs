@@ -2471,11 +2471,27 @@ pub fn slice_content(content: &str, offset: Option<usize>, limit: Option<usize>)
 // Tool: lint_project
 // ---------------------------------------------------------------------------
 
+/// Validate that a project name is a single `Normal` path component.
+/// Rejects traversal (`..`), absolute paths, and separators. Used by tool
+/// entry points that accept a project name from MCP/HTTP input.
+pub(crate) fn validate_project_component(name: &str) -> Result<()> {
+    use std::path::Component;
+    let components: Vec<_> = std::path::Path::new(name).components().collect();
+    if components.len() == 1 && matches!(components[0], Component::Normal(_)) {
+        Ok(())
+    } else {
+        anyhow::bail!("Invalid project name: must be a simple name without path separators")
+    }
+}
+
 pub fn tool_lint_project(docs_root: &Path, args: Value) -> Result<Value> {
     let project_filter = args
         .get("project")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    if let Some(p) = &project_filter {
+        validate_project_component(p)?;
+    }
 
     let report = crate::lint::lint(docs_root, project_filter.as_deref());
     Ok(crate::lint::lint_to_json(&report))
@@ -2739,6 +2755,10 @@ pub fn tool_index_code_structure(
     project_name: &str,
     args: Value,
 ) -> Result<Value> {
+    // Containment first: project_name becomes `docs_root.join(project_name)` in
+    // write_code_index, so it must be a single Normal component.
+    validate_project_component(project_name)?;
+
     let source_path = args
         .get("source_path")
         .and_then(|v| v.as_str())
@@ -2833,6 +2853,55 @@ mod tests {
         fs::write(template.join("README.md"), "Template readme (skipped)").unwrap();
         fs::write(template.join("reports/.gitkeep"), "").unwrap();
         tmp
+    }
+
+    // -- project name containment (code-scanning fixes) --
+
+    #[test]
+    fn lint_project_rejects_traversal_filter() {
+        let tmp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::create_dir_all(outside.path().join("evil")).unwrap();
+
+        let args = json!({ "project": "../evil" });
+        assert!(
+            tool_lint_project(tmp.path(), args).is_err(),
+            "parent-escape project filter must be rejected"
+        );
+
+        let args = json!({ "project": outside.path().join("evil").display().to_string() });
+        assert!(
+            tool_lint_project(tmp.path(), args).is_err(),
+            "absolute-path project filter must be rejected"
+        );
+
+        let args = json!({ "project": "myproj" });
+        assert!(tool_lint_project(tmp.path(), args).is_ok());
+    }
+
+    #[test]
+    fn index_code_rejects_traversal_project() {
+        let tmp = TempDir::new().unwrap();
+        let src = TempDir::new().unwrap();
+        let args = json!({ "source_path": src.path().display().to_string() });
+
+        // Validation must fire on the project name itself (before source/registry
+        // checks), so the error must mention the project name.
+        let err = tool_index_code_structure(tmp.path(), "../../evil", args.clone()).unwrap_err();
+        assert!(err.to_string().contains("project"), "got: {err}");
+        let err = tool_index_code_structure(tmp.path(), "/tmp/evil-abs", args).unwrap_err();
+        assert!(err.to_string().contains("project"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_project_component_accepts_and_rejects() {
+        assert!(validate_project_component("myproj").is_ok());
+        assert!(validate_project_component("my_proj-2").is_ok());
+        assert!(validate_project_component("../evil").is_err());
+        assert!(validate_project_component("/abs").is_err());
+        assert!(validate_project_component("a/b").is_err());
+        assert!(validate_project_component("..").is_err());
+        assert!(validate_project_component("").is_err());
     }
 
     // -- slice_content --
