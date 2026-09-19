@@ -1,6 +1,6 @@
 {
   "name": "alcove",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "description": "Local-first memory server — hybrid BM25+vector search over private project docs, tree-sitter code indexing, vaults, lint, and launchd lifecycle. One setup, every coding agent.",
   "author": {
     "name": "epicsagas",
