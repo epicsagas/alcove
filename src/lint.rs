@@ -649,6 +649,36 @@ mod tests {
     }
 
     #[test]
+    fn test_path_stays_within_direct() {
+        let root = Path::new("/vault/docs");
+
+        // Root itself and plain-inside paths are contained.
+        assert!(path_stays_within(root, root));
+        assert!(path_stays_within(&root.join("proj/a.md"), root));
+
+        // Internal normalization is allowed.
+        assert!(path_stays_within(&root.join("proj/../a.md"), root));
+
+        // Escapes are rejected.
+        assert!(!path_stays_within(&root.join("proj/../../x"), root));
+        assert!(!path_stays_within(Path::new("/vault/docs/../x"), root));
+        assert!(!path_stays_within(Path::new("/vault/docsecrets/x"), root));
+
+        // Absolute candidate with a relative root (join-replacement shape).
+        assert!(!path_stays_within(
+            Path::new("/etc/passwd"),
+            Path::new("rel/root")
+        ));
+
+        // Prefix boundaries are component-wise, not byte-wise.
+        assert!(path_stays_within(Path::new("docs/a.md"), Path::new("docs")));
+        assert!(!path_stays_within(
+            Path::new("docsx/a.md"),
+            Path::new("docs")
+        ));
+    }
+
+    #[test]
     fn test_stale_marker_todo() {
         let tmp = TempDir::new().unwrap();
         write(tmp.path(), "proj/note.md", "# Note\nTODO: fix this\n");

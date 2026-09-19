@@ -141,9 +141,12 @@ fn map_tool_result(
         Ok(v) => Ok(Json(v)),
         Err(e) => {
             let msg = e.to_string();
-            let status = if msg.contains("not found") || msg.contains("not exist") {
+            // Case-insensitive so validation errors like "Invalid project name"
+            // map to 400 rather than falling through to 500.
+            let lower = msg.to_lowercase();
+            let status = if lower.contains("not found") || lower.contains("not exist") {
                 StatusCode::NOT_FOUND
-            } else if msg.contains("required") || msg.contains("invalid") {
+            } else if lower.contains("required") || lower.contains("invalid") {
                 StatusCode::BAD_REQUEST
             } else {
                 StatusCode::INTERNAL_SERVER_ERROR
