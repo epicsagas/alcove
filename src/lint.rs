@@ -182,6 +182,32 @@ fn extract_links(content: &str) -> Vec<String> {
     links
 }
 
+/// Lexical containment check: does `path` stay within `root`, accounting for
+/// `..` components? `Path::starts_with` alone does NOT normalize `..`
+/// (`docs/proj/../../x` still starts-with `docs`), so walk components.
+/// Filesystem-independent by design (no canonicalize): callers compare against
+/// un-canonicalized WalkDir paths.
+pub(crate) fn path_stays_within(path: &Path, root: &Path) -> bool {
+    let Ok(rel) = path.strip_prefix(root) else {
+        return false;
+    };
+    let mut depth = 0usize;
+    for c in rel.components() {
+        match c {
+            std::path::Component::Normal(_) => depth += 1,
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
 /// Resolve a link target to its actual file path.
 ///
 /// Tries, in order: relative to the containing file's directory (with and
@@ -194,26 +220,30 @@ pub(crate) fn resolve_link_path(
     docs_root: &Path,
     filename_map: &HashMap<String, PathBuf>,
 ) -> Option<PathBuf> {
+    // Lexical containment: link text comes from vault document content, and
+    // Path::join with an absolute arg replaces the base entirely. Only accept
+    // candidates that stay inside docs_root.
+
     // Try relative path from containing file's directory
     if let Some(parent) = containing_file.parent() {
         let candidate = parent.join(link);
-        if candidate.exists() {
+        if path_stays_within(&candidate, docs_root) && candidate.exists() {
             return Some(candidate);
         }
         // Try with .md extension
         let with_md = parent.join(format!("{}.md", link));
-        if with_md.exists() {
+        if path_stays_within(&with_md, docs_root) && with_md.exists() {
             return Some(with_md);
         }
     }
 
     // Try relative path from docs_root
     let from_root = docs_root.join(link);
-    if from_root.exists() {
+    if path_stays_within(&from_root, docs_root) && from_root.exists() {
         return Some(from_root);
     }
     let from_root_md = docs_root.join(format!("{}.md", link));
-    if from_root_md.exists() {
+    if path_stays_within(&from_root_md, docs_root) && from_root_md.exists() {
         return Some(from_root_md);
     }
 
@@ -425,22 +455,24 @@ fn resolve_to_path(
     docs_root: &Path,
     filename_map: &HashMap<String, PathBuf>,
 ) -> Option<PathBuf> {
+    // Same containment rule as resolve_link_path: link text is document
+    // content, so candidates must stay lexically inside docs_root.
     if let Some(parent) = containing_file.parent() {
         let candidate = parent.join(link);
-        if candidate.exists() {
+        if path_stays_within(&candidate, docs_root) && candidate.exists() {
             return Some(candidate);
         }
         let with_md = parent.join(format!("{}.md", link));
-        if with_md.exists() {
+        if path_stays_within(&with_md, docs_root) && with_md.exists() {
             return Some(with_md);
         }
     }
     let from_root = docs_root.join(link);
-    if from_root.exists() {
+    if path_stays_within(&from_root, docs_root) && from_root.exists() {
         return Some(from_root);
     }
     let from_root_md = docs_root.join(format!("{}.md", link));
-    if from_root_md.exists() {
+    if path_stays_within(&from_root_md, docs_root) && from_root_md.exists() {
         return Some(from_root_md);
     }
 
@@ -554,6 +586,66 @@ mod tests {
         let report = lint(tmp.path(), None);
         assert_eq!(report.files_scanned, 0);
         assert!(report.issues.is_empty());
+    }
+
+    // -- link resolution containment (code-scanning fixes) --
+
+    fn setup_link_fixture() -> (TempDir, PathBuf) {
+        // docs_root/<tmp>/docs with proj/note.md; secret file OUTSIDE docs_root.
+        let tmp = TempDir::new().unwrap();
+        let docs_root = tmp.path().join("docs");
+        write(&docs_root, "proj/note.md", "body");
+        fs::write(tmp.path().join("secret.md"), "x").unwrap();
+        (tmp, docs_root)
+    }
+
+    #[test]
+    fn test_resolve_link_path_blocks_absolute_escape() {
+        let (tmp, docs_root) = setup_link_fixture();
+        let secret = tmp.path().join("secret.md").display().to_string();
+        let containing = docs_root.join("proj/note.md");
+        let map = HashMap::new();
+
+        assert_eq!(
+            resolve_link_path(&secret, &containing, &docs_root, &map),
+            None,
+            "absolute link must not escape docs_root"
+        );
+        assert_eq!(
+            resolve_to_path(&secret, &containing, &docs_root, &map),
+            None,
+            "absolute link must not escape docs_root"
+        );
+    }
+
+    #[test]
+    fn test_resolve_link_path_blocks_parent_escape() {
+        let (_keep_alive, docs_root) = setup_link_fixture();
+        let containing = docs_root.join("proj/note.md");
+        let map = HashMap::new();
+
+        assert_eq!(
+            resolve_link_path("../../secret.md", &containing, &docs_root, &map),
+            None,
+            "parent-escape link must not escape docs_root"
+        );
+        assert_eq!(
+            resolve_to_path("../../secret.md", &containing, &docs_root, &map),
+            None,
+            "parent-escape link must not escape docs_root"
+        );
+    }
+
+    #[test]
+    fn test_resolve_link_path_still_resolves_inside_vault() {
+        let (tmp, docs_root) = setup_link_fixture();
+        write(&docs_root, "proj/target.md", "x");
+        let containing = docs_root.join("proj/note.md");
+        let map = HashMap::new();
+
+        assert!(resolve_link_path("target.md", &containing, &docs_root, &map).is_some());
+        assert!(resolve_to_path("target.md", &containing, &docs_root, &map).is_some());
+        let _ = &tmp;
     }
 
     #[test]

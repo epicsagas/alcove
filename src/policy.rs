@@ -355,16 +355,25 @@ fn find_doc_file(
         project_root
     };
 
+    // Containment: policy names come from config files, but Path::join with an
+    // absolute arg replaces the base entirely — only accept candidates that
+    // stay lexically inside search_root.
     // Check primary name
     let primary = search_root.join(&req.name);
-    if primary.exists() && primary.is_file() {
+    if crate::lint::path_stays_within(&primary, search_root)
+        && primary.exists()
+        && primary.is_file()
+    {
         return Some(primary);
     }
 
     // Check aliases
     for alias in &req.aliases {
         let alias_path = search_root.join(alias);
-        if alias_path.exists() && alias_path.is_file() {
+        if crate::lint::path_stays_within(&alias_path, search_root)
+            && alias_path.exists()
+            && alias_path.is_file()
+        {
             return Some(alias_path);
         }
     }
@@ -554,6 +563,49 @@ mod tests {
         fs::write(policy_dir.join("policy.toml"), policy_toml).unwrap();
 
         (tmp, project.to_string())
+    }
+
+    // -- find_doc_file containment (code-scanning fixes) --
+
+    fn req_doc(name: &str, aliases: &[&str]) -> RequiredDoc {
+        RequiredDoc {
+            name: name.to_string(),
+            aliases: aliases.iter().map(|s| s.to_string()).collect(),
+            description: None,
+            location: None,
+            sections: vec![],
+        }
+    }
+
+    #[test]
+    fn find_doc_file_blocks_escape_paths() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("secret.md"), "x").unwrap();
+        let root = tmp.path().join("root");
+        fs::create_dir_all(&root).unwrap();
+
+        // Parent escape
+        assert_eq!(
+            find_doc_file(&req_doc("../secret.md", &[]), &root, None, false),
+            None
+        );
+        // Absolute path (join would replace the root)
+        let abs = tmp.path().join("secret.md").display().to_string();
+        assert_eq!(find_doc_file(&req_doc(&abs, &[]), &root, None, false), None);
+        // Escape via alias
+        assert_eq!(
+            find_doc_file(
+                &req_doc("missing.md", &["../secret.md"]),
+                &root,
+                None,
+                false
+            ),
+            None
+        );
+
+        // Legit in-root file still resolves
+        fs::write(root.join("ok.md"), "x").unwrap();
+        assert!(find_doc_file(&req_doc("ok.md", &[]), &root, None, false).is_some());
     }
 
     // -- Policy loading --
