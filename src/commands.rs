@@ -147,7 +147,8 @@ pub fn cmd_index() -> Result<()> {
 // alcove rebuild
 // ---------------------------------------------------------------------------
 
-pub fn cmd_rebuild() -> Result<()> {
+pub fn cmd_rebuild(yes: bool) -> Result<()> {
+    confirm_rebuild(yes)?;
     let docs_root = match saved_docs_root() {
         Some(p) => p,
         None => {
@@ -159,10 +160,72 @@ pub fn cmd_rebuild() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Destructive rebuild confirmation
+// ---------------------------------------------------------------------------
+
+/// English warning shown before a destructive (force) rebuild.
+pub(crate) const REBUILD_WARNING: &str =
+    "WARNING: this command DELETES the existing search index (BM25 index, \
+     vectors.db) and rebuilds everything from scratch. The index is reset \
+     and every document is re-chunked and re-embedded; searches will fall \
+     back to grep until it completes. For routine updates after doc \
+     changes, use `alcove index` (incremental) instead.";
+
+/// Decide whether a destructive rebuild may proceed.
+///
+/// Separated from `confirm_rebuild` so the logic is unit-testable.
+/// `answer` is the interactive reply (None outside a prompt).
+fn rebuild_decision(yes: bool, is_tty: bool, answer: Option<&str>) -> Result<()> {
+    if yes {
+        return Ok(());
+    }
+    if !is_tty {
+        anyhow::bail!(
+            "{REBUILD_WARNING}\n\
+             Non-interactive session: re-run with `--yes` to confirm the rebuild."
+        );
+    }
+    match answer {
+        Some(a) if a.trim().eq_ignore_ascii_case("y")
+            || a.trim().eq_ignore_ascii_case("yes") =>
+        {
+            Ok(())
+        }
+        _ => anyhow::bail!("Aborted — existing index left untouched."),
+    }
+}
+
+/// Gate a destructive rebuild: warn (English) and require explicit approval.
+/// Interactive: y/N prompt. Non-interactive (agents/CI): requires `--yes`.
+pub fn confirm_rebuild(yes: bool) -> Result<()> {
+    use std::io::{BufRead, IsTerminal};
+
+    rebuild_decision(yes, std::io::stdin().is_terminal(), None)?;
+
+    eprintln!("{REBUILD_WARNING}");
+    eprint!("Proceed with full rebuild? [y/N] ");
+    let mut line = String::new();
+    let _ = std::io::stdin().lock().read_line(&mut line);
+    rebuild_decision(false, true, Some(&line))
+}
+
+// ---------------------------------------------------------------------------
 // Shared index result printer
 // ---------------------------------------------------------------------------
 
 fn print_index_result(result: serde_json::Value, is_rebuild: bool) -> Result<()> {
+    // A skipped build (e.g. another process holds the index lock) carries no
+    // counters — printing the success header for it is misleading.
+    if result["status"].as_str() == Some("skipped") {
+        let reason = result["reason"].as_str().unwrap_or("index build in progress");
+        println!(
+            "  {} skipped: {}",
+            style("…").yellow(),
+            reason
+        );
+        return Ok(());
+    }
+
     let projects = result["projects"].as_u64().unwrap_or(0);
     let indexed = result["indexed"].as_u64().unwrap_or(0);
     let skipped = result["skipped"].as_u64().unwrap_or(0);
@@ -1330,4 +1393,25 @@ pub fn cmd_reap() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod rebuild_gate_tests {
+    use super::*;
+
+    #[test]
+    fn rebuild_gate_requires_explicit_approval() {
+        // `--yes` always proceeds, interactive or not.
+        assert!(rebuild_decision(true, false, None).is_ok());
+
+        // Non-interactive without --yes must abort (agent/CI safety).
+        assert!(rebuild_decision(false, false, None).is_err());
+
+        // Interactive: only y/yes proceeds; anything else aborts.
+        assert!(rebuild_decision(false, true, Some("y")).is_ok());
+        assert!(rebuild_decision(false, true, Some("YES")).is_ok());
+        assert!(rebuild_decision(false, true, Some("n")).is_err());
+        assert!(rebuild_decision(false, true, Some("")).is_err());
+        assert!(rebuild_decision(false, true, None).is_err());
+    }
 }

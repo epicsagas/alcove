@@ -765,6 +765,8 @@ struct MemoryStoreArgs {
 #[derive(Debug, Deserialize)]
 struct MemoryRecallArgs {
     q: String,
+    /// Optional project scope — merges `<project>/memory/` into the results.
+    project: Option<String>,
     #[serde(default = "default_memory_limit")]
     limit: usize,
 }
@@ -777,14 +779,36 @@ fn default_memory_limit() -> usize {
 /// agent write unbounded files.
 const MAX_MEMORY_CONTENT: usize = 1 << 20; // 1 MiB
 
-/// Path to the memory vault, creating it on first use.
-fn memory_vault_path() -> Result<PathBuf> {
-    let root = crate::vault::vaults_root();
-    let dir = root.join(MEMORY_VAULT);
-    if !dir.exists() {
-        crate::vault::create_vault(MEMORY_VAULT)?;
-    }
+/// Resolve the memory directory for a scope inside the docs vault, creating
+/// it on first use:
+///   global   → `<docs_root>/memory/`
+///   project  → `<docs_root>/<project>/memory/`
+///
+/// Replaces the former separate `~/.alcove/vaults/memory` vault. Main-index
+/// scans skip `memory` dirs (reserved name + walk filter), so notes are
+/// indexed exactly once — by the vault index built here.
+fn memory_dir(docs_root: &Path, project: Option<&str>) -> Result<PathBuf> {
+    let dir = match project {
+        None => docs_root.join(MEMORY_VAULT),
+        Some(p) => {
+            crate::vault::validate_vault_name(p)?;
+            let project_dir = docs_root.join(p);
+            if !project_dir.is_dir() {
+                anyhow::bail!("Unknown project '{p}' — no such folder under docs_root");
+            }
+            project_dir.join(MEMORY_VAULT)
+        }
+    };
+    std::fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+/// Path to the memory vault, creating it on first use.
+fn memory_vault_path(project: Option<&str>) -> Result<PathBuf> {
+    let docs_root = crate::setup::saved_docs_root().ok_or_else(|| {
+        anyhow::anyhow!("docs_root is not configured. Run `alcove setup` first.")
+    })?;
+    memory_dir(&docs_root, project)
 }
 
 /// Slugify a title: lowercase, non-alphanumeric → '-', collapsed, capped.
@@ -817,7 +841,7 @@ pub fn tool_memory_store(args: Value) -> Result<Value> {
         chrono::DateTime::parse_from_rfc3339(v)
             .context("valid_until must be an ISO 8601 / RFC 3339 timestamp")?;
     }
-    let vault_path = memory_vault_path()?;
+    let vault_path = memory_vault_path(args.project.as_deref())?;
 
     let title = args.title.clone().unwrap_or_else(|| {
         args.content
@@ -848,20 +872,46 @@ pub fn tool_memory_store(args: Value) -> Result<Value> {
     let index = crate::index::build_vault_index(&vault_path)?;
     Ok(json!({
         "stored": filename,
-        "vault": MEMORY_VAULT,
+        "scope": args.project.clone().unwrap_or_else(|| "global".into()),
         "title": title,
         "valid_until": args.valid_until,
         "index": index,
     }))
 }
 
-/// Recall memories by hybrid search over the `memory` vault.
+/// Recall memories by hybrid search over stored memory notes.
+/// Searches global memory always; with `project`, merges that project's
+/// memory scope into the same ranked list.
 pub fn tool_memory_recall(args: Value) -> Result<Value> {
     let args: MemoryRecallArgs =
         serde_json::from_value(args).context("memory_recall requires { q }")?;
-    let vault_path = memory_vault_path()?;
-    let result = crate::index::search_vault(&vault_path, &args.q, args.limit)?;
-    Ok(result)
+
+    let search = |scope: Option<&str>| -> Result<Vec<Value>> {
+        let path = memory_vault_path(scope)?;
+        let result = crate::index::search_vault(&path, &args.q, args.limit)?;
+        Ok(result["matches"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default())
+    };
+
+    let mut matches = search(None)?;
+    if let Some(p) = &args.project {
+        matches.extend(search(Some(p))?);
+        matches.sort_by(|a, b| {
+            b["score"]
+                .as_f64()
+                .unwrap_or(0.0)
+                .total_cmp(&a["score"].as_f64().unwrap_or(0.0))
+        });
+        matches.truncate(args.limit);
+    }
+
+    Ok(json!({
+        "query": args.q,
+        "matches": matches,
+        "truncated": matches.len() >= args.limit,
+    }))
 }
 
 /// Return documents that link *to* the given file (backlinks).
@@ -3978,5 +4028,33 @@ mod tests {
             .collect();
         assert_eq!(by_name["alpha"], "oss");
         assert_eq!(by_name["beta"], "work");
+    }
+}
+
+#[cfg(test)]
+mod memory_dir_tests {
+    use super::memory_dir;
+    use tempfile::TempDir;
+
+    #[test]
+    fn memory_dir_scopes() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("alcove")).unwrap();
+
+        // Global → <root>/memory
+        assert_eq!(memory_dir(root, None).unwrap(), root.join("memory"));
+
+        // Project → <root>/<project>/memory (created on demand)
+        assert_eq!(
+            memory_dir(root, Some("alcove")).unwrap(),
+            root.join("alcove").join("memory")
+        );
+
+        // Unknown project rejected
+        assert!(memory_dir(root, Some("nope")).is_err());
+
+        // Path traversal rejected
+        assert!(memory_dir(root, Some("../escape")).is_err());
     }
 }

@@ -45,6 +45,8 @@ pub struct LintQuery {
 pub struct VaultSearchQuery {
     pub q: String,
     pub vault: Option<String>,
+    /// Memory recall only: merge this project's memory scope (`/memory/recall`).
+    pub project: Option<String>,
     #[serde(default = "default_vault_limit")]
     pub limit: usize,
 }
@@ -670,7 +672,9 @@ pub async fn get_memory_recall(
     check_auth(&srv, &headers)?;
     let result = tokio::task::spawn_blocking(move || {
         let limit = query.limit;
-        crate::tools::tool_memory_recall(serde_json::json!({ "q": query.q, "limit": limit }))
+        crate::tools::tool_memory_recall(
+            serde_json::json!({ "q": query.q, "limit": limit, "project": query.project }),
+        )
     })
     .await
     .unwrap_or_else(|e| {
