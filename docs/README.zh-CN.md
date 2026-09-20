@@ -180,10 +180,23 @@ cargo install alcove --features full-cross
 ### Antigravity (Gemini CLI)
 
 ```bash
-agy plugins install https://github.com/epicsagas/alcove
+agy plugin install https://github.com/epicsagas/alcove
 ```
 
 自动安装插件（API 服务器、技能、钩子）并在下次会话启动时启动。
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+### Grok Build (xAI)
+
+```bash
+grok plugin marketplace add epicsagas/plugins
+grok plugin install alcove@epicsagas --trust
+```
+
+下次会话启动时自动安装二进制文件并启动 API 服务器。
 
 ```bash
 alcove setup   # run once after plugin install
@@ -694,7 +707,8 @@ format = "mermaid"
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `agy plugins install` | — |
+| Antigravity | `agy plugin install` | — |
+| Grok Build | `grok plugin install` | — |
 
 ## 支持的语言
 

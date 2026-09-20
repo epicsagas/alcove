@@ -178,10 +178,23 @@ cargo install alcove --features full-cross
 ### Antigravity (Gemini CLI)
 
 ```bash
-agy plugins install https://github.com/epicsagas/alcove
+agy plugin install https://github.com/epicsagas/alcove
 ```
 
 Installiert automatisch das Plugin (API-Server, Skill, Hooks) und startet es beim nächsten Sitzungsstart.
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+### Grok Build (xAI)
+
+```bash
+grok plugin marketplace add epicsagas/plugins
+grok plugin install alcove@epicsagas --trust
+```
+
+Installiert das Binary automatisch und startet den API-Server beim nächsten Sitzungsstart.
 
 ```bash
 alcove setup   # run once after plugin install
@@ -628,7 +641,8 @@ Alles wird interaktiv über `alcove setup` eingestellt. Du kannst die Datei auch
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `agy plugins install` | — |
+| Antigravity | `agy plugin install` | — |
+| Grok Build | `grok plugin install` | — |
 
 ## Unterstützte Sprachen
 

@@ -176,10 +176,23 @@ cargo install alcove --features full-cross
 ### Antigravity (Gemini CLI)
 
 ```bash
-agy plugins install https://github.com/epicsagas/alcove
+agy plugin install https://github.com/epicsagas/alcove
 ```
 
 플러그인(API 서버, 스킬, 훅)을 자동으로 설치하고 다음 세션 시작 시 시작합니다.
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+### Grok Build (xAI)
+
+```bash
+grok plugin marketplace add epicsagas/plugins
+grok plugin install alcove@epicsagas --trust
+```
+
+다음 세션 시작 시 바이너리를 자동 설치하고 API 서버를 구동합니다.
 
 ```bash
 alcove setup   # run once after plugin install
@@ -687,7 +700,8 @@ max_hnsw_cache     = 3    # 동시에 메모리에 유지할 최대 HNSW 그래�
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `agy plugins install` | — |
+| Antigravity | `agy plugin install` | — |
+| Grok Build | `grok plugin install` | — |
 
 ## 지원 언어
 

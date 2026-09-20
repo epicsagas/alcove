@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-09-21
+
+### Added
+
+- index: destructive rebuild approval gate (#54) — `alcove rebuild` / `alcove vault rebuild` print an explicit warning (index + vectors.db deleted, everything re-embedded, grep fallback until done) and require an interactive `y/N` approval. There is no flag bypass: non-interactive sessions (agents/CI) abort and must use `alcove index` instead. Skipped builds (index lock contention) now print `… skipped: <reason>` instead of a misleading `✓ Indexed 0 projects` success header. The MCP `rebuild_index` tool description now states the existing index is never deleted
+- memory (#37, #54): storage moved inside the docs vault — global notes in `<docs_root>/memory/`, project notes in `<docs_root>/<project>/memory/`; plain markdown, git-versioned with the vault. `GET /memory/recall` (and `memory_recall`) accepts `project=` and merges global + project scopes into one score-ranked list. A scope with no index yet contributes no matches instead of erroring, and recall no longer creates empty `memory/` dirs as a read side effect (creation happens on store). `memory/` is now a reserved dir name excluded from the main project index, so notes are indexed exactly once by their own vault index
+
 ### Fixed
 
 - install: README quick-start URLs pointed at hand-maintained `scripts/install.{sh,ps1}` that were never published as release assets — every platform's one-line installer 404'd (issue #50 reported it for Windows). Docs now point at the dist-generated `alcove-installer.sh`, the Windows section directs to `cargo install alcove --features full-cross` (no Windows release target since #46), Linux is labeled x86_64-only, and the dead scripts plus the dead `binstall` Windows override are removed. A new CI `install-docs` job (`scripts/check-install-docs.sh`) fails if docs reference unpublished installer assets or advertise installers for target families missing from `dist-workspace.toml`
+
+### Changed
+
+- docs: README install sections — `agy plugin install` command corrected (was plural `plugins`), Grok Build (xAI) install section added (`grok plugin install alcove@epicsagas --trust`), synced across all 10 README translations
+- ci: removed the rs-guard AI review workflow and its config (`.github/workflows/rs-guard-review.yml`, `.reviewer.toml`, `.rs-guardignore`, `.github/review-prompt.md`) — it invoked a local `./rs-guard` script that no longer exists, so the check could never pass
+- vault `AGENTS.md` + `registry/skills/alcove/SKILL.md`: "rebuild" wording corrected to incremental update; destructive rebuild documented as interactive-approval-only; memory section rewritten with global/project scope-routing rules. The former separate `~/.alcove/vaults/memory` vault is superseded (notes are not migrated)
 
 ## [0.13.0] — 2026-08-19
 

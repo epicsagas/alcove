@@ -172,10 +172,23 @@ cargo install alcove --features full-cross
 ### Antigravity (Gemini CLI)
 
 ```bash
-agy plugins install https://github.com/epicsagas/alcove
+agy plugin install https://github.com/epicsagas/alcove
 ```
 
 प्लगइन (MCP सर्वर, स्किल, हुक) स्वचालित रूप से इंस्टॉल करता है और अगले सेशन शुरू होने पर पंजीकृत करता है।
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+### Grok Build (xAI)
+
+```bash
+grok plugin marketplace add epicsagas/plugins
+grok plugin install alcove@epicsagas --trust
+```
+
+अगली सेशन शुरू होने पर बाइनरी अपने आप इंस्टॉल होता है और API सर्वर शुरू होता है।
 
 ```bash
 alcove setup   # run once after plugin install
@@ -631,7 +644,8 @@ format = "mermaid"
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
 | Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
-| Antigravity | `agy plugins install` | — |
+| Antigravity | `agy plugin install` | — |
+| Grok Build | `grok plugin install` | — |
 
 ## समर्थित भाषाएं
 
