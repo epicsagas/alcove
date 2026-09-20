@@ -133,7 +133,7 @@ alcove setup   # प्लगइन इंस्टॉल के बाद ए�
 
 `claude plugin update epicsagas/alcove` से अपडेट करें।
 
-### Codex CLI
+### Codex
 
 ```bash
 codex plugin marketplace add epicsagas/plugins
@@ -642,7 +642,7 @@ format = "mermaid"
 | Claude Desktop | प्लेटफ़ॉर्म कॉन्फ़िग | — |
 | Cline (VS Code) | VS Code globalStorage | `~/.cline/skills/alcove/` |
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
-| Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
+| Codex | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
 | Antigravity | `agy plugin install` | — |
 | Grok Build | `grok plugin install` | — |

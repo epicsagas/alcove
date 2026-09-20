@@ -141,7 +141,7 @@ alcove setup   # run once after plugin install
 
 Updates with `claude plugin update alcove@epicsagas`.
 
-### Codex CLI
+### Codex
 
 ```bash
 codex plugin marketplace add epicsagas/plugins
@@ -759,7 +759,7 @@ files = ["README.md", "CHANGELOG.md", "PRD.md"]  # PRD exposed as public for thi
 | Claude Desktop | platform config | — |
 | Cline (VS Code) | VS Code globalStorage | `~/.cline/skills/alcove/` |
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
-| Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
+| Codex | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
 | Antigravity | `agy plugin install` | — |
 | Grok Build | `grok plugin install` | — |

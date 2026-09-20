@@ -135,7 +135,7 @@ alcove setup   # プラグインインストール後に一度実行
 
 `claude plugin update epicsagas/alcove` でアップデートします。
 
-### Codex CLI
+### Codex
 
 ```bash
 codex plugin marketplace add epicsagas/plugins
@@ -701,7 +701,7 @@ format = "mermaid"
 | Claude Desktop | プラットフォーム設定 | — |
 | Cline (VS Code) | VS Code globalStorage | `~/.cline/skills/alcove/` |
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
-| Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
+| Codex | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
 | Antigravity | `agy plugin install` | — |
 | Grok Build | `grok plugin install` | — |

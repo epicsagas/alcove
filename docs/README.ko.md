@@ -135,7 +135,7 @@ alcove setup   # 플러그인 설치 후 한 번 실행
 
 `claude plugin update epicsagas/alcove`로 업데이트합니다.
 
-### Codex CLI
+### Codex
 
 ```bash
 codex plugin marketplace add epicsagas/plugins
@@ -698,7 +698,7 @@ max_hnsw_cache     = 3    # 동시에 메모리에 유지할 최대 HNSW 그래�
 | Claude Desktop | 플랫폼 설정 | — |
 | Cline (VS Code) | VS Code globalStorage | `~/.cline/skills/alcove/` |
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
-| Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
+| Codex | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
 | Antigravity | `agy plugin install` | — |
 | Grok Build | `grok plugin install` | — |

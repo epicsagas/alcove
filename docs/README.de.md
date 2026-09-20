@@ -137,7 +137,7 @@ alcove setup   # einmal nach der Plugin-Installation ausführen
 
 Aktualisierungen mit `claude plugin update epicsagas/alcove`.
 
-### Codex CLI
+### Codex
 
 ```bash
 codex plugin install alcove@epicsagas
@@ -639,7 +639,7 @@ Alles wird interaktiv über `alcove setup` eingestellt. Du kannst die Datei auch
 | Claude Desktop | Plattformkonfiguration | — |
 | Cline (VS Code) | VS Code globalStorage | `~/.cline/skills/alcove/` |
 | OpenCode | `~/.config/opencode/opencode.json` | `~/.opencode/skills/alcove/` |
-| Codex CLI | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
+| Codex | `~/.codex/config.toml` | `~/.codex/skills/alcove/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/skills/alcove/` |
 | Antigravity | `agy plugin install` | — |
 | Grok Build | `grok plugin install` | — |
