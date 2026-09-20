@@ -805,9 +805,8 @@ fn memory_dir(docs_root: &Path, project: Option<&str>) -> Result<PathBuf> {
 
 /// Path to the memory vault, creating it on first use.
 fn memory_vault_path(project: Option<&str>) -> Result<PathBuf> {
-    let docs_root = crate::setup::saved_docs_root().ok_or_else(|| {
-        anyhow::anyhow!("docs_root is not configured. Run `alcove setup` first.")
-    })?;
+    let docs_root = crate::setup::saved_docs_root()
+        .ok_or_else(|| anyhow::anyhow!("docs_root is not configured. Run `alcove setup` first."))?;
     memory_dir(&docs_root, project)
 }
 
@@ -889,10 +888,7 @@ pub fn tool_memory_recall(args: Value) -> Result<Value> {
     let search = |scope: Option<&str>| -> Result<Vec<Value>> {
         let path = memory_vault_path(scope)?;
         let result = crate::index::search_vault(&path, &args.q, args.limit)?;
-        Ok(result["matches"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default())
+        Ok(result["matches"].as_array().cloned().unwrap_or_default())
     };
 
     let mut matches = search(None)?;

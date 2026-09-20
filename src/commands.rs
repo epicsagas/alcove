@@ -164,8 +164,7 @@ pub fn cmd_rebuild(yes: bool) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// English warning shown before a destructive (force) rebuild.
-pub(crate) const REBUILD_WARNING: &str =
-    "WARNING: this command DELETES the existing search index (BM25 index, \
+pub(crate) const REBUILD_WARNING: &str = "WARNING: this command DELETES the existing search index (BM25 index, \
      vectors.db) and rebuilds everything from scratch. The index is reset \
      and every document is re-chunked and re-embedded; searches will fall \
      back to grep until it completes. For routine updates after doc \
@@ -186,9 +185,7 @@ fn rebuild_decision(yes: bool, is_tty: bool, answer: Option<&str>) -> Result<()>
         );
     }
     match answer {
-        Some(a) if a.trim().eq_ignore_ascii_case("y")
-            || a.trim().eq_ignore_ascii_case("yes") =>
-        {
+        Some(a) if a.trim().eq_ignore_ascii_case("y") || a.trim().eq_ignore_ascii_case("yes") => {
             Ok(())
         }
         _ => anyhow::bail!("Aborted — existing index left untouched."),
@@ -217,12 +214,10 @@ fn print_index_result(result: serde_json::Value, is_rebuild: bool) -> Result<()>
     // A skipped build (e.g. another process holds the index lock) carries no
     // counters — printing the success header for it is misleading.
     if result["status"].as_str() == Some("skipped") {
-        let reason = result["reason"].as_str().unwrap_or("index build in progress");
-        println!(
-            "  {} skipped: {}",
-            style("…").yellow(),
-            reason
-        );
+        let reason = result["reason"]
+            .as_str()
+            .unwrap_or("index build in progress");
+        println!("  {} skipped: {}", style("…").yellow(), reason);
         return Ok(());
     }
 
