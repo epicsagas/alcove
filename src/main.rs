@@ -95,12 +95,8 @@ enum Commands {
     },
     /// Update the search index (incremental — only changed files)
     Index,
-    /// Rebuild the search index from scratch (drops and recreates all data)
-    Rebuild {
-        /// Confirm the destructive rebuild without an interactive prompt
-        #[arg(long)]
-        yes: bool,
-    },
+    /// Rebuild the search index from scratch (drops and recreates all data; interactive approval required)
+    Rebuild,
     /// Check the health of the alcove installation
     Doctor {
         /// Output format: human (default) or json
@@ -241,13 +237,8 @@ enum VaultCommands {
     },
     /// Build search index for vaults
     Index { name: Option<String> },
-    /// Rebuild vault search index from scratch
-    Rebuild {
-        name: Option<String>,
-        /// Confirm the destructive rebuild without an interactive prompt
-        #[arg(long)]
-        yes: bool,
-    },
+    /// Rebuild vault search index from scratch (interactive approval required)
+    Rebuild { name: Option<String> },
 }
 
 #[derive(Subcommand)]
@@ -375,7 +366,7 @@ fn main() -> Result<()> {
         Some(Commands::Uninstall) => cli::cmd_uninstall(),
         Some(Commands::Validate { format, exit_code }) => cli::cmd_validate(&format, exit_code),
         Some(Commands::Index) => cli::cmd_index(),
-        Some(Commands::Rebuild { yes }) => cli::cmd_rebuild(yes),
+        Some(Commands::Rebuild) => cli::cmd_rebuild(),
         Some(Commands::Doctor { format }) => cli::cmd_doctor(&format),
         Some(Commands::Search {
             query,
@@ -468,8 +459,8 @@ fn main() -> Result<()> {
                 }
                 Ok(())
             }
-            VaultCommands::Rebuild { name, yes } => {
-                cli::confirm_rebuild(yes)?;
+            VaultCommands::Rebuild { name } => {
+                cli::confirm_rebuild()?;
                 if let Some(name) = name {
                     let vault_path = vault::vaults_root().join(&name);
                     if !vault_path.is_dir() {

@@ -147,8 +147,8 @@ pub fn cmd_index() -> Result<()> {
 // alcove rebuild
 // ---------------------------------------------------------------------------
 
-pub fn cmd_rebuild(yes: bool) -> Result<()> {
-    confirm_rebuild(yes)?;
+pub fn cmd_rebuild() -> Result<()> {
+    confirm_rebuild()?;
     let docs_root = match saved_docs_root() {
         Some(p) => p,
         None => {
@@ -170,20 +170,11 @@ pub(crate) const REBUILD_WARNING: &str = "WARNING: this command DELETES the exis
      back to grep until it completes. For routine updates after doc \
      changes, use `alcove index` (incremental) instead.";
 
-/// Decide whether a destructive rebuild may proceed.
+/// Evaluate the interactive y/N reply for a destructive rebuild.
 ///
 /// Separated from `confirm_rebuild` so the logic is unit-testable.
-/// `answer` is the interactive reply (None outside a prompt).
-fn rebuild_decision(yes: bool, is_tty: bool, answer: Option<&str>) -> Result<()> {
-    if yes {
-        return Ok(());
-    }
-    if !is_tty {
-        anyhow::bail!(
-            "{REBUILD_WARNING}\n\
-             Non-interactive session: re-run with `--yes` to confirm the rebuild."
-        );
-    }
+/// `answer` is the interactive reply (None when the prompt was skipped).
+fn rebuild_decision(answer: Option<&str>) -> Result<()> {
     match answer {
         Some(a) if a.trim().eq_ignore_ascii_case("y") || a.trim().eq_ignore_ascii_case("yes") => {
             Ok(())
@@ -192,18 +183,23 @@ fn rebuild_decision(yes: bool, is_tty: bool, answer: Option<&str>) -> Result<()>
     }
 }
 
-/// Gate a destructive rebuild: warn (English) and require explicit approval.
-/// Interactive: y/N prompt. Non-interactive (agents/CI): requires `--yes`.
-pub fn confirm_rebuild(yes: bool) -> Result<()> {
+/// Gate a destructive rebuild: warn (English) and require interactive approval.
+/// Only a `y`/`yes` at an interactive terminal proceeds — there is no flag
+/// bypass. Non-interactive sessions (agents/CI) abort and must use `alcove index`.
+pub fn confirm_rebuild() -> Result<()> {
     use std::io::{BufRead, IsTerminal};
 
-    rebuild_decision(yes, std::io::stdin().is_terminal(), None)?;
-
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "{REBUILD_WARNING}\n\
+             Destructive rebuild requires an interactive terminal to confirm."
+        );
+    }
     eprintln!("{REBUILD_WARNING}");
     eprint!("Proceed with full rebuild? [y/N] ");
     let mut line = String::new();
     let _ = std::io::stdin().lock().read_line(&mut line);
-    rebuild_decision(false, true, Some(&line))
+    rebuild_decision(Some(&line))
 }
 
 // ---------------------------------------------------------------------------
@@ -1396,17 +1392,11 @@ mod rebuild_gate_tests {
 
     #[test]
     fn rebuild_gate_requires_explicit_approval() {
-        // `--yes` always proceeds, interactive or not.
-        assert!(rebuild_decision(true, false, None).is_ok());
-
-        // Non-interactive without --yes must abort (agent/CI safety).
-        assert!(rebuild_decision(false, false, None).is_err());
-
-        // Interactive: only y/yes proceeds; anything else aborts.
-        assert!(rebuild_decision(false, true, Some("y")).is_ok());
-        assert!(rebuild_decision(false, true, Some("YES")).is_ok());
-        assert!(rebuild_decision(false, true, Some("n")).is_err());
-        assert!(rebuild_decision(false, true, Some("")).is_err());
-        assert!(rebuild_decision(false, true, None).is_err());
+        // Only y/yes proceeds; anything else (skipped prompt included) aborts.
+        assert!(rebuild_decision(Some("y")).is_ok());
+        assert!(rebuild_decision(Some("YES")).is_ok());
+        assert!(rebuild_decision(Some("n")).is_err());
+        assert!(rebuild_decision(Some("")).is_err());
+        assert!(rebuild_decision(None).is_err());
     }
 }

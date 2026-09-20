@@ -176,7 +176,7 @@ curl -s '$ALCOVE_URL/lint?project=PROJECT'
 
 **Rule**: Default to `/index` (global). Use `/projects/{name}/index` only when task specifies a single project.
 
-**⚠️ NEVER run `alcove rebuild` / `alcove vault rebuild` (CLI) to make new docs searchable** — they DELETE the entire index and vectors, then re-embed everything, leaving search on grep fallback until done. `/index` above is incremental (unchanged files are skipped) and is the only update path agents ever need. The rebuild CLI requires explicit user approval and `--yes` in non-interactive sessions.
+**⚠️ NEVER run `alcove rebuild` / `alcove vault rebuild` (CLI) to make new docs searchable** — they DELETE the entire index and vectors, then re-embed everything, leaving search on grep fallback until done. `/index` above is incremental (unchanged files are skipped) and is the only update path agents ever need. The rebuild CLI only runs in an interactive terminal (y/N approval, no flag bypass) — agents cannot run it at all.
 
 | Action | Method | Endpoint |
 |--------|--------|----------|

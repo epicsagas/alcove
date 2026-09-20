@@ -779,31 +779,29 @@ fn default_memory_limit() -> usize {
 /// agent write unbounded files.
 const MAX_MEMORY_CONTENT: usize = 1 << 20; // 1 MiB
 
-/// Resolve the memory directory for a scope inside the docs vault, creating
-/// it on first use:
+/// Resolve the memory directory for a scope inside the docs vault
+/// (no filesystem side effects — callers decide whether to create it):
 ///   global   → `<docs_root>/memory/`
 ///   project  → `<docs_root>/<project>/memory/`
 ///
 /// Replaces the former separate `~/.alcove/vaults/memory` vault. Main-index
 /// scans skip `memory` dirs (reserved name + walk filter), so notes are
-/// indexed exactly once — by the vault index built here.
+/// indexed exactly once — by the vault index built on store.
 fn memory_dir(docs_root: &Path, project: Option<&str>) -> Result<PathBuf> {
-    let dir = match project {
-        None => docs_root.join(MEMORY_VAULT),
+    match project {
+        None => Ok(docs_root.join(MEMORY_VAULT)),
         Some(p) => {
             crate::vault::validate_vault_name(p)?;
             let project_dir = docs_root.join(p);
             if !project_dir.is_dir() {
                 anyhow::bail!("Unknown project '{p}' — no such folder under docs_root");
             }
-            project_dir.join(MEMORY_VAULT)
+            Ok(project_dir.join(MEMORY_VAULT))
         }
-    };
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir)
+    }
 }
 
-/// Path to the memory vault, creating it on first use.
+/// Path to the memory directory for a scope.
 fn memory_vault_path(project: Option<&str>) -> Result<PathBuf> {
     let docs_root = crate::setup::saved_docs_root()
         .ok_or_else(|| anyhow::anyhow!("docs_root is not configured. Run `alcove setup` first."))?;
@@ -841,6 +839,8 @@ pub fn tool_memory_store(args: Value) -> Result<Value> {
             .context("valid_until must be an ISO 8601 / RFC 3339 timestamp")?;
     }
     let vault_path = memory_vault_path(args.project.as_deref())?;
+    std::fs::create_dir_all(&vault_path)
+        .with_context(|| format!("creating {}", vault_path.display()))?;
 
     let title = args.title.clone().unwrap_or_else(|| {
         args.content
@@ -880,18 +880,23 @@ pub fn tool_memory_store(args: Value) -> Result<Value> {
 
 /// Recall memories by hybrid search over stored memory notes.
 /// Searches global memory always; with `project`, merges that project's
-/// memory scope into the same ranked list.
+/// memory scope into the same ranked list. A scope with no index yet
+/// (nothing stored there) contributes no matches instead of erroring.
 pub fn tool_memory_recall(args: Value) -> Result<Value> {
     let args: MemoryRecallArgs =
         serde_json::from_value(args).context("memory_recall requires { q }")?;
 
     let search = |scope: Option<&str>| -> Result<Vec<Value>> {
         let path = memory_vault_path(scope)?;
+        if !crate::index::lock::index_dir(&path).exists() {
+            return Ok(Vec::new());
+        }
         let result = crate::index::search_vault(&path, &args.q, args.limit)?;
         Ok(result["matches"].as_array().cloned().unwrap_or_default())
     };
 
     let mut matches = search(None)?;
+    let mut truncated = matches.len() > args.limit;
     if let Some(p) = &args.project {
         matches.extend(search(Some(p))?);
         matches.sort_by(|a, b| {
@@ -900,13 +905,14 @@ pub fn tool_memory_recall(args: Value) -> Result<Value> {
                 .unwrap_or(0.0)
                 .total_cmp(&a["score"].as_f64().unwrap_or(0.0))
         });
+        truncated = matches.len() > args.limit;
         matches.truncate(args.limit);
     }
 
     Ok(json!({
         "query": args.q,
         "matches": matches,
-        "truncated": matches.len() >= args.limit,
+        "truncated": truncated,
     }))
 }
 
@@ -4041,11 +4047,15 @@ mod memory_dir_tests {
         // Global → <root>/memory
         assert_eq!(memory_dir(root, None).unwrap(), root.join("memory"));
 
-        // Project → <root>/<project>/memory (created on demand)
+        // Project → <root>/<project>/memory
         assert_eq!(
             memory_dir(root, Some("alcove")).unwrap(),
             root.join("alcove").join("memory")
         );
+
+        // Resolution has no filesystem side effects — creation happens on store.
+        assert!(!root.join("memory").exists());
+        assert!(!root.join("alcove").join("memory").exists());
 
         // Unknown project rejected
         assert!(memory_dir(root, Some("nope")).is_err());
