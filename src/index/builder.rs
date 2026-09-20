@@ -526,6 +526,12 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .starts_with('_')
+                // `memory/` dirs (global or per-project) are agent-memory
+                // storage — indexed only by their own vault index, never here.
+                && !e
+                    .path()
+                    .components()
+                    .any(|c| c.as_os_str() == "memory")
         }) {
             let file_path = walk_entry.path().to_path_buf();
             if let Ok(canonical) = file_path.canonicalize()

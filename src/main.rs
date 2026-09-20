@@ -95,7 +95,7 @@ enum Commands {
     },
     /// Update the search index (incremental — only changed files)
     Index,
-    /// Rebuild the search index from scratch (drops and recreates all data)
+    /// Rebuild the search index from scratch (drops and recreates all data; interactive approval required)
     Rebuild,
     /// Check the health of the alcove installation
     Doctor {
@@ -237,7 +237,7 @@ enum VaultCommands {
     },
     /// Build search index for vaults
     Index { name: Option<String> },
-    /// Rebuild vault search index from scratch
+    /// Rebuild vault search index from scratch (interactive approval required)
     Rebuild { name: Option<String> },
 }
 
@@ -460,6 +460,7 @@ fn main() -> Result<()> {
                 Ok(())
             }
             VaultCommands::Rebuild { name } => {
+                cli::confirm_rebuild()?;
                 if let Some(name) = name {
                     let vault_path = vault::vaults_root().join(&name);
                     if !vault_path.is_dir() {

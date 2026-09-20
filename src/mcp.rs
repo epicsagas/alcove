@@ -459,7 +459,9 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                 "Trigger an incremental index update in the background. ",
                 "Returns immediately — the agent is not blocked while indexing runs. ",
                 "Run this after adding or updating documents. ",
-                "Search results will reflect the new documents once indexing completes."
+                "Search results will reflect the new documents once indexing completes. ",
+                "The existing index is never deleted: unchanged files are skipped, ",
+                "so this is safe to run repeatedly."
             ).into(),
             input_schema: json!({
                 "type": "object",
@@ -733,8 +735,11 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
         ToolDescription {
             name: "memory_store".into(),
             description: concat!(
-                "Store a durable memory note in alcove's `memory` vault. Use for ",
+                "Store a durable memory note in the docs vault. Use for ",
                 "facts, decisions, or preferences worth recalling across sessions. ",
+                "Without `project` the note goes to global memory ",
+                "(<docs_root>/memory/); with `project` it goes to that project's ",
+                "scope (<docs_root>/<project>/memory/). ",
                 "Set valid_until (ISO 8601) for time-sensitive facts — expired ",
                 "memories drop out of recall.\n",
                 "\n",
@@ -746,7 +751,7 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
                 "properties": {
                     "content": { "type": "string", "description": "Memory content (markdown)" },
                     "title": { "type": "string", "description": "Short title (defaults to first line)" },
-                    "project": { "type": "string", "description": "Origin project/tool (metadata)" },
+                    "project": { "type": "string", "description": "Project scope — stores in <project>/memory/ instead of global memory/" },
                     "valid_until": { "type": "string", "description": "ISO 8601 — after this timestamp the memory stops appearing in recall" }
                 },
                 "required": ["content"]
@@ -756,13 +761,16 @@ fn handle_tools_list(id: Option<Value>) -> RpcResponse {
             name: "memory_recall".into(),
             description: concat!(
                 "Recall stored memories by hybrid (BM25 + vector) search. Use to ",
-                "surface prior decisions, facts, and preferences before acting."
+                "surface prior decisions, facts, and preferences before acting. ",
+                "Searches global memory always; pass `project` to also merge that ",
+                "project's memory scope into the same ranked list."
             )
             .into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "q": { "type": "string", "description": "Search query" },
+                    "project": { "type": "string", "description": "Project scope to additionally search (<project>/memory/)" },
                     "limit": { "type": "integer", "description": "Max results (default 10)" }
                 },
                 "required": ["q"]

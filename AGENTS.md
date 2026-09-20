@@ -106,8 +106,9 @@ alcove serves these docs to AI agents over stdio JSON-RPC 2.0. The BM25 search i
 
 - **Change detection**: mtime + file size fingerprint
 - **CJK support**: NgramTokenizer (min=2, max=3) for Korean/Japanese/Chinese
-- **Auto-rebuild**: `search_project_docs` triggers rebuild if index is stale
-- **Manual rebuild**: `alcove index` CLI or `rebuild_index` MCP tool
+- **Auto-rebuild**: `search_project_docs` triggers an incremental update if index is stale
+- **Manual update**: `alcove index` CLI or `rebuild_index` MCP tool — both incremental (changed files only); neither deletes the existing index
+- **Destructive**: `alcove rebuild` (and `alcove vault rebuild`) wipe and rebuild from scratch — requires interactive y/N approval; there is no flag bypass, and non-interactive sessions (agents/CI) abort. Agents must use `alcove index` instead.
 
 ## Search Benchmark
 
@@ -137,7 +138,8 @@ alcove bench --metrics precision --output markdown --output-file report.md
 ## Working With Docs
 
 - Add new project docs: copy `_template/` into a new subfolder under `99-Archives/projects/`
-- After bulk doc changes: run `alcove index` to rebuild the BM25 search index
+- After doc changes: run `alcove index` — incremental update, only changed files are re-indexed
+- NEVER run `alcove rebuild` / `alcove vault rebuild` (destructive full rebuild) without explicit user approval; they only run in an interactive terminal (y/N prompt — no flag bypass). Agents use `alcove index` for all updates.
 - Check doc health: `alcove validate` or `of graph health`
 - Run linter: `python3 $HARNESS_DIR/scripts/ontology_lint.py` (mandatory before ship)
 - Diagrams: Mermaid format only (ASCII art forbidden)

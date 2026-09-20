@@ -833,6 +833,7 @@ pub fn is_reserved_dir_name(name: &str) -> bool {
         || name == "mcp"
         || name == "skills"
         || name == "scripts"
+        || name == "memory"
 }
 
 /// Classify a doc file path using a provided config (enables project-level overrides).
@@ -1893,6 +1894,7 @@ reader_ttl_secs = 120
         assert!(is_reserved_dir_name("mcp"));
         assert!(is_reserved_dir_name("skills"));
         assert!(is_reserved_dir_name("scripts"));
+        assert!(is_reserved_dir_name("memory"));
     }
 
     #[test]

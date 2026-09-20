@@ -148,6 +148,7 @@ pub fn cmd_index() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn cmd_rebuild() -> Result<()> {
+    confirm_rebuild()?;
     let docs_root = match saved_docs_root() {
         Some(p) => p,
         None => {
@@ -159,10 +160,63 @@ pub fn cmd_rebuild() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Destructive rebuild confirmation
+// ---------------------------------------------------------------------------
+
+/// English warning shown before a destructive (force) rebuild.
+pub(crate) const REBUILD_WARNING: &str = "WARNING: this command DELETES the existing search index (BM25 index, \
+     vectors.db) and rebuilds everything from scratch. The index is reset \
+     and every document is re-chunked and re-embedded; searches will fall \
+     back to grep until it completes. For routine updates after doc \
+     changes, use `alcove index` (incremental) instead.";
+
+/// Evaluate the interactive y/N reply for a destructive rebuild.
+///
+/// Separated from `confirm_rebuild` so the logic is unit-testable.
+/// `answer` is the interactive reply (None when the prompt was skipped).
+fn rebuild_decision(answer: Option<&str>) -> Result<()> {
+    match answer {
+        Some(a) if a.trim().eq_ignore_ascii_case("y") || a.trim().eq_ignore_ascii_case("yes") => {
+            Ok(())
+        }
+        _ => anyhow::bail!("Aborted — existing index left untouched."),
+    }
+}
+
+/// Gate a destructive rebuild: warn (English) and require interactive approval.
+/// Only a `y`/`yes` at an interactive terminal proceeds — there is no flag
+/// bypass. Non-interactive sessions (agents/CI) abort and must use `alcove index`.
+pub fn confirm_rebuild() -> Result<()> {
+    use std::io::{BufRead, IsTerminal};
+
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "{REBUILD_WARNING}\n\
+             Destructive rebuild requires an interactive terminal to confirm."
+        );
+    }
+    eprintln!("{REBUILD_WARNING}");
+    eprint!("Proceed with full rebuild? [y/N] ");
+    let mut line = String::new();
+    let _ = std::io::stdin().lock().read_line(&mut line);
+    rebuild_decision(Some(&line))
+}
+
+// ---------------------------------------------------------------------------
 // Shared index result printer
 // ---------------------------------------------------------------------------
 
 fn print_index_result(result: serde_json::Value, is_rebuild: bool) -> Result<()> {
+    // A skipped build (e.g. another process holds the index lock) carries no
+    // counters — printing the success header for it is misleading.
+    if result["status"].as_str() == Some("skipped") {
+        let reason = result["reason"]
+            .as_str()
+            .unwrap_or("index build in progress");
+        println!("  {} skipped: {}", style("…").yellow(), reason);
+        return Ok(());
+    }
+
     let projects = result["projects"].as_u64().unwrap_or(0);
     let indexed = result["indexed"].as_u64().unwrap_or(0);
     let skipped = result["skipped"].as_u64().unwrap_or(0);
@@ -1330,4 +1384,19 @@ pub fn cmd_reap() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod rebuild_gate_tests {
+    use super::*;
+
+    #[test]
+    fn rebuild_gate_requires_explicit_approval() {
+        // Only y/yes proceeds; anything else (skipped prompt included) aborts.
+        assert!(rebuild_decision(Some("y")).is_ok());
+        assert!(rebuild_decision(Some("YES")).is_ok());
+        assert!(rebuild_decision(Some("n")).is_err());
+        assert!(rebuild_decision(Some("")).is_err());
+        assert!(rebuild_decision(None).is_err());
+    }
 }

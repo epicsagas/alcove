@@ -26,7 +26,7 @@ pub struct VaultInfo {
 // ---------------------------------------------------------------------------
 
 /// Validate that `name` is a single normal path component without `_` or `.` prefix.
-fn validate_vault_name(name: &str) -> Result<()> {
+pub fn validate_vault_name(name: &str) -> Result<()> {
     let p = Path::new(name);
     let components: Vec<_> = p.components().collect();
     if components.len() != 1 || !matches!(components[0], Component::Normal(_)) {

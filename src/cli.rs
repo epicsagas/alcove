@@ -9,7 +9,7 @@ pub use crate::setup::cmd_setup;
 
 pub use crate::commands::{
     cmd_doctor, cmd_index, cmd_lint, cmd_path, cmd_promote, cmd_rebuild, cmd_register, cmd_search,
-    cmd_token, cmd_uninstall, cmd_validate,
+    cmd_token, cmd_uninstall, cmd_validate, confirm_rebuild,
 };
 
 #[cfg(feature = "embed")]
