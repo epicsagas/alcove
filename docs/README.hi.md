@@ -141,6 +141,31 @@ codex plugin marketplace add epicsagas/plugins
 
 स्किल ऑटो-इंस्टॉल होती है और MCP सर्वर रजिस्टर हो जाता है। तुरंत उपलब्ध — कोई और कदम आवश्यक नहीं। `codex plugin update alcove@epicsagas` से अपडेट करें।
 
+### Antigravity (Gemini CLI)
+
+```bash
+agy plugin install https://github.com/epicsagas/alcove
+```
+
+प्लगइन (MCP सर्वर, स्किल, हुक) स्वचालित रूप से इंस्टॉल करता है और अगले सेशन शुरू होने पर पंजीकृत करता है।
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+### Grok Build (xAI)
+
+```bash
+grok plugin marketplace add epicsagas/plugins
+grok plugin install alcove@epicsagas --trust
+```
+
+अगली सेशन शुरू होने पर बाइनरी अपने आप इंस्टॉल होता है और API सर्वर शुरू होता है।
+
+```bash
+alcove setup   # run once after plugin install
+```
+
 ### macOS (केवल Apple Silicon)
 
 ```bash
@@ -167,31 +192,6 @@ Pre-built Windows binaries are not currently published. Build from source:
 
 ```powershell
 cargo install alcove --features full-cross
-```
-
-### Antigravity (Gemini CLI)
-
-```bash
-agy plugin install https://github.com/epicsagas/alcove
-```
-
-प्लगइन (MCP सर्वर, स्किल, हुक) स्वचालित रूप से इंस्टॉल करता है और अगले सेशन शुरू होने पर पंजीकृत करता है।
-
-```bash
-alcove setup   # run once after plugin install
-```
-
-### Grok Build (xAI)
-
-```bash
-grok plugin marketplace add epicsagas/plugins
-grok plugin install alcove@epicsagas --trust
-```
-
-अगली सेशन शुरू होने पर बाइनरी अपने आप इंस्टॉल होता है और API सर्वर शुरू होता है।
-
-```bash
-alcove setup   # run once after plugin install
 ```
 
 ### Rust टूलचेन

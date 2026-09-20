@@ -145,6 +145,31 @@ codex plugin marketplace add epicsagas/plugins
 
 `codex plugin update alcove@epicsagas`로 업데이트합니다.
 
+### Antigravity (Gemini CLI)
+
+```bash
+agy plugin install https://github.com/epicsagas/alcove
+```
+
+플러그인(API 서버, 스킬, 훅)을 자동으로 설치하고 다음 세션 시작 시 시작합니다.
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+### Grok Build (xAI)
+
+```bash
+grok plugin marketplace add epicsagas/plugins
+grok plugin install alcove@epicsagas --trust
+```
+
+다음 세션 시작 시 바이너리를 자동 설치하고 API 서버를 구동합니다.
+
+```bash
+alcove setup   # run once after plugin install
+```
+
 ### macOS (Apple Silicon 전용)
 
 ```bash
@@ -171,31 +196,6 @@ Pre-built Windows binaries are not currently published. Build from source:
 
 ```powershell
 cargo install alcove --features full-cross
-```
-
-### Antigravity (Gemini CLI)
-
-```bash
-agy plugin install https://github.com/epicsagas/alcove
-```
-
-플러그인(API 서버, 스킬, 훅)을 자동으로 설치하고 다음 세션 시작 시 시작합니다.
-
-```bash
-alcove setup   # run once after plugin install
-```
-
-### Grok Build (xAI)
-
-```bash
-grok plugin marketplace add epicsagas/plugins
-grok plugin install alcove@epicsagas --trust
-```
-
-다음 세션 시작 시 바이너리를 자동 설치하고 API 서버를 구동합니다.
-
-```bash
-alcove setup   # run once after plugin install
 ```
 
 ### Rust 툴체인으로 설치

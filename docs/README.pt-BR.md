@@ -147,6 +147,31 @@ Instala automaticamente a skill e inicia o servidor API. As skills estão dispon
 
 Atualizações com `codex plugin update alcove@epicsagas`.
 
+### Antigravity (Gemini CLI)
+
+```bash
+agy plugin install https://github.com/epicsagas/alcove
+```
+
+Instala automaticamente o plugin (servidor API, skill, hooks) e o inicia no próximo início de sessão.
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+### Grok Build (xAI)
+
+```bash
+grok plugin marketplace add epicsagas/plugins
+grok plugin install alcove@epicsagas --trust
+```
+
+Instala o binário automaticamente e inicia o servidor de API na próxima sessão.
+
+```bash
+alcove setup   # run once after plugin install
+```
+
 ### macOS (somente Apple Silicon)
 
 ```bash
@@ -173,31 +198,6 @@ Pre-built Windows binaries are not currently published. Build from source:
 
 ```powershell
 cargo install alcove --features full-cross
-```
-
-### Antigravity (Gemini CLI)
-
-```bash
-agy plugin install https://github.com/epicsagas/alcove
-```
-
-Instala automaticamente o plugin (servidor API, skill, hooks) e o inicia no próximo início de sessão.
-
-```bash
-alcove setup   # run once after plugin install
-```
-
-### Grok Build (xAI)
-
-```bash
-grok plugin marketplace add epicsagas/plugins
-grok plugin install alcove@epicsagas --trust
-```
-
-Instala o binário automaticamente e inicia o servidor de API na próxima sessão.
-
-```bash
-alcove setup   # run once after plugin install
 ```
 
 ### Via cadeia de ferramentas Rust

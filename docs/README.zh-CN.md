@@ -149,6 +149,31 @@ codex plugin marketplace add epicsagas/plugins
 
 使用 `codex plugin update alcove@epicsagas` 进行更新。
 
+### Antigravity (Gemini CLI)
+
+```bash
+agy plugin install https://github.com/epicsagas/alcove
+```
+
+自动安装插件（API 服务器、技能、钩子）并在下次会话启动时启动。
+
+```bash
+alcove setup   # run once after plugin install
+```
+
+### Grok Build (xAI)
+
+```bash
+grok plugin marketplace add epicsagas/plugins
+grok plugin install alcove@epicsagas --trust
+```
+
+下次会话启动时自动安装二进制文件并启动 API 服务器。
+
+```bash
+alcove setup   # run once after plugin install
+```
+
 ### macOS（仅限 Apple Silicon）
 
 ```bash
@@ -175,31 +200,6 @@ Pre-built Windows binaries are not currently published. Build from source:
 
 ```powershell
 cargo install alcove --features full-cross
-```
-
-### Antigravity (Gemini CLI)
-
-```bash
-agy plugin install https://github.com/epicsagas/alcove
-```
-
-自动安装插件（API 服务器、技能、钩子）并在下次会话启动时启动。
-
-```bash
-alcove setup   # run once after plugin install
-```
-
-### Grok Build (xAI)
-
-```bash
-grok plugin marketplace add epicsagas/plugins
-grok plugin install alcove@epicsagas --trust
-```
-
-下次会话启动时自动安装二进制文件并启动 API 服务器。
-
-```bash
-alcove setup   # run once after plugin install
 ```
 
 ### 通过 Rust 工具链
