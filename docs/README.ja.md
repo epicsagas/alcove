@@ -139,11 +139,12 @@ alcove setup   # プラグインインストール後に一度実行
 
 ```bash
 codex plugin marketplace add epicsagas/plugins
+codex plugin add alcove@epicsagas
 ```
 
-スキルを自動インストールし、APIサーバーを開始します。すぐに利用可能です — 追加手順は不要です。
+スキルを自動インストールし、APIサーバーを開始します（プラグインは自動で有効化されます）。すぐに利用可能です — 追加手順は不要です。
 
-`codex plugin update alcove@epicsagas` でアップデートします。
+`codex plugin marketplace upgrade && codex plugin add alcove@epicsagas` でアップデートします。
 
 ### Antigravity (Gemini CLI)
 

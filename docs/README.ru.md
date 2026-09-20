@@ -139,13 +139,14 @@ alcove setup   # запустить один раз после установк�
 
 ```bash
 codex plugin marketplace add epicsagas/plugins
+codex plugin add alcove@epicsagas
 ```
 
-Автоматически устанавливает навык и регистрирует MCP-сервер.
+Автоматически устанавливает навык и регистрирует MCP-сервер (плагин включается автоматически).
 
 Доступно сразу — дополнительные шаги не требуются.
 
-Обновления через `codex plugin update alcove@epicsagas`.
+Обновления через `codex plugin marketplace upgrade && codex plugin add alcove@epicsagas`.
 
 ### Antigravity (Gemini CLI)
 

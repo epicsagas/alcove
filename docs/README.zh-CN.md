@@ -141,13 +141,14 @@ alcove setup   # 插件安装后运行一次
 
 ```bash
 codex plugin marketplace add epicsagas/plugins
+codex plugin add alcove@epicsagas
 ```
 
-自动安装技能并启动 API 服务器。
+自动安装技能并启动 API 服务器（插件自动启用）。
 
 立即可用 — 无需额外步骤。
 
-使用 `codex plugin update alcove@epicsagas` 进行更新。
+使用 `codex plugin marketplace upgrade && codex plugin add alcove@epicsagas` 进行更新。
 
 ### Antigravity (Gemini CLI)
 

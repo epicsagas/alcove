@@ -137,9 +137,10 @@ alcove setup   # प्लगइन इंस्टॉल के बाद ए�
 
 ```bash
 codex plugin marketplace add epicsagas/plugins
+codex plugin add alcove@epicsagas
 ```
 
-स्किल ऑटो-इंस्टॉल होती है और MCP सर्वर रजिस्टर हो जाता है। तुरंत उपलब्ध — कोई और कदम आवश्यक नहीं। `codex plugin update alcove@epicsagas` से अपडेट करें।
+स्किल ऑटो-इंस्टॉल होती है और MCP सर्वर रजिस्टर हो जाता है (प्लगइन स्वतः सक्रिय हो जाता है)। तुरंत उपलब्ध — कोई और कदम आवश्यक नहीं। `codex plugin marketplace upgrade && codex plugin add alcove@epicsagas` से अपडेट करें।
 
 ### Antigravity (Gemini CLI)
 

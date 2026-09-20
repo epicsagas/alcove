@@ -139,13 +139,14 @@ Mises à jour avec `claude plugin update epicsagas/alcove`.
 
 ```bash
 codex plugin marketplace add epicsagas/plugins
+codex plugin add alcove@epicsagas
 ```
 
-Installe automatiquement la compétence et démarre le serveur API.
+Installe automatiquement la compétence et démarre le serveur API (le plugin est activé automatiquement).
 
 Disponible immédiatement — aucune étape supplémentaire nécessaire.
 
-Mises à jour avec `codex plugin update alcove@epicsagas`.
+Mises à jour avec `codex plugin marketplace upgrade && codex plugin add alcove@epicsagas`.
 
 ### Antigravity (Gemini CLI)
 
