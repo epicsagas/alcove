@@ -171,8 +171,9 @@ impl FileReader for DocxPptxReader {
             // PPTX: iterate through slides
             let mut slide_names: Vec<String> = archive
                 .file_names()
+                .filter_map(|n| n.ok())
                 .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
-                .map(|n| n.to_string())
+                .map(|n| n.into_owned())
                 .collect();
             slide_names.sort_by_key(|n| {
                 n.trim_start_matches("ppt/slides/slide")
