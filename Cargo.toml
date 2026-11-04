@@ -62,7 +62,7 @@ hnsw_rs = { version = "0.3", optional = true }
 pdf-extract = { version = "0.12", optional = true }  # Unix-only
 zip = { version = "9.0", optional = true }
 quick-xml = { version = "0.41", optional = true }
-calamine = { version = "0.37", optional = true }
+calamine = { version = "0.38", optional = true }
 
 # Lightweight sync HTTP client for MCP proxy mode
 # rustls avoids the native-tls/openssl dependency for cross-compilation compatibility
