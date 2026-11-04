@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- index: concurrent `alcove index` runs on large vaults. The index lock expired after 10 minutes even while its holder was alive, so a second run (scheduled job, manual run, or MCP auto-update) took over the lock mid-embedding and both processes embedded the same files against the same `vectors.db`, competing for every CPU core. A lock with a readable PID is now stale only when that process is gone; the age limit applies only to a lock without a readable PID. `release_lock` removes the lock only when this process owns it, and a PID owned by another user (`EPERM`) now counts as alive
+- embedding: `ensure_model` re-locked the model state in a hot loop for the whole model load instead of waiting on its condvar, burning a full core until the ONNX session was ready
+
 ## [0.14.0] — 2026-09-21
 
 ### Added

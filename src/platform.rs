@@ -33,8 +33,10 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> s
 pub fn is_pid_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
-        // kill(pid, 0) returns Ok(0) if the process exists
-        unsafe { libc::kill(pid as i32, 0) == 0 }
+        // kill(pid, 0) succeeds if the process exists; EPERM means it exists
+        // but belongs to another user.
+        let rc = unsafe { libc::kill(pid as i32, 0) };
+        rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
     }
     #[cfg(windows)]
     {

@@ -16,8 +16,11 @@ pub(crate) fn meta_path(docs_root: &Path) -> PathBuf {
 // Index lock — prevents concurrent build/search races per docs_root
 // ---------------------------------------------------------------------------
 
-/// Maximum age (in seconds) for a lock file before it is considered stale.
-/// If the lock holder crashes, the lock will be auto-cleared after this duration.
+/// Maximum age (in seconds) for a lock file whose holder PID cannot be read.
+/// A lock with a readable PID is stale only when that process is gone: a full
+/// embedding run on a large vault takes hours, and expiring a live holder's
+/// lock by age let a second `alcove index` run concurrently against the same
+/// vector store.
 const LOCK_STALE_SECS: u64 = 600; // 10 minutes
 
 pub(crate) fn lock_file(docs_root: &Path) -> PathBuf {
@@ -46,8 +49,21 @@ pub(crate) fn try_acquire_lock(docs_root: &Path) -> bool {
     }
 }
 
+/// Remove the lock only if this process holds it, so a finishing run never
+/// deletes a lock that another process acquired after treating ours as stale.
 pub(crate) fn release_lock(docs_root: &Path) {
-    let _ = std::fs::remove_file(lock_file(docs_root));
+    let path = lock_file(docs_root);
+    if lock_pid(&path) == Some(std::process::id()) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+fn lock_pid(lock_path: &Path) -> Option<u32> {
+    std::fs::read_to_string(lock_path)
+        .ok()?
+        .trim()
+        .parse::<u32>()
+        .ok()
 }
 
 pub(crate) fn is_locked(docs_root: &Path) -> bool {
@@ -63,27 +79,15 @@ pub(crate) fn is_locked(docs_root: &Path) -> bool {
     true
 }
 
-/// A lock is stale if it is older than `LOCK_STALE_SECS` or its PID is no longer running.
+/// A lock is stale if its PID is no longer running. Only a lock without a
+/// readable PID falls back to the `LOCK_STALE_SECS` age limit.
 fn is_lock_stale(lock_path: &Path) -> bool {
-    let Ok(meta) = std::fs::metadata(lock_path) else {
-        return false;
-    };
-
-    // Check age
-    if let Ok(modified) = meta.modified()
-        && let Ok(elapsed) = modified.elapsed()
-        && elapsed.as_secs() > LOCK_STALE_SECS
-    {
-        return true;
+    if let Some(pid) = lock_pid(lock_path) {
+        return !crate::platform::is_pid_alive(pid);
     }
-
-    // Check if PID is still alive
-    if let Ok(content) = std::fs::read_to_string(lock_path)
-        && let Ok(pid) = content.trim().parse::<u32>()
-        && !crate::platform::is_pid_alive(pid)
-    {
-        return true; // Process doesn't exist
-    }
-
-    false
+    std::fs::metadata(lock_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age.as_secs() > LOCK_STALE_SECS)
 }

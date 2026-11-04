@@ -490,6 +490,35 @@ mod tests {
     }
 
     #[test]
+    fn old_lock_held_by_live_pid_is_not_stale() {
+        let tmp = TempDir::new().unwrap();
+        assert!(try_acquire_lock(tmp.path()));
+        // Age the lock past LOCK_STALE_SECS; the holder (this process) is alive.
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options()
+            .write(true)
+            .open(lock_file(tmp.path()))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        assert!(is_locked(tmp.path()));
+        assert!(!try_acquire_lock(tmp.path()));
+        release_lock(tmp.path());
+        assert!(!is_locked(tmp.path()));
+    }
+
+    #[test]
+    fn release_lock_keeps_lock_owned_by_other_pid() {
+        let tmp = TempDir::new().unwrap();
+        let path = lock_file(tmp.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // PID 1 (launchd/init) is always alive and never this test process.
+        std::fs::write(&path, "1").unwrap();
+        release_lock(tmp.path());
+        assert!(path.exists());
+    }
+
+    #[test]
     fn index_exists_false_when_no_index() {
         let tmp = TempDir::new().unwrap();
         assert!(!index_exists(tmp.path()));

@@ -280,12 +280,14 @@ impl EmbeddingService {
             match state.clone() {
                 ModelState::Ready => return Ok(()),
                 ModelState::Failed(e) => return Err(e),
-                ModelState::NotLoaded | ModelState::Cached | ModelState::Loading => {
+                ModelState::NotLoaded | ModelState::Cached => {
                     drop(state);
                     self.start_download();
                     state = self.state.lock().unwrap_or_else(|e| e.into_inner());
                     continue;
                 }
+                // Loading (or Disabled): block on the condvar instead of
+                // re-locking in a hot loop for the whole model load.
                 _ => {
                     let timeout = deadline.saturating_duration_since(Instant::now());
                     if timeout.is_zero() {
