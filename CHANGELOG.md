@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.7] — 2026-11-05
+
 ### Fixed
 
 - Windows: index locks were never released after a crashed run, because the process liveness check always reported the holder as alive. It now asks Windows whether the holding process is still running (`OpenProcess` + `GetExitCodeProcess`), so a dead holder's lock is cleared while a long-running holder keeps it.
