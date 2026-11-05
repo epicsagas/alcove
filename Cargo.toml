@@ -134,6 +134,10 @@ full-cross = ["core", "embed", "turboquant", "office", "alcove-server", "lang-al
 # Backward compat: full = full-macos on existing macOS ARM builds
 full = ["full-cross"]
 
+# Process liveness check for index locks (already in the dependency tree).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
 [dev-dependencies]
 tempfile = "3.26.0"
 serial_test = "3"

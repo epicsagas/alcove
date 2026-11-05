@@ -29,7 +29,6 @@ pub fn create_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> s
 /// Check if a process with the given PID is still running.
 ///
 /// Returns `true` if the process exists, `false` if not.
-/// On Windows, always returns `true` (conservative: don't break locks).
 pub fn is_pid_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
@@ -40,10 +39,25 @@ pub fn is_pid_alive(pid: u32) -> bool {
     }
     #[cfg(windows)]
     {
-        // On Windows, OpenProcess to check liveness.
-        // Conservative fallback: treat as alive to avoid stale lock corruption.
-        let _ = pid;
-        true
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, ERROR_ACCESS_DENIED, GetLastError, STILL_ACTIVE,
+        };
+        use windows_sys::Win32::System::Threading::{
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        // SAFETY: plain Win32 calls; the handle is closed before returning.
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                // Access denied means the process exists but belongs to
+                // another user; any other failure means it is gone.
+                return GetLastError() == ERROR_ACCESS_DENIED;
+            }
+            let mut code = 0u32;
+            let ok = GetExitCodeProcess(handle, &mut code) != 0;
+            CloseHandle(handle);
+            ok && code == STILL_ACTIVE as u32
+        }
     }
 }
 
