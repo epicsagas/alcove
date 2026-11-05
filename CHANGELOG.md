@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Index: edited docs were never re-embedded (a file with any vectors was skipped), and deleted or moved docs stayed in both the BM25 and vector indexes. Vectors are now tracked per file fingerprint (`vector_files` in the index metadata): changed files are re-embedded, trailing chunks of shrunk files and vectors of removed files are pruned, and deleted docs leave the BM25 index. Unchanged passages still come from the embedding cache. The same applies to vaults.
+- Index: BM25-only builds (API server startup, MCP direct mode, setup) marked files as indexed, so their vectors were never built later. Pending vectors now count as stale, and the background refresh fills them in once the embedding model is on disk.
+
+### Changed
+
+- API server startup builds a missing index in full in the background (BM25 first, then vectors) instead of BM25 only, and refreshes an existing one.
+- Vault searches refresh the vault index in the background like docs-root searches; vault builds take the index lock; `alcove vault add` reindexes the vault right away.
+- `alcove setup` builds the BM25 index at the end when none exists.
+- After upgrading, the first refresh re-checks every file's vectors once (served from the embedding cache where possible).
+
 ## [0.14.4] — 2026-11-05
 
 ### Added

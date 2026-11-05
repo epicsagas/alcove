@@ -1129,6 +1129,27 @@ fn step_summary(state: &mut SetupState) -> Result<StepResult> {
         }
     }
 
+    // First search index: BM25 now (seconds), so search works right away.
+    // Vectors are filled in by the background refresh of the API server or
+    // MCP searches, or by `alcove index`, instead of blocking setup on
+    // embedding the whole corpus.
+    if docs_root.is_dir() && !crate::index::index_exists(&docs_root) {
+        println!();
+        println!("  {}", style("Search Index").cyan());
+        match crate::index::build_index_bm25_only(&docs_root) {
+            Ok(result) => println!(
+                "  {} Indexed {} files (embeddings fill in on first search or `alcove index`)",
+                style("✓").green(),
+                result["indexed"].as_u64().unwrap_or(0)
+            ),
+            Err(e) => println!(
+                "  {} Index build failed: {}. Run `alcove index` later.",
+                style("⚠").yellow(),
+                e
+            ),
+        }
+    }
+
     // Enable background service if requested
     #[cfg(all(feature = "alcove-server", target_os = "macos"))]
     if state.enable_server {

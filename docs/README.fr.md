@@ -543,7 +543,7 @@ alcove search "OAuth token refresh" --scope global
 alcove search "FR-023" --mode grep
 ```
 
-Si aucun index n'existe, le serveur API en construit un en arrière-plan au démarrage. Ensuite, les recherches le maintiennent à jour : quand des documents changent, le prochain appel MCP `search_project_docs` ou REST `/search` lance une réindexation incrémentale (fichiers modifiés uniquement) dans un thread en arrière-plan et continue de répondre avec l'index actuel jusqu'à la fin. Pas besoin de cron jobs.
+Si aucun index n'existe, le serveur API en construit un en arrière-plan au démarrage. Ensuite, les recherches le maintiennent à jour : quand des documents changent, le prochain appel MCP `search_project_docs` ou REST `/search` lance une réindexation incrémentale (fichiers modifiés uniquement) dans un thread en arrière-plan et continue de répondre avec l'index actuel jusqu'à la fin. Pas besoin de cron jobs. Les recherches dans les vaults mettent chaque vault à jour de la même façon, et `alcove vault add` réindexe le vault immédiatement. Les documents modifiés sont ré-encodés (les passages inchangés viennent du cache d'embeddings) et les documents supprimés disparaissent des index BM25 et vectoriel.
 
 Pour désactiver ce comportement ou changer la fréquence de vérification, configurez-le dans `config.toml` puis redémarrez le serveur :
 

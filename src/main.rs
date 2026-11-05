@@ -421,6 +421,18 @@ fn main() -> Result<()> {
                     dest.file_name().unwrap_or_default().to_string_lossy(),
                     vault
                 );
+                // Reindex right away so the new doc is searchable; vaults are
+                // small and embeddings come from the cache when unchanged.
+                match index::build_vault_index(&vault::vaults_root().join(&vault)) {
+                    Ok(result) => println!(
+                        "  \u{2713} Reindexed vault '{}' ({} files)",
+                        vault,
+                        result["files"].as_u64().unwrap_or(0)
+                    ),
+                    Err(e) => eprintln!(
+                        "  ! Vault index update failed: {e}. Run `alcove vault index {vault}`."
+                    ),
+                }
                 Ok(())
             }
             VaultCommands::Index { name } => {

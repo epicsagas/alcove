@@ -103,6 +103,17 @@ pub fn resolve_model(name: &str) -> EmbeddingModel {
     parse_legacy_model(name).unwrap_or(DEFAULT_MODEL)
 }
 
+/// True when embeddings are enabled and the configured model's weights are
+/// already on disk, i.e. an index run can embed without a download.
+#[cfg(feature = "embed")]
+pub fn is_model_available(config: &crate::config::EmbeddingConfig) -> bool {
+    config.enabled
+        && llm_kernel::embedding::is_model_cached(
+            resolve_model(&config.model),
+            std::path::Path::new(&config.cache_dir),
+        )
+}
+
 /// Build the HuggingFace Hub cache folder name for a model.
 ///
 /// Uses `model_code()` (the actual download repo) rather than the canonical

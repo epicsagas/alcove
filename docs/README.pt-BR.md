@@ -582,7 +582,7 @@ alcove search "OAuth token refresh" --scope global
 alcove search "FR-023" --mode grep
 ```
 
-Se não existir índice, o servidor API o constrói em segundo plano ao iniciar. Depois disso, as buscas o mantêm atualizado: quando os documentos mudam, a próxima chamada MCP `search_project_docs` ou REST `/search` inicia uma reindexação incremental (apenas arquivos alterados) em uma thread em segundo plano e continua respondendo com o índice atual até terminar. Não é preciso cron jobs.
+Se não existir índice, o servidor API o constrói em segundo plano ao iniciar. Depois disso, as buscas o mantêm atualizado: quando os documentos mudam, a próxima chamada MCP `search_project_docs` ou REST `/search` inicia uma reindexação incremental (apenas arquivos alterados) em uma thread em segundo plano e continua respondendo com o índice atual até terminar. Não é preciso cron jobs. Buscas em vaults atualizam cada vault do mesmo jeito, e `alcove vault add` reindexa o vault na hora. Documentos editados têm os vetores refeitos (trechos sem mudança vêm do cache de embeddings) e documentos apagados saem dos índices BM25 e vetorial.
 
 Para desativar ou mudar a frequência de verificação, configure em `config.toml` e reinicie o servidor:
 

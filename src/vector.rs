@@ -248,6 +248,49 @@ impl VectorStore {
         Ok(count)
     }
 
+    /// Distinct `(project, file)` pairs that currently have vectors.
+    #[cfg_attr(not(feature = "embed"), allow(dead_code))]
+    pub fn files(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT project, file FROM vectors")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Remove vectors in one transaction: every chunk of `files`, and for each
+    /// `(project, file, n)` in `tails` the chunks with `chunk_id >= n` (left
+    /// over when a re-embedded file shrank).
+    #[cfg_attr(not(feature = "embed"), allow(dead_code))]
+    pub fn prune(
+        &self,
+        files: &[(String, String)],
+        tails: &[(String, String, u64)],
+    ) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut count = 0;
+        for (project, file) in files {
+            count += tx.execute(
+                "DELETE FROM vectors WHERE project = ?1 AND file = ?2",
+                params![project, file],
+            )?;
+        }
+        for (project, file, n) in tails {
+            count += tx.execute(
+                "DELETE FROM vectors WHERE project = ?1 AND file = ?2 AND chunk_id >= ?3",
+                params![project, file, *n as i64],
+            )?;
+        }
+        tx.commit()?;
+        if count > 0 {
+            self.hnsw_cache.borrow_mut().clear();
+        }
+        Ok(count)
+    }
+
     #[allow(dead_code)]
     pub fn delete_project(&self, project: &str) -> Result<usize> {
         let count = self
@@ -886,6 +929,68 @@ impl VectorStore {
         Ok(count)
     }
 
+    /// Distinct `(project, file)` pairs that currently have vectors.
+    #[cfg_attr(not(feature = "embed"), allow(dead_code))]
+    pub fn files(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT project, file FROM vectors")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Remove vectors in one transaction: every chunk of `files`, and for each
+    /// `(project, file, n)` in `tails` the chunks with `chunk_id >= n` (left
+    /// over when a re-embedded file shrank).
+    #[cfg_attr(not(feature = "embed"), allow(dead_code))]
+    pub fn prune(
+        &self,
+        files: &[(String, String)],
+        tails: &[(String, String, u64)],
+    ) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut ids: Vec<u64> = Vec::new();
+        let mut count = 0;
+        {
+            let mut select_file =
+                tx.prepare("SELECT id FROM vectors WHERE project = ?1 AND file = ?2")?;
+            let mut select_tail = tx.prepare(
+                "SELECT id FROM vectors WHERE project = ?1 AND file = ?2 AND chunk_id >= ?3",
+            )?;
+            for (project, file) in files {
+                ids.extend(
+                    select_file
+                        .query_map(params![project, file], |row| row.get::<_, i64>(0))?
+                        .filter_map(|r| r.ok())
+                        .map(|id| id as u64),
+                );
+                count += tx.execute(
+                    "DELETE FROM vectors WHERE project = ?1 AND file = ?2",
+                    params![project, file],
+                )?;
+            }
+            for (project, file, n) in tails {
+                let n = *n as i64;
+                ids.extend(
+                    select_tail
+                        .query_map(params![project, file, n], |row| row.get::<_, i64>(0))?
+                        .filter_map(|r| r.ok())
+                        .map(|id| id as u64),
+                );
+                count += tx.execute(
+                    "DELETE FROM vectors WHERE project = ?1 AND file = ?2 AND chunk_id >= ?3",
+                    params![project, file, n],
+                )?;
+            }
+        }
+        tx.commit()?;
+        self.remove_from_index(&ids);
+        Ok(count)
+    }
+
     #[allow(dead_code)]
     pub fn delete_project(&self, project: &str) -> Result<usize> {
         let ids: Vec<u64> = {
@@ -1162,6 +1267,45 @@ mod tests {
         let a = vec![1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         let b = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         assert!((cosine_similarity(&a, &b) - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.01);
+    }
+
+    /// `prune` drops whole files and the trailing chunks of shrunk files.
+    #[test]
+    fn test_prune_files_and_tails() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = VectorStore::open(&dir.path().join("vec.db"), "prune-model", 8).unwrap();
+        let v = |i: usize| {
+            let mut e = vec![0.0f32; 8];
+            e[i % 8] = 1.0;
+            e
+        };
+        let rows: Vec<(String, String, u64, Vec<f32>)> = vec![
+            ("p".into(), "gone.md".into(), 0, v(0)),
+            ("p".into(), "shrunk.md".into(), 0, v(1)),
+            ("p".into(), "shrunk.md".into(), 1, v(2)),
+            ("p".into(), "shrunk.md".into(), 2, v(3)),
+            ("p".into(), "kept.md".into(), 0, v(4)),
+        ];
+        store.batch_upsert(rows.into_iter()).unwrap();
+
+        let removed = store
+            .prune(
+                &[("p".into(), "gone.md".into())],
+                &[("p".into(), "shrunk.md".into(), 1)],
+            )
+            .unwrap();
+        assert_eq!(removed, 3);
+
+        let mut files = store.files().unwrap();
+        files.sort();
+        assert_eq!(
+            files,
+            vec![
+                ("p".to_string(), "kept.md".to_string()),
+                ("p".to_string(), "shrunk.md".to_string()),
+            ]
+        );
+        assert_eq!(store.meta().unwrap().count, 2);
     }
 
     /// Reopening with a different model clears all vectors atomically.

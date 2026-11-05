@@ -589,7 +589,7 @@ alcove search "authentication flow"
 alcove search "FR-023" --mode grep
 ```
 
-如果索引不存在，API 服务器会在启动时于后台构建。之后由搜索保持索引最新：文档变化后，下一次 MCP `search_project_docs` 或 REST `/search` 调用会在后台线程中仅对变化的文件做增量重建索引，完成前继续使用现有索引响应。无需 cron 任务。
+如果索引不存在，API 服务器会在启动时于后台构建。之后由搜索保持索引最新：文档变化后，下一次 MCP `search_project_docs` 或 REST `/search` 调用会在后台线程中仅对变化的文件做增量重建索引，完成前继续使用现有索引响应。无需 cron 任务。vault 搜索也以同样方式刷新各个 vault，`alcove vault add` 会在添加后立即重建该 vault 的索引。修改过的文档会重新生成向量（未变化的段落使用嵌入缓存），删除的文档会同时从 BM25 和向量索引中移除。
 
 要关闭此行为或修改检查频率，请在 `config.toml` 中设置并重启服务器：
 

@@ -40,7 +40,9 @@ pub(crate) use builder::build_index_inner;
 #[allow(unused_imports)]
 pub(crate) use builder::build_index_unlocked;
 #[cfg(test)]
-use builder::spawn_refresh_if_due;
+use builder::{
+    is_vault_index_stale, refresh_docs_root, refresh_vault, spawn_refresh_if_due, split_root_key,
+};
 #[cfg(test)]
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -296,9 +298,9 @@ mod tests {
         fs::write(tmp.path().join("backend/NEW.md"), "# New\n\nFresh content.").unwrap();
         assert!(is_index_stale(tmp.path()));
 
-        let last = std::sync::Mutex::new(None);
+        let clock = builder::RefreshClock::default();
         let interval = std::time::Duration::from_secs(3600);
-        spawn_refresh_if_due(tmp.path(), &last, interval)
+        spawn_refresh_if_due(tmp.path(), &clock, interval, refresh_docs_root)
             .expect("first call is due")
             .join()
             .unwrap();
@@ -308,9 +310,61 @@ mod tests {
         );
 
         assert!(
-            spawn_refresh_if_due(tmp.path(), &last, interval).is_none(),
+            spawn_refresh_if_due(tmp.path(), &clock, interval, refresh_docs_root).is_none(),
             "second call within the interval is throttled"
         );
+        let other = TempDir::new().unwrap();
+        assert!(
+            spawn_refresh_if_due(other.path(), &clock, interval, |_| {}).is_some(),
+            "throttle is per root"
+        );
+    }
+
+    #[test]
+    fn deleted_doc_leaves_bm25_index() {
+        let tmp = setup_indexed_root();
+        build_index_inner(tmp.path(), true).unwrap();
+        let hits = |q: &str| {
+            search_indexed(tmp.path(), q, 10, None).unwrap()["matches"]
+                .as_array()
+                .map_or(0, Vec::len)
+        };
+        assert!(hits("Istio") > 0);
+
+        fs::remove_file(tmp.path().join("backend/ARCHITECTURE.md")).unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
+        assert_eq!(hits("Istio"), 0, "deleted doc must not be searchable");
+        assert!(!is_index_stale(tmp.path()));
+    }
+
+    #[test]
+    fn bm25_only_build_leaves_vectors_pending() {
+        let tmp = setup_indexed_root();
+        build_index_inner(tmp.path(), true).unwrap();
+        let meta = IndexMeta::load(tmp.path());
+        assert!(!meta.files.is_empty());
+        assert!(
+            meta.vector_files.is_empty(),
+            "a BM25-only run must not mark files as embedded"
+        );
+    }
+
+    #[test]
+    fn split_root_key_separates_project() {
+        let key = std::path::Path::new("backend")
+            .join("specs")
+            .join("API.md")
+            .to_string_lossy()
+            .to_string();
+        let (proj, rel) = split_root_key(&key).unwrap();
+        assert_eq!(proj, "backend");
+        assert_eq!(
+            rel,
+            std::path::Path::new("specs")
+                .join("API.md")
+                .to_string_lossy()
+        );
+        assert!(split_root_key("backend").is_none());
     }
 
     #[test]
@@ -898,6 +952,45 @@ mod tests {
     }
 
     #[test]
+    fn vault_staleness_tracks_added_and_removed_notes() {
+        let tmp = TempDir::new().unwrap();
+        let vault = setup_vault_dir(&tmp);
+        assert!(is_vault_index_stale(&vault), "no index yet");
+
+        build_vault_index(&vault).unwrap();
+        assert!(!is_vault_index_stale(&vault));
+
+        fs::write(vault.join("note3.md"), "# Note Three\n\nNew note.").unwrap();
+        assert!(is_vault_index_stale(&vault), "added note");
+
+        build_vault_index(&vault).unwrap();
+        fs::remove_file(vault.join("note1.md")).unwrap();
+        assert!(is_vault_index_stale(&vault), "removed note");
+    }
+
+    #[test]
+    fn vault_refresh_builds_and_releases_lock() {
+        let tmp = TempDir::new().unwrap();
+        let vault = setup_vault_dir(&tmp);
+        let clock = builder::RefreshClock::default();
+        let interval = std::time::Duration::from_secs(3600);
+        spawn_refresh_if_due(&vault, &clock, interval, refresh_vault)
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(!is_vault_index_stale(&vault));
+        assert!(!is_locked(&vault), "refresh must release the vault lock");
+
+        // A missing vault dir is left alone instead of being created.
+        let missing = tmp.path().join("no-such-vault");
+        spawn_refresh_if_due(&missing, &clock, interval, refresh_vault)
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(!missing.exists());
+    }
+
+    #[test]
     fn test_search_vault() {
         let tmp = TempDir::new().unwrap();
         let vault = setup_vault_dir(&tmp);
@@ -1231,6 +1324,7 @@ mod tests {
             files: HashMap::new(),
             schema_version: 1,
             chunk_strategy_version: 0,
+            ..Default::default()
         };
         assert!(
             old_meta.schema_version < SCHEMA_VERSION,
@@ -1246,6 +1340,7 @@ mod tests {
             files: HashMap::new(),
             schema_version: SCHEMA_VERSION,
             chunk_strategy_version: CHUNK_STRATEGY_VERSION,
+            ..Default::default()
         };
         assert!(
             current_meta.schema_version >= SCHEMA_VERSION,

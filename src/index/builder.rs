@@ -56,6 +56,11 @@ pub(crate) struct IndexMeta {
     pub(crate) schema_version: u32,
     #[serde(default)]
     pub(crate) chunk_strategy_version: u32,
+    /// Fingerprints of files whose vectors were last brought fully in sync.
+    /// Tracked apart from `files` so BM25-only runs never hide pending
+    /// embeddings, and edited or deleted docs get their vectors replaced.
+    #[serde(default)]
+    pub(crate) vector_files: HashMap<String, [u64; 2]>,
 }
 
 impl IndexMeta {
@@ -96,6 +101,15 @@ pub(crate) fn file_fingerprint(path: &Path) -> [u64; 2] {
         }
         Err(_) => [0, 0],
     }
+}
+
+/// Split a docs-root-relative meta key (`<project>/<path>`) into the
+/// `(project, path-within-project)` pair stored in the index.
+pub(crate) fn split_root_key(key: &str) -> Option<(String, String)> {
+    let mut parts = Path::new(key).components();
+    let project = parts.next()?.as_os_str().to_string_lossy().to_string();
+    let rest = parts.as_path().to_string_lossy().to_string();
+    (!rest.is_empty()).then_some((project, rest))
 }
 
 /// Check if a search index exists for the given docs_root.
@@ -186,6 +200,30 @@ pub fn check_doc_changes(docs_root: &Path) -> JsonValue {
     })
 }
 
+/// True when vectors lag behind the BM25 file set and an index run could
+/// close the gap now (embeddings enabled, model already on disk). Requiring a
+/// local model keeps background refresh from retrying every check while a
+/// download is impossible.
+fn vectors_pending(meta: &IndexMeta, vault_path: Option<&Path>) -> bool {
+    #[cfg(all(feature = "embed", not(test)))]
+    {
+        if meta.vector_files == meta.files {
+            return false;
+        }
+        let cfg = match vault_path {
+            Some(v) => crate::config::vault_embedding_config(v),
+            None => crate::config::load_config().embedding_config_with_defaults(),
+        };
+        crate::embedding::is_model_available(&cfg)
+    }
+    // Tests never read the user's config or model cache.
+    #[cfg(any(not(feature = "embed"), test))]
+    {
+        let _ = (meta, vault_path);
+        false
+    }
+}
+
 /// Check if the index is stale (any doc file newer than the index meta, or deleted).
 pub fn is_index_stale(docs_root: &Path) -> bool {
     let meta_file = meta_path(docs_root);
@@ -194,6 +232,9 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
     }
     let meta = IndexMeta::load(docs_root);
     if meta.files.is_empty() {
+        return true;
+    }
+    if vectors_pending(&meta, None) {
         return true;
     }
 
@@ -284,49 +325,72 @@ pub fn ensure_index_fresh(docs_root: &Path) -> bool {
     true
 }
 
-/// Incrementally refresh an existing index in the background when docs changed.
+/// Last staleness check per index root, shared by docs-root and vault refreshes.
+pub(crate) type RefreshClock = std::sync::Mutex<HashMap<PathBuf, std::time::Instant>>;
+static REFRESH_CLOCK: std::sync::LazyLock<RefreshClock> =
+    std::sync::LazyLock::new(Default::default);
+
+/// `[index] refresh_check_secs` as a duration, or `None` when
+/// `[index] auto_refresh = false`.
+fn refresh_interval() -> Option<Duration> {
+    #[cfg(not(test))]
+    let cfg = load_config().index_config_with_defaults();
+    // Tests never read the user's real config.
+    #[cfg(test)]
+    let cfg = crate::config::IndexConfig::default();
+    cfg.auto_refresh
+        .then(|| Duration::from_secs(cfg.refresh_check_secs))
+}
+
+/// Incrementally refresh a docs-root index in the background when docs changed
+/// or vectors lag behind.
 ///
 /// Searches call this and keep serving the current index; the staleness walk
 /// and any rebuild run on a separate thread so the request never blocks on
 /// embedding. Controlled by `[index] auto_refresh` and `refresh_check_secs`;
 /// `build_index`'s lock keeps a refresh from overlapping another run.
 pub fn refresh_index_in_background(docs_root: &Path) {
-    // ponytail: one process-wide throttle, per-root timestamps if a process
-    // ever serves several docs roots.
-    static LAST_CHECK: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
-    #[cfg(not(test))]
-    let cfg = load_config().index_config_with_defaults();
-    // Tests never read the user's real config.
-    #[cfg(test)]
-    let cfg = crate::config::IndexConfig::default();
-    if !cfg.auto_refresh {
-        return;
+    if let Some(interval) = refresh_interval() {
+        let _ = spawn_refresh_if_due(docs_root, &REFRESH_CLOCK, interval, refresh_docs_root);
     }
-    let _ = spawn_refresh_if_due(
-        docs_root,
-        &LAST_CHECK,
-        Duration::from_secs(cfg.refresh_check_secs),
-    );
+}
+
+/// Vault counterpart of [`refresh_index_in_background`].
+pub fn refresh_vault_index_in_background(vault_path: &Path) {
+    if let Some(interval) = refresh_interval() {
+        let _ = spawn_refresh_if_due(vault_path, &REFRESH_CLOCK, interval, refresh_vault);
+    }
+}
+
+pub(crate) fn refresh_docs_root(root: &Path) {
+    if !is_locked(root) && is_index_stale(root) {
+        let _ = build_index(root);
+    }
+}
+
+pub(crate) fn refresh_vault(root: &Path) {
+    // Skip (rather than wait) when another build holds the vault lock.
+    if root.is_dir() && is_vault_index_stale(root) && try_acquire_lock(root) {
+        let _ = build_vault_index_unlocked(root);
+        release_lock(root);
+    }
 }
 
 pub(crate) fn spawn_refresh_if_due(
-    docs_root: &Path,
-    last_check: &std::sync::Mutex<Option<std::time::Instant>>,
+    root: &Path,
+    clock: &RefreshClock,
     interval: Duration,
+    job: fn(&Path),
 ) -> Option<std::thread::JoinHandle<()>> {
     {
-        let mut last = last_check.lock().unwrap_or_else(|e| e.into_inner());
-        if last.is_some_and(|t| t.elapsed() < interval) {
+        let mut last = clock.lock().unwrap_or_else(|e| e.into_inner());
+        if last.get(root).is_some_and(|t| t.elapsed() < interval) {
             return None;
         }
-        *last = Some(std::time::Instant::now());
+        last.insert(root.to_path_buf(), std::time::Instant::now());
     }
-    let root = docs_root.to_path_buf();
-    Some(std::thread::spawn(move || {
-        if !is_locked(&root) && is_index_stale(&root) {
-            let _ = build_index(&root);
-        }
-    }))
+    let root = root.to_path_buf();
+    Some(std::thread::spawn(move || job(&root)))
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +510,18 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
 
     let needs_full_rebuild = !dir.join("meta.json").exists() || meta.files.is_empty();
 
+    // Docs that were indexed before but are gone now (deleted, moved, or
+    // newly excluded) must leave the BM25 index too.
+    let removed_files: Vec<(String, String)> = if needs_full_rebuild {
+        Vec::new()
+    } else {
+        meta.files
+            .keys()
+            .filter(|k| !current_files.contains_key(*k))
+            .filter_map(|k| split_root_key(k))
+            .collect()
+    };
+
     let indexed_count = write_tantivy_index(
         &dir,
         schema,
@@ -459,8 +535,17 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
             line_start: line_start_field,
         },
         &files_to_index,
+        &removed_files,
         needs_full_rebuild,
     )?;
+
+    // Persist BM25 progress before the (possibly long) vector stage so the
+    // index is usable and a later run does not redo it. `vector_files` is
+    // left as is until vectors are actually in sync.
+    meta.files = current_files.clone();
+    meta.schema_version = SCHEMA_VERSION;
+    meta.chunk_strategy_version = CHUNK_STRATEGY_VERSION;
+    let _ = meta.save(docs_root);
 
     // Count projects that opted out of vector indexing (vector_index = false).
     let embedding_enabled_for_count = {
@@ -478,8 +563,10 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
     let vector_skipped_projects =
         count_vector_skipped_projects(docs_root, embedding_enabled_for_count);
 
-    let (vector_status, vectors_indexed, vector_errors, embedding_model) =
-        run_vector_indexing(docs_root, skip_embedding, files_to_index.clone())?;
+    let vectors = run_vector_indexing(docs_root, skip_embedding, &all_files, &meta)?;
+    if vectors.synced {
+        meta.vector_files = current_files;
+    }
 
     // Document relationship graph (wikilinks/backlinks). Built from the full
     // file set so the filename map covers every indexed doc; incremental runs
@@ -495,9 +582,6 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
         };
 
     // Final metadata save after all indexing steps (Tantivy + Vector) are complete
-    meta.files = current_files;
-    meta.schema_version = SCHEMA_VERSION;
-    meta.chunk_strategy_version = CHUNK_STRATEGY_VERSION;
     let _ = meta.save(docs_root);
 
     let result = json!({
@@ -506,10 +590,10 @@ pub(crate) fn build_index_inner(docs_root: &Path, skip_embedding: bool) -> Resul
         "indexed": indexed_count,
         "skipped": skipped_count,
         "index_path": dir.to_string_lossy(),
-        "vector_status": vector_status,
-        "vectors_indexed": vectors_indexed,
-        "vector_errors": vector_errors,
-        "embedding_model": embedding_model,
+        "vector_status": vectors.status,
+        "vectors_indexed": vectors.indexed,
+        "vector_errors": vectors.errors,
+        "embedding_model": vectors.model,
         "vector_skipped_projects": vector_skipped_projects,
     });
     #[cfg(feature = "doc-graph")]
@@ -701,21 +785,7 @@ fn write_chunks_to_index(
         };
         pb.set_message(label);
         if !needs_full_rebuild {
-            let proj_term = tantivy::Term::from_field_text(fields.project, proj);
-            let file_term = tantivy::Term::from_field_text(fields.file, rel);
-            let delete_query = BooleanQuery::new(vec![
-                (
-                    Occur::Must,
-                    Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic))
-                        as Box<dyn tantivy::query::Query>,
-                ),
-                (
-                    Occur::Must,
-                    Box::new(TermQuery::new(file_term, IndexRecordOption::Basic))
-                        as Box<dyn tantivy::query::Query>,
-                ),
-            ]);
-            writer.delete_query(Box::new(delete_query))?;
+            delete_file_docs(writer, fields, proj, rel)?;
         }
         for (chunk_idx, chunk) in chunks {
             let title_text = extract_title(&chunk.text, rel, *chunk_idx);
@@ -740,14 +810,40 @@ fn write_chunks_to_index(
     Ok(indexed_count)
 }
 
+/// Delete every chunk of one file from the BM25 index.
+fn delete_file_docs(
+    writer: &mut tantivy::IndexWriter,
+    fields: &IndexFields,
+    proj: &str,
+    rel: &str,
+) -> Result<()> {
+    let proj_term = tantivy::Term::from_field_text(fields.project, proj);
+    let file_term = tantivy::Term::from_field_text(fields.file, rel);
+    let delete_query = BooleanQuery::new(vec![
+        (
+            Occur::Must,
+            Box::new(TermQuery::new(proj_term, IndexRecordOption::Basic))
+                as Box<dyn tantivy::query::Query>,
+        ),
+        (
+            Occur::Must,
+            Box::new(TermQuery::new(file_term, IndexRecordOption::Basic))
+                as Box<dyn tantivy::query::Query>,
+        ),
+    ]);
+    writer.delete_query(Box::new(delete_query))?;
+    Ok(())
+}
+
 fn write_tantivy_index(
     dir: &Path,
     schema: tantivy::schema::Schema,
     fields: &IndexFields,
     files_to_index: &[ProjectFile],
+    removed_files: &[(String, String)],
     needs_full_rebuild: bool,
 ) -> Result<u64> {
-    if files_to_index.is_empty() {
+    if files_to_index.is_empty() && removed_files.is_empty() {
         return Ok(0);
     }
     let pb = ProgressBar::new(files_to_index.len() as u64);
@@ -764,6 +860,9 @@ fn write_tantivy_index(
     let mut writer = index.writer(load_config().index_buffer_bytes())?;
     #[cfg(test)]
     let mut writer = index.writer_with_num_threads(1, 15_000_000)?;
+    for (proj, rel) in removed_files {
+        delete_file_docs(&mut writer, fields, proj, rel)?;
+    }
     let all_chunks = chunk_files_parallel(files_to_index);
     let indexed_count =
         write_chunks_to_index(&mut writer, &all_chunks, fields, needs_full_rebuild, &pb)?;
@@ -875,7 +974,9 @@ fn embed_files_in_batches(
     vpb: &ProgressBar,
     counters: &mut VectorCounters,
     cache: &crate::embedding_cache::EmbeddingCache,
-) {
+) -> Vec<(String, String, u64)> {
+    // Chunk counts per re-embedded file, so stale trailing chunks can be pruned.
+    let mut tails: Vec<(String, String, u64)> = Vec::new();
     // Sequential read + chunk per file, embed in batches.
     // Parallel file reads caused RSS spikes (large PDFs × N threads).
     // Bottleneck is ONNX inference, not I/O — sequential reads keep
@@ -891,10 +992,9 @@ fn embed_files_in_batches(
         vpb.set_message(proj.clone());
         if let Ok(content) = read_file_content(full) {
             let file_ext = full.extension().and_then(|e| e.to_str()).unwrap_or("");
-            for (i, chunk) in chunk_content_with_config(&content, file_ext, &chunk_cfg)
-                .into_iter()
-                .enumerate()
-            {
+            let chunks = chunk_content_with_config(&content, file_ext, &chunk_cfg);
+            tails.push((proj.clone(), rel.clone(), chunks.len() as u64));
+            for (i, chunk) in chunks.into_iter().enumerate() {
                 // Hash the prefixed text (same text sent to ONNX/embed).
                 let prefixed = match doc_pfx {
                     Some(pfx) => format!("{}{}", pfx, chunk.text),
@@ -937,25 +1037,48 @@ fn embed_files_in_batches(
             counters.vectors_indexed += count;
         }
     }
+    tails
 }
 
-/// Runs the full embedding pipeline when the `embed` feature is enabled.
-/// Returns updated (vector_status, vectors_indexed, vector_errors, embedding_model).
+/// Result of a vector stage. `synced` means every eligible file is embedded
+/// at its current fingerprint and no orphan vectors remain.
+pub(crate) struct VectorSync {
+    status: String,
+    indexed: u64,
+    errors: u64,
+    model: String,
+    synced: bool,
+}
+
+impl VectorSync {
+    fn not_run(status: &str) -> Self {
+        Self {
+            status: status.to_string(),
+            indexed: 0,
+            errors: 0,
+            model: String::new(),
+            synced: false,
+        }
+    }
+}
+
+/// Bring the vector store under `root/.alcove/` in line with `eligible`
+/// (`(meta key, file)` pairs): drop vectors of files no longer eligible,
+/// re-embed files whose fingerprint differs from `previous`, and prune
+/// trailing chunks of files that shrank. Unchanged chunks come from the
+/// persistent embedding cache, so re-embedding an edited file only runs the
+/// model on the chunks that actually changed.
 #[cfg(feature = "embed")]
-fn run_full_vector_indexing(
-    docs_root: &Path,
-    files_to_index: Vec<ProjectFile>,
-) -> Result<(String, u64, u64, String)> {
-    use crate::config::{effective_config, load_config};
+fn sync_vectors(
+    root: &Path,
+    emb_cfg: &crate::config::EmbeddingConfig,
+    eligible: &[(String, ProjectFile)],
+    current: &HashMap<String, [u64; 2]>,
+    previous: &HashMap<String, [u64; 2]>,
+) -> Result<VectorSync> {
     use crate::embedding::{EmbeddingService, resolve_model};
     use crate::embedding_cache::EmbeddingCache;
     use crate::vector::VectorStore;
-
-    let cfg = load_config();
-    let emb_cfg = cfg.embedding_config_with_defaults();
-    if !emb_cfg.enabled {
-        return Ok(("disabled".to_string(), 0, 0, String::new()));
-    }
 
     let model = resolve_model(&emb_cfg.model);
     let model_name = model.as_str().to_string();
@@ -967,82 +1090,125 @@ fn run_full_vector_indexing(
         query_cache_size: emb_cfg.query_cache_size,
     });
 
-    // Open vector store and compute what needs embedding BEFORE loading the ONNX model.
-    let vector_path = docs_root.join(".alcove").join("vectors.db");
-    let mut store = VectorStore::open(&vector_path, service.model_name(), service.dimension())
-        .map_err(|e| {
-            eprintln!("[alcove] Failed to open vector store: {}", e);
-            e
-        })?;
-
-    let embedding_enabled = emb_cfg.enabled;
-    let to_embed: Vec<ProjectFile> = files_to_index
-        .into_iter()
-        .filter(|(proj, rel, _)| {
-            let proj_path = docs_root.join(proj);
-            let proj_cfg = effective_config(&proj_path);
-            if !proj_cfg.vector_index.unwrap_or(embedding_enabled) {
-                return false;
-            }
-            !matches!(store.has_file(proj, rel), Ok(true))
-        })
-        .collect();
-
-    // Early exit: nothing to embed — skip ONNX model loading entirely.
-    if to_embed.is_empty() {
-        let count = store.meta().map(|m| m.count as u64).unwrap_or(0);
-        return Ok(("ok".to_string(), count, 0, model_name));
-    }
-
-    // Open persistent embedding cache (survives full rebuilds).
-    let cache_path = docs_root.join(".alcove").join("embedding_cache.db");
-    let cache = EmbeddingCache::open(&cache_path).map_err(|e| {
-        eprintln!("[alcove] Failed to open embedding cache: {}", e);
+    let alcove_dir = root.join(".alcove");
+    let mut store = VectorStore::open(
+        &alcove_dir.join("vectors.db"),
+        service.model_name(),
+        service.dimension(),
+    )
+    .map_err(|e| {
+        eprintln!("[alcove] Failed to open vector store: {}", e);
         e
     })?;
 
-    // ONNX model loading is deferred to flush_embed_batch — only triggered
-    // when there are cache misses.
+    let keep: std::collections::HashSet<(&str, &str)> = eligible
+        .iter()
+        .map(|(_, (p, r, _))| (p.as_str(), r.as_str()))
+        .collect();
+    let orphans: Vec<(String, String)> = store
+        .files()?
+        .into_iter()
+        .filter(|(p, r)| !keep.contains(&(p.as_str(), r.as_str())))
+        .collect();
+    let to_embed: Vec<ProjectFile> = eligible
+        .iter()
+        .filter(|(key, _)| previous.get(key) != current.get(key))
+        .map(|(_, f)| f.clone())
+        .collect();
+
+    if !orphans.is_empty() {
+        store.prune(&orphans, &[])?;
+    }
 
     let mut counters = VectorCounters {
         vectors_indexed: 0,
         vector_errors: 0,
     };
-    let vpb = ProgressBar::new(to_embed.len() as u64);
-    vpb.set_style(
-        ProgressStyle::default_bar()
-            .template("  {spinner:.magenta}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
-            .progress_chars("━━╌"),
-    );
-    vpb.enable_steady_tick(Duration::from_millis(80));
-    vpb.set_message("embedding");
-    // Batch size tuned to model size: small < 100 MB → 128, medium ≤ 800 MB → 64, large → 32
-    let embed_batch: usize = match model.size_mb() {
-        s if s < 100 => 128,
-        s if s <= 800 => 64,
-        _ => 32,
-    };
-    embed_files_in_batches(
-        &to_embed,
-        &service,
-        &mut store,
-        &model,
-        embed_batch,
-        &vpb,
-        &mut counters,
-        &cache,
-    );
-    vpb.finish_and_clear();
-
-    if let Ok(meta) = store.meta() {
-        counters.vectors_indexed = meta.count as u64;
+    // Nothing to embed: skip ONNX model loading entirely.
+    if !to_embed.is_empty() {
+        // Persistent embedding cache (survives full rebuilds). The model
+        // itself loads lazily in flush_embed_batch on the first cache miss.
+        let cache = EmbeddingCache::open(&alcove_dir.join("embedding_cache.db")).map_err(|e| {
+            eprintln!("[alcove] Failed to open embedding cache: {}", e);
+            e
+        })?;
+        let vpb = ProgressBar::new(to_embed.len() as u64);
+        vpb.set_style(
+            ProgressStyle::default_bar()
+                .template("  {spinner:.magenta}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
+                .progress_chars("━━╌"),
+        );
+        vpb.enable_steady_tick(Duration::from_millis(80));
+        vpb.set_message("embedding");
+        // Batch size tuned to model size: small < 100 MB → 128, medium ≤ 800 MB → 64, large → 32
+        let embed_batch: usize = match model.size_mb() {
+            s if s < 100 => 128,
+            s if s <= 800 => 64,
+            _ => 32,
+        };
+        let tails = embed_files_in_batches(
+            &to_embed,
+            &service,
+            &mut store,
+            &model,
+            embed_batch,
+            &vpb,
+            &mut counters,
+            &cache,
+        );
+        vpb.finish_and_clear();
+        store.prune(&[], &tails)?;
     }
-    Ok((
-        "ok".to_string(),
-        counters.vectors_indexed,
-        counters.vector_errors,
-        model_name,
-    ))
+
+    Ok(VectorSync {
+        status: "ok".to_string(),
+        indexed: store.meta().map(|m| m.count as u64).unwrap_or(0),
+        errors: counters.vector_errors,
+        model: model_name,
+        synced: counters.vector_errors == 0,
+    })
+}
+
+/// Vector stage for a docs root: every indexable file of a project that has
+/// vectors enabled is eligible.
+#[cfg(feature = "embed")]
+fn run_full_vector_indexing(
+    docs_root: &Path,
+    all_files: &[ProjectFile],
+    meta: &IndexMeta,
+) -> Result<VectorSync> {
+    use crate::config::{effective_config, load_config};
+
+    let emb_cfg = load_config().embedding_config_with_defaults();
+    if !emb_cfg.enabled {
+        return Ok(VectorSync::not_run("disabled"));
+    }
+    let mut project_enabled: HashMap<&str, bool> = HashMap::new();
+    let eligible: Vec<(String, ProjectFile)> = all_files
+        .iter()
+        .filter(|(proj, _, _)| {
+            *project_enabled.entry(proj.as_str()).or_insert_with(|| {
+                effective_config(&docs_root.join(proj))
+                    .vector_index
+                    .unwrap_or(emb_cfg.enabled)
+            })
+        })
+        .map(|f| {
+            let key =
+                f.2.strip_prefix(docs_root)
+                    .unwrap_or(&f.2)
+                    .to_string_lossy()
+                    .to_string();
+            (key, f.clone())
+        })
+        .collect();
+    sync_vectors(
+        docs_root,
+        &emb_cfg,
+        &eligible,
+        &meta.files,
+        &meta.vector_files,
+    )
 }
 
 /// Count how many project directories under `docs_root` have `vector_index = false`.
@@ -1076,17 +1242,18 @@ fn count_vector_skipped_projects(docs_root: &Path, embedding_enabled: bool) -> u
 fn run_vector_indexing(
     docs_root: &Path,
     skip_embedding: bool,
-    files_to_index: Vec<ProjectFile>,
-) -> Result<(String, u64, u64, String)> {
+    all_files: &[ProjectFile],
+    meta: &IndexMeta,
+) -> Result<VectorSync> {
     if skip_embedding {
-        return Ok(("skipped".to_string(), 0, 0, String::new()));
+        return Ok(VectorSync::not_run("skipped"));
     }
     #[cfg(feature = "embed")]
-    return run_full_vector_indexing(docs_root, files_to_index);
+    return run_full_vector_indexing(docs_root, all_files, meta);
     #[cfg(not(feature = "embed"))]
     {
-        let _ = (docs_root, files_to_index);
-        Ok(("disabled".to_string(), 0, 0, String::new()))
+        let _ = (docs_root, all_files, meta);
+        Ok(VectorSync::not_run("disabled"))
     }
 }
 
@@ -1094,34 +1261,9 @@ fn run_vector_indexing(
 // Vault indexing
 // ---------------------------------------------------------------------------
 
-/// Build a BM25 index for a single vault directory.
-///
-/// Vault files live directly under `vault_path` (flat structure), unlike
-/// project docs which are nested under `docs_root/<project>/`.  The vault
-/// name (directory basename) is stored in the `project` field for schema
-/// compatibility with project indexes.
-pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
-    let vault_name = vault_path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-
-    let dir = index_dir(vault_path);
-    std::fs::create_dir_all(&dir)?;
-
-    let IndexSchema {
-        schema,
-        project: project_field,
-        file: file_field,
-        filename: filename_field,
-        title: title_field,
-        chunk_id: chunk_id_field,
-        body: body_field,
-        line_start: line_start_field,
-    } = IndexSchema::build();
-
-    // Walk all .md files in vault_path, excluding `_` prefix and `.alcove/`
+/// Markdown files of a vault that belong in its index: excludes reserved
+/// dirs, `_`-prefixed names, and drafts or deprecated docs.
+fn scan_vault_files(vault_path: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = Vec::new();
     for entry in WalkDir::new(vault_path)
         .into_iter()
@@ -1172,6 +1314,74 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
         }
         files.push(file_path);
     }
+    files
+}
+
+/// True when a vault's files differ from its index metadata (added, edited,
+/// or removed docs) or its vectors lag behind.
+pub fn is_vault_index_stale(vault_path: &Path) -> bool {
+    if !meta_path(vault_path).exists() {
+        return true;
+    }
+    let meta = IndexMeta::load(vault_path);
+    let current: HashMap<String, [u64; 2]> = scan_vault_files(vault_path)
+        .iter()
+        .map(|fp| {
+            let rel = fp
+                .strip_prefix(vault_path)
+                .unwrap_or(fp)
+                .to_string_lossy()
+                .to_string();
+            (rel, file_fingerprint(fp))
+        })
+        .collect();
+    current != meta.files || vectors_pending(&meta, Some(vault_path))
+}
+
+/// Build a BM25 index for a single vault directory.
+///
+/// Vault files live directly under `vault_path` (flat structure), unlike
+/// project docs which are nested under `docs_root/<project>/`.  The vault
+/// name (directory basename) is stored in the `project` field for schema
+/// compatibility with project indexes.
+pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
+    // Serialize with background refreshes and other builds of this vault.
+    // ponytail: fixed 60 s wait, a queued rebuild if vaults grow large enough
+    // for one build to outlast it.
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while !try_acquire_lock(vault_path) {
+        if std::time::Instant::now() > deadline {
+            anyhow::bail!("vault index is busy (another index build is running)");
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let result = build_vault_index_unlocked(vault_path);
+    release_lock(vault_path);
+    result
+}
+
+fn build_vault_index_unlocked(vault_path: &Path) -> Result<JsonValue> {
+    let vault_name = vault_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let dir = index_dir(vault_path);
+    std::fs::create_dir_all(&dir)?;
+
+    let IndexSchema {
+        schema,
+        project: project_field,
+        file: file_field,
+        filename: filename_field,
+        title: title_field,
+        chunk_id: chunk_id_field,
+        body: body_field,
+        line_start: line_start_field,
+    } = IndexSchema::build();
+
+    let files = scan_vault_files(vault_path);
 
     let file_count = files.len() as u64;
 
@@ -1217,9 +1427,16 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
     }
 
     writer.commit()?;
+    // The index dir was recreated, so a cached reader would keep serving the
+    // old snapshot.
+    invalidate_reader_cache(vault_path, CacheCategory::Vault);
 
-    // Save metadata for the vault index
-    let mut meta = IndexMeta::default();
+    // Save metadata for the vault index. BM25 is rebuilt in full above, while
+    // vectors are synced incrementally against the previous `vector_files`.
+    let mut meta = IndexMeta {
+        vector_files: IndexMeta::load(vault_path).vector_files,
+        ..IndexMeta::default()
+    };
     for file_path in &files {
         let rel = file_path
             .strip_prefix(vault_path)
@@ -1235,181 +1452,39 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
     // with fallback to global config.
     // ---------------------------------------------------------------------------
     #[cfg_attr(not(feature = "embed"), allow(unused_mut))]
-    let mut vector_status = "disabled".to_string();
-    #[cfg_attr(not(feature = "embed"), allow(unused_mut))]
-    let mut vectors_indexed = 0u64;
-    #[cfg_attr(not(feature = "embed"), allow(unused_mut))]
-    let mut vector_errors = 0u64;
-    #[cfg_attr(not(feature = "embed"), allow(unused_mut))]
-    let mut embedding_model = String::new();
+    let mut vectors = VectorSync::not_run("disabled");
 
     #[cfg(feature = "embed")]
     {
-        use crate::config::vault_embedding_config;
-        use crate::embedding::{EmbeddingService, resolve_model};
-        use crate::vector::VectorStore;
-
-        let emb_cfg = vault_embedding_config(vault_path);
-
+        let emb_cfg = crate::config::vault_embedding_config(vault_path);
         if emb_cfg.enabled {
-            let model = resolve_model(&emb_cfg.model);
-            embedding_model = model.as_str().to_string();
-
-            let service = EmbeddingService::new(crate::config::EmbeddingConfig {
-                model: emb_cfg.model.clone(),
-                auto_download: emb_cfg.auto_download,
-                cache_dir: emb_cfg.cache_dir.clone(),
-                enabled: true,
-                query_cache_size: emb_cfg.query_cache_size,
-            });
-
-            let _ = service.ensure_model();
-
-            if service.state() == crate::embedding::ModelState::Ready {
-                let vector_path = vault_path.join(".alcove").join("vectors.db");
-                match VectorStore::open(&vector_path, service.model_name(), service.dimension()) {
-                    Ok(mut store) => {
-                        vector_status = "ok".to_string();
-
-                        // Filter out already-indexed files
-                        let to_embed: Vec<&PathBuf> = files
-                            .iter()
-                            .filter(|fp| {
-                                let rel =
-                                    fp.strip_prefix(vault_path).unwrap_or(*fp).to_string_lossy();
-                                !matches!(store.has_file(&vault_name, &rel), Ok(true))
-                            })
-                            .collect();
-
-                        let total_files = to_embed.len() as u64;
-
-                        if total_files > 0 {
-                            let vpb = ProgressBar::new(total_files);
-                            vpb.set_style(
-                                ProgressStyle::default_bar()
-                                    .template("  {spinner:.magenta}  {bar:35.white/dim}  {pos:>3}/{len}  {msg:.dim}")?
-                                    .progress_chars("━━╌"),
-                            );
-                            vpb.enable_steady_tick(Duration::from_millis(80));
-                            vpb.set_message("embedding");
-
-                            let embed_batch: usize = match model.size_mb() {
-                                s if s < 100 => 128,
-                                s if s <= 800 => 64,
-                                _ => 32,
-                            };
-                            let chunk_cfg = ChunkConfig::for_max_tokens(model.max_seq_length());
-                            let mut pending: Vec<(String, String, u64, String)> = Vec::new();
-
-                            for fp in &to_embed {
-                                let rel = fp
-                                    .strip_prefix(vault_path)
-                                    .unwrap_or(*fp)
-                                    .to_string_lossy()
-                                    .to_string();
-                                vpb.set_message(rel.clone());
-
-                                if let Ok(content) = read_file_content(fp) {
-                                    let file_ext =
-                                        fp.extension().and_then(|e| e.to_str()).unwrap_or("");
-                                    for (i, chunk) in
-                                        chunk_content_with_config(&content, file_ext, &chunk_cfg)
-                                            .into_iter()
-                                            .enumerate()
-                                    {
-                                        pending.push((
-                                            vault_name.clone(),
-                                            rel.clone(),
-                                            i as u64,
-                                            chunk.text,
-                                        ));
-
-                                        if pending.len() >= embed_batch {
-                                            let actual = pending.len();
-                                            let doc_pfx = model.doc_prefix();
-                                            let texts: Vec<String> = pending
-                                                .iter()
-                                                .map(|(_, _, _, t)| match doc_pfx {
-                                                    Some(pfx) => format!("{}{}", pfx, t),
-                                                    None => t.clone(),
-                                                })
-                                                .collect();
-                                            let text_refs: Vec<&str> =
-                                                texts.iter().map(|s| s.as_str()).collect();
-                                            match service.embed(&text_refs) {
-                                                Ok(embeddings) => {
-                                                    let it = pending.drain(..).zip(embeddings).map(
-                                                        |((p, r, id, _), emb)| (p, r, id, emb),
-                                                    );
-                                                    if let Err(e) = store.batch_upsert(it) {
-                                                        eprintln!(
-                                                            "[alcove] vault batch upsert failed: {}",
-                                                            e
-                                                        );
-                                                        vector_errors += actual as u64;
-                                                    } else {
-                                                        vectors_indexed += actual as u64;
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    eprintln!("[alcove] vault embed failed: {}", e);
-                                                    vector_errors += pending.len() as u64;
-                                                    pending.clear();
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                vpb.inc(1);
-                            }
-
-                            // Flush remaining
-                            if !pending.is_empty() {
-                                let doc_pfx = model.doc_prefix();
-                                let texts: Vec<String> = pending
-                                    .iter()
-                                    .map(|(_, _, _, t)| match doc_pfx {
-                                        Some(pfx) => format!("{}{}", pfx, t),
-                                        None => t.clone(),
-                                    })
-                                    .collect();
-                                let text_refs: Vec<&str> =
-                                    texts.iter().map(|s| s.as_str()).collect();
-                                match service.embed(&text_refs) {
-                                    Ok(embeddings) => {
-                                        let count = pending.len() as u64;
-                                        let it = pending
-                                            .drain(..)
-                                            .zip(embeddings)
-                                            .map(|((p, r, id, _), emb)| (p, r, id, emb));
-                                        if let Err(e) = store.batch_upsert(it) {
-                                            eprintln!("[alcove] vault batch upsert failed: {}", e);
-                                            vector_errors += count;
-                                        } else {
-                                            vectors_indexed += count;
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("[alcove] vault embed failed: {}", e);
-                                        vector_errors += pending.len() as u64;
-                                    }
-                                }
-                            }
-
-                            vpb.finish_and_clear();
-                        }
-                        // Always report total vectors in store
-                        if let Ok(meta) = store.meta() {
-                            vectors_indexed = meta.count as u64;
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[alcove] Failed to open vault vector store: {}", e);
-                        vector_status = format!("error: {}", e);
-                    }
+            let eligible: Vec<(String, ProjectFile)> = files
+                .iter()
+                .map(|fp| {
+                    let rel = fp
+                        .strip_prefix(vault_path)
+                        .unwrap_or(fp)
+                        .to_string_lossy()
+                        .to_string();
+                    (rel.clone(), (vault_name.clone(), rel, fp.clone()))
+                })
+                .collect();
+            vectors = match sync_vectors(
+                vault_path,
+                &emb_cfg,
+                &eligible,
+                &meta.files,
+                &meta.vector_files,
+            ) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("[alcove] vault vector indexing failed: {}", e);
+                    VectorSync::not_run(&format!("error: {}", e))
                 }
-            } else {
-                vector_status = "model_not_ready".to_string();
+            };
+            if vectors.synced {
+                meta.vector_files = meta.files.clone();
+                let _ = meta.save(vault_path);
             }
         }
     }
@@ -1442,10 +1517,10 @@ pub fn build_vault_index(vault_path: &Path) -> Result<JsonValue> {
         "vault": vault_name,
         "files": file_count,
         "index_path": dir.to_string_lossy(),
-        "vectors_indexed": vectors_indexed,
-        "vector_errors": vector_errors,
-        "vector_status": vector_status,
-        "embedding_model": embedding_model,
+        "vectors_indexed": vectors.indexed,
+        "vector_errors": vectors.errors,
+        "vector_status": vectors.status,
+        "embedding_model": vectors.model,
     });
     #[cfg(feature = "doc-graph")]
     let result = {

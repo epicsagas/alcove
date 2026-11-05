@@ -738,6 +738,8 @@ pub fn search_hybrid(
 /// Returns the same JSON format as `search_indexed` (matches array with
 /// file, score, snippet, etc.) for consistency.
 pub fn search_vault(vault_path: &Path, query: &str, limit: usize) -> Result<JsonValue> {
+    // Keep the vault index current (or build a missing one) without blocking.
+    super::builder::refresh_vault_index_in_background(vault_path);
     let dir = index_dir(vault_path);
     if !dir.exists() {
         anyhow::bail!("Vault search index not found. Run vault index build first.");

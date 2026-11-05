@@ -765,15 +765,18 @@ pub async fn run_server(
         }
     };
 
-    // Auto-build BM25 index on startup if not present, so /search never returns 503
-    // on a fresh or post-restart server.
-    if !crate::index::index_exists(&docs_root) {
+    // Build a missing index in the background on startup: BM25 is committed
+    // first so /search works within seconds, then vectors fill in. An existing
+    // index gets the usual background refresh (changed docs, pending vectors).
+    if crate::index::index_exists(&docs_root) {
+        crate::index::refresh_index_in_background(&docs_root);
+    } else {
         let docs_root_bg = docs_root.clone();
         tokio::task::spawn_blocking(move || {
-            eprintln!("[alcove] search index not found — building BM25 index in background...");
-            match crate::index::build_index_bm25_only(&docs_root_bg) {
-                Ok(_) => eprintln!("[alcove] background BM25 index build complete"),
-                Err(e) => eprintln!("[alcove] background BM25 index build failed: {e}"),
+            eprintln!("[alcove] search index not found — building index in background...");
+            match crate::index::build_index(&docs_root_bg) {
+                Ok(_) => eprintln!("[alcove] background index build complete"),
+                Err(e) => eprintln!("[alcove] background index build failed: {e}"),
             }
         });
     }

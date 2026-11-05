@@ -603,7 +603,7 @@ alcove search "authentication flow"
 alcove search "FR-023" --mode grep
 ```
 
-If no index exists, the API server builds one in the background at startup. After that, searches keep it fresh: when docs change, the next MCP `search_project_docs` or REST `/search` call starts an incremental reindex on a background thread (only changed files) and keeps answering from the current index until it finishes. No cron jobs needed.
+If no index exists, the API server builds one in the background at startup. After that, searches keep it fresh: when docs change, the next MCP `search_project_docs` or REST `/search` call starts an incremental reindex on a background thread (only changed files) and keeps answering from the current index until it finishes. No cron jobs needed. Vault searches refresh each vault the same way, and `alcove vault add` reindexes the vault right away. Edited docs get their vectors re-embedded (unchanged passages come from the embedding cache), and deleted docs drop out of both the BM25 and vector indexes.
 
 To turn this off or change how often it checks, set it in `config.toml` and restart the server:
 
