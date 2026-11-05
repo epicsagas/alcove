@@ -17,7 +17,7 @@ pub mod searcher;
 pub use builder::{
     build_all_vault_indexes, build_index, build_index_bm25_only, build_vault_index,
     check_doc_changes, ensure_index_fresh, index_exists, is_index_stale, rebuild_index,
-    rebuild_vault_index,
+    rebuild_vault_index, refresh_index_in_background,
 };
 
 pub use searcher::{search_grouped_by_file, search_indexed, search_vault};
@@ -39,6 +39,8 @@ pub(crate) use builder::build_index_inner;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use builder::build_index_unlocked;
+#[cfg(test)]
+use builder::spawn_refresh_if_due;
 #[cfg(test)]
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -285,6 +287,30 @@ mod tests {
         let rebuilt = ensure_index_fresh(tmp.path());
         assert!(rebuilt, "should have rebuilt");
         assert!(!is_index_stale(tmp.path()), "should be fresh after rebuild");
+    }
+
+    #[test]
+    fn background_refresh_reindexes_changed_docs_and_throttles() {
+        let tmp = setup_indexed_root();
+        build_index_inner(tmp.path(), true).unwrap();
+        fs::write(tmp.path().join("backend/NEW.md"), "# New\n\nFresh content.").unwrap();
+        assert!(is_index_stale(tmp.path()));
+
+        let last = std::sync::Mutex::new(None);
+        let interval = std::time::Duration::from_secs(3600);
+        spawn_refresh_if_due(tmp.path(), &last, interval)
+            .expect("first call is due")
+            .join()
+            .unwrap();
+        assert!(
+            !is_index_stale(tmp.path()),
+            "refresh should index the new doc"
+        );
+
+        assert!(
+            spawn_refresh_if_due(tmp.path(), &last, interval).is_none(),
+            "second call within the interval is throttled"
+        );
     }
 
     #[test]

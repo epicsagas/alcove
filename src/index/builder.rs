@@ -284,6 +284,46 @@ pub fn ensure_index_fresh(docs_root: &Path) -> bool {
     true
 }
 
+/// Minimum gap between staleness checks triggered by searches.
+const REFRESH_CHECK_SECS: u64 = 60;
+
+/// Incrementally refresh an existing index in the background when docs changed.
+///
+/// Searches call this and keep serving the current index; the staleness walk
+/// and any rebuild run on a separate thread so the request never blocks on
+/// embedding. Checks are throttled to one per `REFRESH_CHECK_SECS` per process,
+/// and `build_index`'s lock keeps a refresh from overlapping another run.
+pub fn refresh_index_in_background(docs_root: &Path) {
+    // ponytail: one process-wide throttle, per-root timestamps if a process
+    // ever serves several docs roots.
+    static LAST_CHECK: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+    let _ = spawn_refresh_if_due(
+        docs_root,
+        &LAST_CHECK,
+        Duration::from_secs(REFRESH_CHECK_SECS),
+    );
+}
+
+pub(crate) fn spawn_refresh_if_due(
+    docs_root: &Path,
+    last_check: &std::sync::Mutex<Option<std::time::Instant>>,
+    interval: Duration,
+) -> Option<std::thread::JoinHandle<()>> {
+    {
+        let mut last = last_check.lock().unwrap_or_else(|e| e.into_inner());
+        if last.is_some_and(|t| t.elapsed() < interval) {
+            return None;
+        }
+        *last = Some(std::time::Instant::now());
+    }
+    let root = docs_root.to_path_buf();
+    Some(std::thread::spawn(move || {
+        if !is_locked(&root) && is_index_stale(&root) {
+            let _ = build_index(&root);
+        }
+    }))
+}
+
 // ---------------------------------------------------------------------------
 // Build / rebuild index
 // ---------------------------------------------------------------------------

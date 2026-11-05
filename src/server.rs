@@ -505,6 +505,9 @@ async fn handle_search(
     }
 
     let docs_root = state.docs_root.clone();
+    if crate::index::index_exists(&docs_root) {
+        crate::index::refresh_index_in_background(&docs_root);
+    }
     let project_filter_owned = req.project.clone();
     let q = req.q.clone();
     let limit = req.limit.clamp(1, 200);

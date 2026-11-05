@@ -1172,7 +1172,11 @@ fn handle_tool_call(id: Option<Value>, params: Value) -> RpcResponse {
 
         if !force_grep {
             let index_dir = docs_root.join(".alcove").join("index");
-            if (index_dir.exists() || crate::index::ensure_index_fresh(&docs_root))
+            let has_index = index_dir.exists();
+            if has_index {
+                crate::index::refresh_index_in_background(&docs_root);
+            }
+            if (has_index || crate::index::ensure_index_fresh(&docs_root))
                 && let Ok(v) =
                     crate::index::search_indexed(&docs_root, query, limit, Some(&resolved.name))
             {
