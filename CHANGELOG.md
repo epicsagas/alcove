@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.4] — 2026-11-05
+
 ### Added
 
 - Config: `[index] auto_refresh` (default `true`) turns search-triggered background reindexing on or off, and `[index] refresh_check_secs` (default `60`) sets the minimum gap between staleness checks. README and translations document both.
