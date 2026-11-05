@@ -577,7 +577,18 @@ alcove search "authentication flow"
 alcove search "FR-023" --mode grep
 ```
 
-인덱스는 API 서버 시작 시 백그라운드에서 자동으로 빌드되며, 파일 변경을 감지하면 자동으로 재빌드합니다. 크론 잡도, 수동 작업도 필요 없습니다.
+인덱스가 없으면 API 서버가 시작할 때 백그라운드에서 만듭니다. 그 뒤로는 검색이 인덱스를 최신으로 유지합니다. 문서가 바뀌면 다음 MCP `search_project_docs` 또는 REST `/search` 호출이 백그라운드 스레드에서 변경된 파일만 증분 재인덱싱하고, 끝날 때까지는 기존 인덱스로 응답합니다. 크론 잡이 필요 없습니다.
+
+이 동작을 끄거나 확인 주기를 바꾸려면 `config.toml`에 설정하고 서버를 재시작하세요:
+
+```toml
+# config.toml
+[index]
+auto_refresh = true       # false: `alcove index`로만 인덱스 갱신
+refresh_check_secs = 60   # 변경 확인 최소 간격(초)
+```
+
+`auto_refresh = false`이면 문서를 수정한 뒤 `alcove index`를 실행하세요.
 
 **에이전트 사용법:** 에이전트는 쿼리로 `search_project_docs`를 호출하기만 하면 됩니다. Alcove가 랭킹, 중복 제거(파일당 하나의 결과), 크로스 프로젝트 검색, 폴백을 모두 처리합니다. 에이전트가 검색 모드를 선택할 필요가 없습니다.
 

@@ -582,7 +582,18 @@ alcove search "OAuth token refresh" --scope global
 alcove search "FR-023" --mode grep
 ```
 
-O índice é construído automaticamente em segundo plano quando o servidor MCP inicia, e reconstruído quando detecta mudanças nos arquivos. Sem cron jobs, sem etapas manuais.
+Se não existir índice, o servidor API o constrói em segundo plano ao iniciar. Depois disso, as buscas o mantêm atualizado: quando os documentos mudam, a próxima chamada MCP `search_project_docs` ou REST `/search` inicia uma reindexação incremental (apenas arquivos alterados) em uma thread em segundo plano e continua respondendo com o índice atual até terminar. Não é preciso cron jobs.
+
+Para desativar ou mudar a frequência de verificação, configure em `config.toml` e reinicie o servidor:
+
+```toml
+# config.toml
+[index]
+auto_refresh = true       # false: só `alcove index` atualiza o índice
+refresh_check_secs = 60   # intervalo mínimo entre verificações (segundos)
+```
+
+Com `auto_refresh = false`, rode `alcove index` depois de editar documentos.
 
 **Como funciona para agentes:** agentes simplesmente chamam `search_project_docs` com uma consulta. O Alcove cuida do resto — ranking, deduplicação (um resultado por arquivo), busca entre projetos e fallback. O agente nunca precisa escolher um modo de busca.
 

@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Config: `[index] auto_refresh` (default `true`) turns search-triggered background reindexing on or off, and `[index] refresh_check_secs` (default `60`) sets the minimum gap between staleness checks. README and translations document both.
+
 ### Fixed
 
-- Search: an existing index was never refreshed by MCP `search_project_docs` or the REST `/search` endpoint, so doc edits stayed invisible until a manual `alcove index`. Searches now start an incremental refresh on a background thread when docs changed (checked at most once a minute) and keep serving the current index meanwhile.
+- Search: an existing index was never refreshed by MCP `search_project_docs` or the REST `/search` endpoint, so doc edits stayed invisible until a manual `alcove index`. Searches now start an incremental refresh on a background thread when docs changed (checked at most once a minute by default) and keep serving the current index meanwhile.
 
 ## [0.14.3] — 2026-11-04
 

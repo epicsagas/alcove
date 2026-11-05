@@ -165,16 +165,41 @@ fn default_server_host() -> String {
     "127.0.0.1".into()
 }
 
+fn default_auto_refresh() -> bool {
+    true
+}
+
+fn default_refresh_check_secs() -> u64 {
+    60
+}
+
+/// Index settings.
+///
+/// ```toml
+/// [index]
+/// auto_refresh = true       # refresh a stale index in the background on search
+/// refresh_check_secs = 60   # minimum gap between those staleness checks
+/// ```
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IndexConfig {
     #[serde(default = "default_index_buffer_mb")]
     pub buffer_size_mb: usize,
+    /// When true, MCP and REST searches start an incremental reindex on a
+    /// background thread if docs changed. When false, only `alcove index`
+    /// (or the `rebuild_index` tool) updates an existing index.
+    #[serde(default = "default_auto_refresh")]
+    pub auto_refresh: bool,
+    /// Minimum seconds between search-triggered staleness checks.
+    #[serde(default = "default_refresh_check_secs")]
+    pub refresh_check_secs: u64,
 }
 
 impl Default for IndexConfig {
     fn default() -> Self {
         Self {
             buffer_size_mb: default_index_buffer_mb(),
+            auto_refresh: default_auto_refresh(),
+            refresh_check_secs: default_refresh_check_secs(),
         }
     }
 }
@@ -673,6 +698,11 @@ impl DocConfig {
         } else {
             None
         }
+    }
+
+    /// `[index]` settings, defaults when the section is absent.
+    pub fn index_config_with_defaults(&self) -> IndexConfig {
+        self.index.clone().unwrap_or_default()
     }
 
     #[cfg_attr(test, allow(dead_code))]
@@ -1782,6 +1812,24 @@ reader_ttl_secs = 120
         assert_eq!(mem.reader_ttl_secs, 120);
         assert_eq!(mem.max_cached_readers, 1); // default
         assert_eq!(mem.model_unload_secs, 600); // default
+    }
+
+    #[test]
+    fn index_config_auto_refresh_defaults_and_override() {
+        let idx = DocConfig::default().index_config_with_defaults();
+        assert!(idx.auto_refresh);
+        assert_eq!(idx.refresh_check_secs, 60);
+
+        let toml = r#"
+[index]
+auto_refresh = false
+"#;
+        let idx = toml::from_str::<DocConfig>(toml)
+            .unwrap()
+            .index_config_with_defaults();
+        assert!(!idx.auto_refresh);
+        assert_eq!(idx.refresh_check_secs, 60); // default
+        assert_eq!(idx.buffer_size_mb, 15); // default
     }
 
     #[test]

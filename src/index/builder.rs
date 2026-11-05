@@ -284,23 +284,28 @@ pub fn ensure_index_fresh(docs_root: &Path) -> bool {
     true
 }
 
-/// Minimum gap between staleness checks triggered by searches.
-const REFRESH_CHECK_SECS: u64 = 60;
-
 /// Incrementally refresh an existing index in the background when docs changed.
 ///
 /// Searches call this and keep serving the current index; the staleness walk
 /// and any rebuild run on a separate thread so the request never blocks on
-/// embedding. Checks are throttled to one per `REFRESH_CHECK_SECS` per process,
-/// and `build_index`'s lock keeps a refresh from overlapping another run.
+/// embedding. Controlled by `[index] auto_refresh` and `refresh_check_secs`;
+/// `build_index`'s lock keeps a refresh from overlapping another run.
 pub fn refresh_index_in_background(docs_root: &Path) {
     // ponytail: one process-wide throttle, per-root timestamps if a process
     // ever serves several docs roots.
     static LAST_CHECK: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+    #[cfg(not(test))]
+    let cfg = load_config().index_config_with_defaults();
+    // Tests never read the user's real config.
+    #[cfg(test)]
+    let cfg = crate::config::IndexConfig::default();
+    if !cfg.auto_refresh {
+        return;
+    }
     let _ = spawn_refresh_if_due(
         docs_root,
         &LAST_CHECK,
-        Duration::from_secs(REFRESH_CHECK_SECS),
+        Duration::from_secs(cfg.refresh_check_secs),
     );
 }
 

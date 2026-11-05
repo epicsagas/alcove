@@ -589,7 +589,18 @@ alcove search "authentication flow"
 alcove search "FR-023" --mode grep
 ```
 
-索引在 API 服务器启动时在后台自动构建，检测到文件变化时自动重建。无需 cron 任务，无需手动操作。
+如果索引不存在，API 服务器会在启动时于后台构建。之后由搜索保持索引最新：文档变化后，下一次 MCP `search_project_docs` 或 REST `/search` 调用会在后台线程中仅对变化的文件做增量重建索引，完成前继续使用现有索引响应。无需 cron 任务。
+
+要关闭此行为或修改检查频率，请在 `config.toml` 中设置并重启服务器：
+
+```toml
+# config.toml
+[index]
+auto_refresh = true       # false：仅由 `alcove index` 更新索引
+refresh_check_secs = 60   # 两次变更检查的最小间隔（秒）
+```
+
+设置 `auto_refresh = false` 时，编辑文档后请运行 `alcove index`。
 
 **代理使用方式：** 代理只需用查询调用 `search_project_docs`。Alcove 处理其余一切——排名、去重（每个文件一个结果）、跨项目搜索和回退。代理永远不需要选择搜索模式。
 

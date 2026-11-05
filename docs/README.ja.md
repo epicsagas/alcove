@@ -585,7 +585,18 @@ alcove search "authentication flow"
 alcove search "FR-023" --mode grep
 ```
 
-インデックスはAPIサーバー起動時にバックグラウンドで自動的にビルドされ、ファイルの変更を検出すると自動的にリビルドします。cronジョブも手動操作も不要です。
+インデックスがない場合、APIサーバーは起動時にバックグラウンドで作成します。その後は検索がインデックスを最新に保ちます。ドキュメントが変更されると、次の MCP `search_project_docs` または REST `/search` の呼び出しがバックグラウンドスレッドで変更ファイルのみを増分再インデックスし、完了までは既存のインデックスで応答します。cronジョブは不要です。
+
+この動作を無効にする、またはチェック間隔を変えるには `config.toml` で設定し、サーバーを再起動してください:
+
+```toml
+# config.toml
+[index]
+auto_refresh = true       # false: `alcove index` でのみ更新
+refresh_check_secs = 60   # 変更チェックの最小間隔(秒)
+```
+
+`auto_refresh = false` の場合は、ドキュメント編集後に `alcove index` を実行してください。
 
 **エージェントでの使い方:** エージェントはクエリで`search_project_docs`を呼び出すだけです。Alcoveがランキング、重複排除（ファイルごとに1結果）、クロスプロジェクト検索、フォールバックをすべて処理します。エージェントが検索モードを選択する必要はありません。
 
