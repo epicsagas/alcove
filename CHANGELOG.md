@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.5] — 2026-11-05
+
 ### Fixed
 
 - Index: edited docs were never re-embedded (a file with any vectors was skipped), and deleted or moved docs stayed in both the BM25 and vector indexes. Vectors are now tracked per file fingerprint (`vector_files` in the index metadata): changed files are re-embedded, trailing chunks of shrunk files and vectors of removed files are pruned, and deleted docs leave the BM25 index. Unchanged passages still come from the embedding cache. The same applies to vaults.
