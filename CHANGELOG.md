@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.6] — 2026-11-05
+
 ### Fixed
 
 - Index: the staleness check and `check_doc_changes` counted files the indexer skips on purpose (agent-memory notes under `<project>/memory/`, draft or deprecated docs) as new, so the index never looked fresh and every search-triggered refresh ran a needless rebuild. Both now apply the same exclusions as the indexer.
 
-## [0.14.5] — 2026-11-05
+## [0.14.5] — 2026-11-05 [YANKED]
+
+Yanked: search-triggered refresh rebuilt the index every minute when project `memory/` notes or draft docs existed. Fixed in 0.14.6.
 
 ### Fixed
 
