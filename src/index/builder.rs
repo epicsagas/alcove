@@ -156,6 +156,7 @@ pub fn check_doc_changes(docs_root: &Path) -> JsonValue {
                         .unwrap_or_default()
                         .to_string_lossy()
                         .starts_with('_')
+                    && !e.path().components().any(|c| c.as_os_str() == "memory")
             })
         {
             let file_path = walk_entry.path();
@@ -173,6 +174,7 @@ pub fn check_doc_changes(docs_root: &Path) -> JsonValue {
             current_files.insert(rel.clone());
 
             match meta.files.get(&rel) {
+                None if is_frontmatter_skipped(file_path) => {}
                 None => added.push(rel),
                 Some(&recorded) if recorded != fp => modified.push(rel),
                 _ => unchanged += 1,
@@ -271,6 +273,9 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
                         .unwrap_or_default()
                         .to_string_lossy()
                         .starts_with('_')
+                    // Same exclusion as scan_all_files: agent-memory notes
+                    // live in their own vault index.
+                    && !e.path().components().any(|c| c.as_os_str() == "memory")
             })
         {
             let file_path = walk_entry.path();
@@ -285,11 +290,16 @@ pub fn is_index_stale(docs_root: &Path) -> bool {
                 .to_string_lossy()
                 .to_string();
             let fp = file_fingerprint(file_path);
-            current_files.insert(rel.clone());
             match meta.files.get(&rel) {
                 Some(&recorded) if recorded == fp => {}
-                _ => return true,
+                Some(_) => return true,
+                // Unknown file: new, unless the indexer skips it on purpose
+                // (draft/deprecated front matter). Only these few files are
+                // read, so the check stays cheap.
+                None if is_frontmatter_skipped(file_path) => continue,
+                None => return true,
             }
+            current_files.insert(rel);
         }
     }
 
@@ -618,6 +628,14 @@ fn apply_schema_migration(dir: &Path, meta: &mut IndexMeta) -> Result<()> {
     Ok(())
 }
 
+/// Markdown file whose front matter marks it draft or deprecated, which the
+/// indexer leaves out.
+fn is_frontmatter_skipped(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
+        && std::fs::read_to_string(path).is_ok_and(|c| parse_frontmatter_flags(&c).should_skip)
+}
+
 /// Step 2: Walk docs_root and collect all indexable files across all projects.
 /// Returns (all_files, project_count).
 fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
@@ -669,11 +687,7 @@ fn scan_all_files(docs_root: &Path) -> Result<(Vec<ProjectFile>, u64)> {
                 continue;
             }
             // Skip markdown files whose front matter marks them as draft or deprecated.
-            if file_path.extension().is_some_and(|ext| {
-                ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
-            }) && std::fs::read_to_string(&file_path)
-                .is_ok_and(|c| parse_frontmatter_flags(&c).should_skip)
-            {
+            if is_frontmatter_skipped(&file_path) {
                 continue;
             }
             let rel_to_project = file_path

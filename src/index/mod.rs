@@ -321,6 +321,25 @@ mod tests {
     }
 
     #[test]
+    fn memory_notes_and_drafts_do_not_make_index_stale() {
+        let tmp = setup_indexed_root();
+        fs::create_dir_all(tmp.path().join("backend/memory")).unwrap();
+        fs::write(tmp.path().join("backend/memory/note.md"), "# Agent note").unwrap();
+        fs::write(
+            tmp.path().join("backend/DRAFT.md"),
+            "---\ndraft: true\n---\n\n# Work in progress",
+        )
+        .unwrap();
+        build_index_inner(tmp.path(), true).unwrap();
+        assert!(
+            !is_index_stale(tmp.path()),
+            "files the indexer skips must not keep the index stale"
+        );
+        let changes = check_doc_changes(tmp.path());
+        assert_eq!(changes["added"].as_array().map_or(0, Vec::len), 0);
+    }
+
+    #[test]
     fn deleted_doc_leaves_bm25_index() {
         let tmp = setup_indexed_root();
         build_index_inner(tmp.path(), true).unwrap();
