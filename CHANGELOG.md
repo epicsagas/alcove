@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.8] — 2026-11-23
+
+### Security
+
+- Bumped `ammonia` to 4.2.5 (RUSTSEC-2026-0533, mutation XSS via embedded SVG/MathML), `url` to 2.5.9 (RUSTSEC-2026-0592, stack overflow in `Url::origin()`), and `quinn-udp` to 0.5.16 (RUSTSEC-2026-0538, receive-loop spin).
+- Removed the stale `cargo audit` ignores for RUSTSEC-2026-0194/0195: `Cargo.lock` no longer contains an affected `quick-xml` (#56).
+
 ## [0.14.7] — 2026-11-05
 
 ### Fixed
