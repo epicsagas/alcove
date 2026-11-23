@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.9] — 2026-11-23
+
 ### Security
 
 - Bumped `rusqlite` 0.32 to 0.41 and `llm-kernel` 0.26 to 0.33 together, moving bundled SQLite to `libsqlite3-sys` 0.39.1 (RUSTSEC-2026-0459). `cargo audit` now reports no vulnerabilities.
