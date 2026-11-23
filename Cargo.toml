@@ -48,14 +48,14 @@ chrono = { version = "0.4", features = ["clock"] }
 # Embedding backend — delegates to llm-kernel for model catalog, metadata,
 # and LRU cache. fastembed remains a direct dep for FastEmbedSession
 # (prefix control). llm-kernel uses the same rustls-based defaults.
-llm-kernel = { version = "0.26", default-features = false }
+llm-kernel = { version = "0.33", default-features = false }
 fastembed = { version = "5", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls"], optional = true }
 
 # Storage & indexing
-# ponytail: pinned to 0.32 because llm-kernel's graph backend (0.26 still) links
-# bundled sqlite3 0.30, which conflicts with 0.38 in one binary. Revisit when
-# llm-kernel modernizes its sqlite — track in #49.
-rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+# Must match llm-kernel's rusqlite major: both link bundled sqlite3, and the
+# `links = "sqlite3"` rule allows only one libsqlite3-sys per binary. Bump the
+# two together.
+rusqlite = { version = "0.41", features = ["bundled"], optional = true }
 hnsw_rs = { version = "0.3", optional = true }
 
 # Document parsers

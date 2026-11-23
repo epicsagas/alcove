@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Bumped `rusqlite` 0.32 to 0.41 and `llm-kernel` 0.26 to 0.33 together, moving bundled SQLite to `libsqlite3-sys` 0.39.1 (RUSTSEC-2026-0459). `cargo audit` now reports no vulnerabilities.
+
+### Changed
+
+- turboquant backend: `llm-kernel` 0.33 ships `turbovec` 1.1, which cannot read `.tvim` files saved by earlier releases. alcove treats the unreadable file as missing and rebuilds the index from the embeddings stored in `vectors.db` on the first search, so no re-embedding or manual step is needed.
+
 ## [0.14.8] — 2026-11-23
 
 ### Security
