@@ -28,14 +28,14 @@ github-build-setup = "../dist/build-setup.yml"
 [dist.dependencies.apt]
 libopenblas-dev = "*"
 
-# Pin the native Apple Silicon build to macos-14. The rolling macos-latest
+# Pin the native Apple Silicon build to macos-15 (macos-14 image retired). The rolling macos-latest
 # image intermittently ships a broken compiler-rt path, breaking the
 # ort/fastembed static link ("ld: library 'clang_rt.osx' not found") for the
-# full-macos aarch64-apple-darwin artifact. macos-14 has a stable Xcode/clang
-# toolchain. Revisit once ort's prebuilt static archive tracks the newer clang
+# full-macos aarch64-apple-darwin artifact. A fixed image keeps the Xcode/clang
+# toolchain predictable. Revisit once ort's prebuilt static archive tracks the newer clang
 # runtime path.
 [dist.github-custom-runners]
-aarch64-apple-darwin = "macos-14"
+aarch64-apple-darwin = "macos-15"
 # Linux builds on ubuntu-24.04 (glibc 2.39): llm-kernel >= 0.12 statically
 # links ort, whose archive references glibc 2.38+ symbols. The 22.04 image
 # (glibc 2.35) fails the release link with `undefined symbol: __isoc23_strtoll`.

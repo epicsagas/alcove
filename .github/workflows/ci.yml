@@ -83,7 +83,7 @@ jobs:
 
   test:
     name: Test
-    # Pinned to macos-14 to dodge rolling-image compiler-rt regressions, AND
+    # Pinned to macos-15 (macos-14 image retired) to dodge rolling-image compiler-rt regressions, AND
     # works around a clang_rt link failure present on the Xcode 16.4 image
     # (both macos-latest and macos-14): ort-sys emits `-lclang_rt.osx` plus a
     # `-L .../clang/17/lib/darwin` search path that does not exist on this
@@ -91,7 +91,7 @@ jobs:
     # the full-macos test binary. The step below locates the real
     # libclang_rt.osx.a and exposes its directory as a link path. Revisit once
     # ort's prebuilt static archive tracks the newer clang runtime path.
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
