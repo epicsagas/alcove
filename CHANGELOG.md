@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Bumped `cookie` to 0.18.3 (RUSTSEC-2026-0594, private cookie nonces can repeat after fork). alcove pulls it in only through `ureq`'s client-side cookie store.
+
 ## [0.14.9] — 2026-11-23
 
 ### Security
